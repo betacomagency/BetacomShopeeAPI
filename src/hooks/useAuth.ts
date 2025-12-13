@@ -147,7 +147,27 @@ export async function saveUserShop(
   expiredAt: number,
   merchantId?: number
 ) {
-  // 1. Upsert vào bảng shops (token được lưu trong bảng shops)
+  console.log('[saveUserShop] Starting...', { userId, shopId });
+  
+  // 1. Upsert vào bảng user_shops TRƯỚC (để RLS cho phép INSERT vào shops)
+  const { error: userShopError } = await supabase
+    .from('user_shops')
+    .upsert({
+      user_id: userId,
+      shop_id: shopId,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    }, {
+      onConflict: 'user_id,shop_id',
+    });
+
+  if (userShopError) {
+    console.error('[saveUserShop] UserShop error:', userShopError);
+    throw userShopError;
+  }
+  console.log('[saveUserShop] user_shops upserted successfully');
+
+  // 2. Upsert vào bảng shops (token được lưu trong bảng shops)
   const { error: shopError } = await supabase
     .from('shops')
     .upsert({
@@ -166,23 +186,7 @@ export async function saveUserShop(
     console.error('[saveUserShop] Shop error:', shopError);
     throw shopError;
   }
-
-  // 2. Upsert vào bảng user_shops (liên kết user-shop)
-  const { error: userShopError } = await supabase
-    .from('user_shops')
-    .upsert({
-      user_id: userId,
-      shop_id: shopId,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: 'user_id,shop_id',
-    });
-
-  if (userShopError) {
-    console.error('[saveUserShop] UserShop error:', userShopError);
-    throw userShopError;
-  }
+  console.log('[saveUserShop] shops upserted successfully');
 }
 
 // Lấy thông tin shop của user
