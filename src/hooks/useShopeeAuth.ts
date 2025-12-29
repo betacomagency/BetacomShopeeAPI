@@ -53,7 +53,7 @@ interface UseShopeeAuthReturn {
 
 const DEFAULT_CALLBACK =
   process.env.NEXT_PUBLIC_SHOPEE_CALLBACK_URL ||
-  (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://ops.betacom.agency/auth/callback');
+  (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://apishopeenextjs.vercel.app/auth/callback');
 
 export function useShopeeAuth(): UseShopeeAuthReturn {
   const [token, setToken] = useState<AccessToken | null>(null);

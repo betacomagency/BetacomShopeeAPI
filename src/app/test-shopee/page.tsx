@@ -29,7 +29,7 @@ export default function TestShopeePage() {
       const { data, error } = await supabase.functions.invoke('apishopee-auth', {
         body: {
           action: 'get-auth-url',
-          redirect_uri: 'https://ops.betacom.agency/auth/callback',
+          redirect_uri: 'https://apishopeenextjs.vercel.app/auth/callback',
           partner_info: partnerInfo,
         },
       });
@@ -58,7 +58,7 @@ export default function TestShopeePage() {
     const { data } = await supabase.functions.invoke('apishopee-auth', {
       body: {
         action: 'get-auth-url',
-        redirect_uri: 'https://ops.betacom.agency/auth/callback',
+        redirect_uri: 'https://apishopeenextjs.vercel.app/auth/callback',
         partner_info: partnerInfo,
       },
     });

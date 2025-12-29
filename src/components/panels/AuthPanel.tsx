@@ -6,7 +6,7 @@ import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { SHOPEE_CONFIG } from '@/lib/shopee';
 
 const CALLBACK_URL =
-  process.env.NEXT_PUBLIC_SHOPEE_CALLBACK_URL || 'https://ops.betacom.agency/auth/callback';
+  process.env.NEXT_PUBLIC_SHOPEE_CALLBACK_URL || 'https://apishopeenextjs.vercel.app/auth/callback';
 
 export default function AuthPanel() {
   const {

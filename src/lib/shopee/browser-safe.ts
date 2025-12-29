@@ -20,7 +20,7 @@ export const SHOPEE_CONFIG = {
   partner_id: Number(process.env.NEXT_PUBLIC_SHOPEE_PARTNER_ID) || 0,
   partner_key: process.env.NEXT_PUBLIC_SHOPEE_PARTNER_KEY || '',
   shop_id: Number(process.env.NEXT_PUBLIC_SHOPEE_SHOP_ID) || undefined,
-  callback_url: process.env.NEXT_PUBLIC_SHOPEE_CALLBACK_URL || 'https://ops.betacom.agency/auth/callback',
+  callback_url: process.env.NEXT_PUBLIC_SHOPEE_CALLBACK_URL || 'https://apishopeenextjs.vercel.app/auth/callback',
 };
 
 // Shopee Region enum
