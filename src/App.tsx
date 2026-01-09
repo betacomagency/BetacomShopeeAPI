@@ -13,13 +13,16 @@ import MainLayout from '@/components/layout/MainLayout';
 import AuthPage from '@/pages/AuthPage';
 import AuthCallback from '@/pages/AuthCallback';
 import DashboardPage from '@/pages/DashboardPage';
-import ProfileShopsPage from '@/pages/ProfileShopsPage';
 import FlashSalePage from '@/pages/FlashSalePage';
 import AdsPage from '@/pages/AdsPage';
 import ProductsPage from '@/pages/ProductsPage';
 import OrdersPage from '@/pages/OrdersPage';
-import SettingsPage from '@/pages/SettingsPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+
+// Settings Pages
+import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
+import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
+import PermissionsSettingsPage from '@/pages/settings/PermissionsSettingsPage';
 
 function App() {
   const [queryClient] = useState(
@@ -49,12 +52,15 @@ function App() {
               <Route element={<MainLayout />}>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/shops" element={<ProfileShopsPage />} />
                 <Route path="/flash-sale" element={<FlashSalePage />} />
                 <Route path="/ads" element={<AdsPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/orders" element={<OrdersPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
+                {/* Settings Routes */}
+                <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
+                <Route path="/settings/profile" element={<ProfileSettingsPage />} />
+                <Route path="/settings/shops" element={<ShopsSettingsPage />} />
+                <Route path="/settings/permissions" element={<PermissionsSettingsPage />} />
               </Route>
 
               {/* 404 */}

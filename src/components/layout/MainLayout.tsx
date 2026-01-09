@@ -6,7 +6,6 @@ import { useState } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import Sidebar from './Sidebar';
-import Header from './Header';
 import { cn } from '@/lib/utils';
 
 export default function MainLayout() {
@@ -20,9 +19,6 @@ export default function MainLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <Header />
-
       {/* Sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
@@ -32,7 +28,7 @@ export default function MainLayout() {
       {/* Main Content */}
       <main
         className={cn(
-          'pt-16 min-h-screen transition-all duration-300',
+          'min-h-screen transition-all duration-300',
           sidebarCollapsed ? 'pl-16' : 'pl-64'
         )}
       >

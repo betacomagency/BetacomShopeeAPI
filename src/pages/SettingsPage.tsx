@@ -1,34 +1,32 @@
 /**
- * Settings Page - Cài đặt hệ thống
+ * Settings Page - Cài đặt hệ thống với tabs
  */
 
-import { Settings, User, Bell, Shield, Palette } from 'lucide-react';
+import { useState } from 'react';
+import { Settings, User, Store, Shield } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import ShopManagementPanel from '@/components/profile/ShopManagementPanel';
+
+type TabKey = 'profile' | 'shops' | 'permissions';
+
+interface Tab {
+  key: TabKey;
+  title: string;
+  icon: typeof User;
+}
+
+const tabs: Tab[] = [
+  { key: 'profile', title: 'Thông tin cá nhân', icon: User },
+  { key: 'shops', title: 'Quản lý Shop', icon: Store },
+  { key: 'permissions', title: 'Phân quyền Shop', icon: Shield },
+];
 
 export default function SettingsPage() {
-  const settingSections = [
-    {
-      title: 'Tài khoản',
-      icon: User,
-      description: 'Quản lý thông tin cá nhân và tài khoản',
-    },
-    {
-      title: 'Thông báo',
-      icon: Bell,
-      description: 'Cài đặt thông báo và cảnh báo',
-    },
-    {
-      title: 'Bảo mật',
-      icon: Shield,
-      description: 'Mật khẩu và xác thực 2 lớp',
-    },
-    {
-      title: 'Giao diện',
-      icon: Palette,
-      description: 'Tùy chỉnh giao diện hiển thị',
-    },
-  ];
+  const [activeTab, setActiveTab] = useState<TabKey>('profile');
+  const { user, profile } = useAuth();
 
   return (
     <div className="space-y-6">
@@ -39,64 +37,120 @@ export default function SettingsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Cài đặt</h1>
-          <p className="text-sm text-slate-500">Quản lý cài đặt hệ thống</p>
+          <p className="text-sm text-slate-500">Quản lý thông tin và cài đặt hệ thống</p>
         </div>
       </div>
 
-      {/* Settings Sections */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {settingSections.map((section) => {
-          const Icon = section.icon;
-          return (
-            <div
-              key={section.title}
-              className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-            >
-              <div className="flex items-start gap-4">
-                <div className="p-2 bg-slate-100 rounded-lg">
-                  <Icon className="w-5 h-5 text-slate-600" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-slate-800">{section.title}</h3>
-                  <p className="text-sm text-slate-500 mt-1">{section.description}</p>
-                </div>
-                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Quick Settings */}
+      {/* Tabs */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div className="p-6 border-b border-slate-200">
-          <h2 className="text-lg font-semibold text-slate-800">Cài đặt nhanh</h2>
+        <div className="border-b border-slate-200">
+          <nav className="flex gap-1 p-2">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all',
+                    isActive
+                      ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  )}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.title}
+                </button>
+              );
+            })}
+          </nav>
         </div>
-        <div className="divide-y divide-slate-100">
-          <div className="p-4 flex items-center justify-between">
-            <div>
-              <p className="font-medium text-slate-700">Thông báo email</p>
-              <p className="text-sm text-slate-500">Nhận thông báo qua email</p>
-            </div>
-            <Switch />
+
+        {/* Tab Content */}
+        <div className="p-6">
+          {activeTab === 'profile' && <ProfileTab user={user} profile={profile} />}
+          {activeTab === 'shops' && <ShopsTab />}
+          {activeTab === 'permissions' && <PermissionsTab />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileTab({ user, profile }: { user: any; profile: any }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-slate-800 mb-4">Thông tin cá nhân</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Họ và tên
+            </label>
+            <Input
+              defaultValue={profile?.full_name || ''}
+              placeholder="Nhập họ và tên"
+            />
           </div>
-          <div className="p-4 flex items-center justify-between">
-            <div>
-              <p className="font-medium text-slate-700">Tự động đồng bộ</p>
-              <p className="text-sm text-slate-500">Tự động đồng bộ dữ liệu từ Shopee</p>
-            </div>
-            <Switch />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Email
+            </label>
+            <Input
+              value={user?.email || ''}
+              disabled
+              className="bg-slate-50"
+            />
           </div>
-          <div className="p-4 flex items-center justify-between">
-            <div>
-              <p className="font-medium text-slate-700">Chế độ tối</p>
-              <p className="text-sm text-slate-500">Sử dụng giao diện tối</p>
-            </div>
-            <Switch />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Số điện thoại
+            </label>
+            <Input
+              defaultValue={profile?.phone || ''}
+              placeholder="Nhập số điện thoại"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Công ty
+            </label>
+            <Input
+              defaultValue={profile?.company || ''}
+              placeholder="Nhập tên công ty"
+            />
           </div>
         </div>
+      </div>
+      <div className="flex justify-end">
+        <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+          Lưu thay đổi
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ShopsTab() {
+  return <ShopManagementPanel />;
+}
+
+function PermissionsTab() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">Phân quyền Shop</h3>
+        <p className="text-sm text-slate-500">
+          Quản lý quyền truy cập và thao tác cho từng shop
+        </p>
+      </div>
+      <div className="bg-slate-50 rounded-lg p-8 text-center">
+        <Shield className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+        <p className="text-slate-500">Tính năng đang được phát triển</p>
+        <p className="text-sm text-slate-400 mt-1">
+          Bạn sẽ có thể phân quyền cho từng thành viên truy cập các shop khác nhau
+        </p>
       </div>
     </div>
   );
