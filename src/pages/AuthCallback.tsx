@@ -2,17 +2,27 @@
  * Auth Callback - Xử lý OAuth callback từ Shopee
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { handleCallback } = useShopeeAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const processedRef = useRef(false);
 
   useEffect(() => {
+    // Đợi auth load xong trước khi xử lý callback
+    if (authLoading) return;
+    
+    // Tránh xử lý nhiều lần
+    if (processedRef.current || isProcessing) return;
+
     const processCallback = async () => {
       const code = searchParams.get('code');
       const shopId = searchParams.get('shop_id');
@@ -28,17 +38,30 @@ export default function AuthCallback() {
         return;
       }
 
+      // Kiểm tra user đã đăng nhập chưa
+      if (!isAuthenticated) {
+        setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        return;
+      }
+
+      processedRef.current = true;
+      setIsProcessing(true);
+
       try {
         await handleCallback(code, shopId ? Number(shopId) : undefined);
-        // Redirect to shops settings page with timestamp to force refresh
-        window.location.href = '/settings/shops?refresh=' + Date.now();
+        // Dùng navigate với state để báo cho ShopsSettingsPage reload data
+        // Thêm ?refresh param để trigger reload trong ShopManagementPanel
+        navigate('/settings/shops?refresh=' + Date.now(), { replace: true });
       } catch (err) {
+        processedRef.current = false;
         setError(err instanceof Error ? err.message : 'Authentication failed');
+      } finally {
+        setIsProcessing(false);
       }
     };
 
     processCallback();
-  }, [searchParams, handleCallback, navigate]);
+  }, [searchParams, handleCallback, navigate, authLoading, isAuthenticated, isProcessing]);
 
   if (error) {
     return (

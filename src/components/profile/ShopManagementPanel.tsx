@@ -135,10 +135,16 @@ export function ShopManagementPanel() {
       // Clear the param from URL
       searchParams.delete('refresh');
       setSearchParams(searchParams, { replace: true });
-      // Reset loaded flag to force reload
+      // Reset loaded flag và trigger reload ngay lập tức
       hasLoadedRef.current = false;
+      fetchedExpireTimeRef.current = new Set();
+      // Trigger reload nếu đã có user
+      if (user?.id && !isAuthLoading) {
+        loadShops();
+        hasLoadedRef.current = true;
+      }
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, user?.id, isAuthLoading, loadShops]);
 
   // Reset hasLoadedRef when component mounts (fixes tab switching issue)
   useEffect(() => {
