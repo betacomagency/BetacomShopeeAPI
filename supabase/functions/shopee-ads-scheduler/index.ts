@@ -160,7 +160,7 @@ serve(async (req) => {
     switch (action) {
       // Tạo cấu hình lịch ngân sách mới (hoặc update nếu đã tồn tại)
       case 'create': {
-        const { campaign_id, campaign_name, ad_type, hour_start, hour_end, budget, days_of_week, specific_dates } = params;
+        const { campaign_id, campaign_name, ad_type, hour_start, hour_end, minute_start, minute_end, budget, days_of_week, specific_dates } = params;
 
         if (!shop_id || !campaign_id || !ad_type || hour_start === undefined || hour_end === undefined || !budget) {
           return new Response(
@@ -169,7 +169,7 @@ serve(async (req) => {
           );
         }
 
-        // Dùng upsert để tự động update nếu đã tồn tại schedule với cùng shop_id, campaign_id, hour_start, hour_end
+        // Dùng upsert để tự động update nếu đã tồn tại schedule với cùng shop_id, campaign_id, hour_start, minute_start
         const { data, error } = await supabase
           .from('apishopee_scheduled_ads_budget')
           .upsert({
@@ -179,12 +179,14 @@ serve(async (req) => {
             ad_type,
             hour_start,
             hour_end,
+            minute_start: minute_start ?? 0,
+            minute_end: minute_end ?? 0,
             budget,
             days_of_week: days_of_week || null,
             specific_dates: specific_dates || null,
             is_active: true,
           }, {
-            onConflict: 'shop_id,campaign_id,hour_start,hour_end',
+            onConflict: 'shop_id,campaign_id,hour_start,minute_start',
             ignoreDuplicates: false, // Update nếu đã tồn tại
           })
           .select()
@@ -303,17 +305,18 @@ serve(async (req) => {
         const currentMinute = vnTime.getMinutes();
         const currentDay = vnTime.getDay(); // 0 = Sunday
         const today = vnTime.toISOString().split('T')[0]; // YYYY-MM-DD
+        
+        // Tính tổng phút từ 00:00 để so sánh chính xác
+        const currentTotalMinutes = currentHour * 60 + currentMinute;
 
-        console.log(`[ads-scheduler] Processing at hour ${currentHour}:${currentMinute}, day ${currentDay}, date ${today}`);
+        console.log(`[ads-scheduler] Processing at ${currentHour}:${currentMinute.toString().padStart(2, '0')} (${currentTotalMinutes} mins), day ${currentDay}, date ${today}`);
 
-        // Lấy tất cả cấu hình active phù hợp với giờ hiện tại
-        // hour_start và hour_end được lưu dưới dạng giờ (0-23)
+        // Lấy tất cả cấu hình active
+        // Sẽ filter chính xác theo phút ở bước sau
         const { data: schedules, error: scheduleError } = await supabase
           .from('apishopee_scheduled_ads_budget')
           .select('*')
-          .eq('is_active', true)
-          .lte('hour_start', currentHour)
-          .gt('hour_end', currentHour);
+          .eq('is_active', true);
 
         if (scheduleError) {
           return new Response(
@@ -322,8 +325,33 @@ serve(async (req) => {
           );
         }
 
-        // Lọc theo ngày trong tuần hoặc ngày cụ thể
+        // Lọc theo thời gian chính xác (giờ + phút) và ngày
         const applicableSchedules = (schedules || []).filter((s: any) => {
+          // Tính tổng phút cho start và end
+          const startMinutes = s.hour_start * 60 + (s.minute_start || 0);
+          const endMinutes = s.hour_end * 60 + (s.minute_end || 0);
+          
+          // Kiểm tra thời gian hiện tại có nằm trong khoảng không
+          // Cron chạy mỗi 30 phút (phút 0 và 30), nên chỉ chạy schedule khi:
+          // - Schedule start time khớp với thời điểm cron hiện tại (cùng khung 30 phút)
+          // Ví dụ: schedule 10:30, cron 10:30 -> OK, cron 11:00 -> SKIP
+          
+          // Xác định khung 30 phút hiện tại (0-29 hoặc 30-59)
+          const currentSlotStart = currentHour * 60 + (currentMinute < 30 ? 0 : 30);
+          const currentSlotEnd = currentSlotStart + 30;
+          
+          // Schedule chỉ được chạy nếu start time nằm trong khung 30 phút hiện tại
+          const isScheduleStartInCurrentSlot = startMinutes >= currentSlotStart && startMinutes < currentSlotEnd;
+          
+          // Và thời gian hiện tại vẫn trong khoảng schedule (chưa qua end time)
+          const isBeforeEndTime = currentTotalMinutes < endMinutes;
+          
+          console.log(`[ads-scheduler] Schedule ${s.campaign_id}: start=${startMinutes}, end=${endMinutes}, slot=${currentSlotStart}-${currentSlotEnd}, inSlot=${isScheduleStartInCurrentSlot}, beforeEnd=${isBeforeEndTime}`);
+          
+          if (!isScheduleStartInCurrentSlot || !isBeforeEndTime) {
+            return false;
+          }
+          
           // Nếu có specific_dates, kiểm tra ngày hôm nay
           if (s.specific_dates && s.specific_dates.length > 0) {
             return s.specific_dates.includes(today);

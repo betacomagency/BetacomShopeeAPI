@@ -69,7 +69,7 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
   const [ratingFilter, setRatingFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Sử dụng hook useReviewsData
+  // Sử dụng hook useReviewsData với pagination
   const {
     reviews,
     loading,
@@ -77,6 +77,11 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
     syncStatus,
     refetch,
     syncReviews: doSyncReviews,
+    loadMore,
+    hasMore,
+    loadingMore,
+    totalCount,
+    stats: dbStats,
   } = useReviewsData(shopId, userId);
 
   // Wrapper để hiển thị toast
@@ -121,19 +126,23 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
     return result;
   }, [reviews, ratingFilter, statusFilter, searchTerm]);
 
+  // Rating counts từ DB (tổng toàn bộ, không chỉ 100 cái đang load)
   const ratingCounts = useMemo(() => {
-    const counts: Record<string, number> = { ALL: reviews.length };
-    reviews.forEach((r) => { counts[r.rating_star] = (counts[r.rating_star] || 0) + 1; });
+    const counts: Record<string, number> = { ALL: dbStats.totalCount };
+    Object.entries(dbStats.ratingCounts).forEach(([rating, count]) => {
+      counts[rating] = count;
+    });
     return counts;
-  }, [reviews]);
+  }, [dbStats]);
 
+  // Stats từ DB (tổng toàn bộ)
   const stats = useMemo(() => {
-    if (reviews.length === 0) return { avg: '0', total: 0, replied: 0 };
-    const total = reviews.length;
-    const sum = reviews.reduce((acc, r) => acc + r.rating_star, 0);
-    const replied = reviews.filter((r) => r.reply_text).length;
-    return { avg: (sum / total).toFixed(1), total, replied };
-  }, [reviews]);
+    return {
+      avg: dbStats.avgRating.toFixed(1),
+      total: dbStats.totalCount,
+      replied: dbStats.repliedCount,
+    };
+  }, [dbStats]);
 
 
   return (
@@ -303,10 +312,34 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
           ))}
         </div>
 
+        {/* Load More Button */}
+        {hasMore && reviews.length > 0 && (
+          <div className="flex justify-center py-4 border-t bg-slate-50">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="min-w-[200px]"
+            >
+              {loadingMore ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Đang tải...
+                </>
+              ) : (
+                <>
+                  Tải thêm đánh giá ({reviews.length} / {totalCount})
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
         {/* Footer */}
         {reviews.length > 0 && (
           <div className="px-4 py-3 border-t bg-slate-50 text-sm text-slate-500">
-            Hiển thị {filteredReviews.length} / {reviews.length} đánh giá
+            Hiển thị {filteredReviews.length} / {totalCount > 0 ? totalCount : reviews.length} đánh giá
           </div>
         )}
       </CardContent>

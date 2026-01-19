@@ -7,26 +7,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import {
-  Home,
-  Settings,
-  ChevronLeft,
-  ChevronDown,
-  LogOut,
-  User,
-  Users,
-  Store,
-  Zap,
-  Package,
-  Globe,
-  ShoppingCart,
-  Star,
-  Megaphone,
-  Clock,
-} from 'lucide-react';
-
-// Admin email - chỉ tài khoản này mới thấy tab Quản lý Shop
-const ADMIN_EMAIL = 'betacom.work@gmail.com';
+import { ChevronLeft, ChevronDown, LogOut } from 'lucide-react';
+import { menuItems, ADMIN_EMAIL, type MenuItem } from '@/config/menu-config';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -35,82 +17,11 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-interface MenuItem {
-  title: string;
-  icon: typeof Home;
-  path?: string;
-  permissionKey?: string; // Key để check permission
-  adminOnly?: boolean;
-  children?: { title: string; icon: typeof User; path: string; permissionKey?: string; adminOnly?: boolean }[];
-}
-
-
-
-const menuItems: MenuItem[] = [
-  {
-    title: 'Trang chủ',
-    icon: Home,
-    path: '/',
-    permissionKey: 'home',
-  },
-  {
-    title: 'Đơn hàng',
-    icon: ShoppingCart,
-    path: '/orders',
-    permissionKey: 'orders',
-  },
-  {
-    title: 'Sản phẩm',
-    icon: Package,
-    path: '/products',
-    permissionKey: 'products',
-  },
-  {
-    title: 'Đánh giá',
-    icon: Star,
-    permissionKey: 'reviews',
-    children: [
-      { title: 'Quản lý đánh giá', icon: Star, path: '/reviews', permissionKey: 'reviews' },
-      { title: 'Đánh giá tự động', icon: Zap, path: '/reviews/auto-reply', permissionKey: 'reviews' },
-    ],
-  },
-  {
-    title: 'Flash Sale',
-    icon: Zap,
-    permissionKey: 'flash-sale',
-    children: [
-      { title: 'Danh sách', icon: Zap, path: '/flash-sale', permissionKey: 'flash-sale' },
-      { title: 'Lịch sử', icon: Clock, path: '/flash-sale/auto-setup', permissionKey: 'flash-sale' },
-    ],
-  },
-  {
-    title: 'Quảng cáo',
-    icon: Megaphone,
-    permissionKey: 'ads',
-    children: [
-      { title: 'Quản lý quảng cáo', icon: Megaphone, path: '/ads', permissionKey: 'ads' },
-      { title: 'Lịch sử', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
-    ],
-  },
-  {
-    title: 'Cài đặt',
-    icon: Settings,
-    children: [
-      { title: 'Thông tin cá nhân', icon: User, path: '/settings/profile', permissionKey: 'settings/profile' },
-      { title: 'Quản lý Shop', icon: Store, path: '/settings/shops', permissionKey: 'settings/shops', adminOnly: true },
-      { title: 'Quản lý người dùng', icon: Users, path: '/settings/users', permissionKey: 'settings/users', adminOnly: true },
-      { title: 'API Response', icon: Globe, path: '/settings/api-response', permissionKey: 'settings/api-response', adminOnly: true },
-    ],
-  },
-];
-
 export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const location = useLocation();
   const { user, profile, signOut } = useAuth();
-  // Mặc định mở tất cả các dropdown menu có children
-  const [expandedMenus, setExpandedMenus] = useState<string[]>(() => 
-    menuItems.filter(item => item.children).map(item => item.title)
-  );
+  // Mặc định đóng tất cả dropdown - chỉ lưu 1 menu đang mở
+  const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
   const handleLeafClick = () => {
@@ -185,9 +96,8 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
     .filter(item => !item.children || item.children.length > 0);
 
   const toggleMenu = (title: string) => {
-    setExpandedMenus((prev) =>
-      prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title]
-    );
+    // Nếu menu đang mở thì đóng, nếu đang đóng thì mở (và đóng menu khác)
+    setExpandedMenu((prev) => (prev === title ? null : title));
   };
 
   const isMenuActive = (item: MenuItem) => {
@@ -226,7 +136,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
         {filteredMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = isMenuActive(item);
-          const isExpanded = expandedMenus.includes(item.title);
+          const isExpanded = expandedMenu === item.title;
           const hasChildren = item.children && item.children.length > 0;
 
           if (hasChildren) {
@@ -235,17 +145,17 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
                 <button
                   onClick={() => !collapsed && toggleMenu(item.title)}
                   className={cn(
-                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 overflow-hidden',
-                    isActive && !isExpanded
-                      ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md'
+                    'w-full flex items-center rounded-lg transition-all duration-200 overflow-hidden',
+                    isActive
+                      ? 'text-red-600 hover:bg-red-50'
                       : 'text-slate-600 hover:bg-slate-100',
-                    collapsed ? 'justify-center' : ''
+                    collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
                   )}
                 >
-                  <Icon className={cn('w-5 h-5 flex-shrink-0', isActive && !isExpanded ? 'text-white' : 'text-slate-500')} />
+                  <Icon className={cn('w-5 h-5 flex-shrink-0', isActive ? 'text-red-600' : 'text-slate-500')} />
                   <span className={cn(
-                    'font-medium text-sm flex-1 text-left whitespace-nowrap transition-all duration-300',
-                    isActive && !isExpanded ? 'text-white' : 'text-slate-700',
+                    'font-semibold text-sm flex-1 text-left whitespace-nowrap transition-all duration-300',
+                    isActive ? 'text-red-600' : 'text-slate-700',
                     collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
                   )}>
                     {item.title}
@@ -254,35 +164,42 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
                     className={cn(
                       'w-4 h-4 transition-all duration-300 flex-shrink-0',
                       isExpanded ? 'rotate-180' : '',
-                      isActive && !isExpanded ? 'text-white' : 'text-slate-400',
+                      isActive ? 'text-red-500' : 'text-slate-400',
                       collapsed ? 'w-0 opacity-0' : 'opacity-100'
                     )}
                   />
                 </button>
-                {!collapsed && isExpanded && (
-                  <div className="mt-1 ml-4 pl-4 border-l border-slate-200 space-y-1">
-                    {item.children!.map((child) => {
-                      const ChildIcon = child.icon;
-                      const isChildActive = location.pathname === child.path;
-                      return (
-                        <NavLink
-                          key={child.path}
-                          to={child.path}
-                          className={cn(
-                            'flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200',
-                            isChildActive
-                              ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md'
-                              : 'text-slate-600 hover:bg-slate-100'
-                          )}
-                          onClick={handleLeafClick}
-                        >
-                          <ChildIcon className={cn('w-4 h-4', isChildActive ? 'text-white' : 'text-slate-500')} />
-                          <span className={cn('font-medium text-sm', isChildActive ? 'text-white' : 'text-slate-700')}>
-                            {child.title}
-                          </span>
-                        </NavLink>
-                      );
-                    })}
+                {!collapsed && (
+                  <div
+                    className={cn(
+                      'overflow-hidden transition-all duration-300 ease-in-out',
+                      isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+                    )}
+                  >
+                    <div className="mt-1 ml-4 pl-4 border-l border-slate-200 space-y-1">
+                      {item.children!.map((child) => {
+                        const ChildIcon = child.icon;
+                        const isChildActive = location.pathname === child.path;
+                        return (
+                          <NavLink
+                            key={child.path}
+                            to={child.path}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200',
+                              isChildActive
+                                ? 'text-red-500 hover:bg-red-50'
+                                : 'text-slate-600 hover:bg-slate-100'
+                            )}
+                            onClick={handleLeafClick}
+                          >
+                            <ChildIcon className={cn('w-4 h-4', isChildActive ? 'text-red-500' : 'text-slate-500')} />
+                            <span className={cn('font-medium text-sm', isChildActive ? 'text-red-500' : 'text-slate-700')}>
+                              {child.title}
+                            </span>
+                          </NavLink>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -294,18 +211,18 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
               key={item.path}
               to={item.path!}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 overflow-hidden',
+                'flex items-center rounded-lg transition-all duration-200 overflow-hidden',
                 isActive
-                  ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md'
+                  ? 'text-red-600 hover:bg-red-50'
                   : 'text-slate-600 hover:bg-slate-100',
-                collapsed ? 'justify-center' : ''
+                collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
               )}
               onClick={handleLeafClick}
             >
-              <Icon className={cn('w-5 h-5 flex-shrink-0', isActive ? 'text-white' : 'text-slate-500')} />
+              <Icon className={cn('w-5 h-5 flex-shrink-0', isActive ? 'text-red-600' : 'text-slate-500')} />
               <span className={cn(
-                'font-medium text-sm whitespace-nowrap transition-all duration-300',
-                isActive ? 'text-white' : 'text-slate-700',
+                'font-semibold text-sm whitespace-nowrap transition-all duration-300',
+                isActive ? 'text-red-600' : 'text-slate-700',
                 collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
               )}>
                 {item.title}
@@ -341,7 +258,10 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
       {/* User Info & Logout */}
       <div className="border-t border-slate-200 p-3 overflow-hidden">
         <div className="space-y-3">
-          <div className="flex items-center gap-3 px-2">
+          <div className={cn(
+            'flex items-center',
+            collapsed ? 'justify-center px-0' : 'gap-3 px-2'
+          )}>
             <div className="w-9 h-9 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
               {profile?.full_name?.[0]?.toUpperCase() ||
                 user?.email?.[0]?.toUpperCase() ||

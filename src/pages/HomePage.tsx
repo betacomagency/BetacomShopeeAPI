@@ -104,21 +104,28 @@ export default function HomePage() {
 
         setShops(shopList);
 
-        const now = Math.floor(Date.now() / 1000);
-        const sevenDaysLater = now + 7 * 24 * 60 * 60;
+        const now = Date.now(); // milliseconds
+        const sevenDaysLater = now + 7 * 24 * 60 * 60 * 1000;
+
+        // Helper: chuẩn hóa timestamp về milliseconds
+        const normalizeTimestamp = (ts: number | null): number | null => {
+          if (!ts) return null;
+          // Nếu timestamp < 10^12 thì đang là seconds, cần nhân 1000
+          return ts < 1e12 ? ts * 1000 : ts;
+        };
 
         const activeShops = shopList.filter(s => {
-          const expiry = s.access_token_expired_at || s.expired_at;
+          const expiry = normalizeTimestamp(s.access_token_expired_at) || normalizeTimestamp(s.expired_at);
           return expiry && expiry > now;
         });
 
         const expiringSoon = shopList.filter(s => {
-          const expiry = s.access_token_expired_at || s.expired_at;
+          const expiry = normalizeTimestamp(s.access_token_expired_at) || normalizeTimestamp(s.expired_at);
           return expiry && expiry > now && expiry < sevenDaysLater;
         });
 
         const expiredShops = shopList.filter(s => {
-          const expiry = s.access_token_expired_at || s.expired_at;
+          const expiry = normalizeTimestamp(s.access_token_expired_at) || normalizeTimestamp(s.expired_at);
           return !expiry || expiry <= now;
         });
 
@@ -140,16 +147,29 @@ export default function HomePage() {
     }
   };
 
+  // Helper: chuẩn hóa timestamp về milliseconds
+  const normalizeTimestamp = (ts: number | null): number | null => {
+    if (!ts) return null;
+    // Nếu timestamp < 10^12 thì đang là seconds, cần nhân 1000
+    return ts < 1e12 ? ts * 1000 : ts;
+  };
+
   const getTokenStatus = (shop: ShopInfo) => {
-    const now = Math.floor(Date.now() / 1000);
-    const expiry = shop.access_token_expired_at || shop.expired_at;
+    const now = Date.now(); // milliseconds
+    const rawExpiry = shop.access_token_expired_at || shop.expired_at;
+    const expiry = normalizeTimestamp(rawExpiry);
 
     if (!expiry) return { status: 'unknown', label: 'Chưa xác thực', color: 'bg-slate-100 text-slate-600' };
 
-    const daysLeft = Math.floor((expiry - now) / (24 * 60 * 60));
+    const diffMs = expiry - now;
+    const hoursLeft = Math.floor(diffMs / (60 * 60 * 1000));
+    const daysLeft = Math.floor(diffMs / (24 * 60 * 60 * 1000));
 
-    if (expiry < now) {
+    if (diffMs <= 0) {
       return { status: 'expired', label: 'Hết hạn', color: 'bg-red-100 text-red-700' };
+    } else if (daysLeft < 1) {
+      // Còn ít hơn 1 ngày - hiển thị số giờ
+      return { status: 'critical', label: `${hoursLeft} giờ`, color: 'bg-red-100 text-red-700' };
     } else if (daysLeft <= 3) {
       return { status: 'critical', label: `${daysLeft} ngày`, color: 'bg-red-100 text-red-700' };
     } else if (daysLeft <= 7) {

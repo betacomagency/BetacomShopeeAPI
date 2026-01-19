@@ -26,8 +26,12 @@ import {
 } from '@/components/ui/dialog';
 import { SimpleDataTable, CellText, CellBadge, CellActions } from '@/components/ui/data-table';
 import { toast } from 'sonner';
-import { Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2, Store, Home, ShoppingCart, Package, Zap, Settings, Globe, Users as UsersIcon, Check, Star } from 'lucide-react';
+import { Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2, Store, Settings, Check } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { getFeaturePermissions, getAllAssignablePermissionKeys } from '@/config/menu-config';
+
+// Lấy danh sách permissions từ menu config (tự động đồng bộ với sidebar)
+const FEATURE_PERMISSIONS = getFeaturePermissions();
 
 interface ShopInfo {
   id: string;
@@ -47,19 +51,6 @@ interface UserProfile {
   shops?: ShopInfo[];
   permissions?: string[];
 }
-
-// Danh sách các chức năng có thể phân quyền (tương ứng với sidebar)
-const FEATURE_PERMISSIONS = [
-  { key: 'home', label: 'Trang chủ', icon: Home, description: 'Xem tổng quan hệ thống' },
-  { key: 'orders', label: 'Đơn hàng', icon: ShoppingCart, description: 'Quản lý đơn hàng' },
-  { key: 'products', label: 'Sản phẩm', icon: Package, description: 'Quản lý sản phẩm' },
-  { key: 'reviews', label: 'Đánh giá', icon: Star, description: 'Quản lý đánh giá' },
-  { key: 'flash-sale', label: 'Flash Sale', icon: Zap, description: 'Quản lý Flash Sale' },
-  { key: 'settings/profile', label: 'Thông tin cá nhân', icon: User, description: 'Cập nhật thông tin cá nhân', group: 'Cài đặt' },
-  { key: 'settings/shops', label: 'Quản lý Shop', icon: Store, description: 'Quản lý các shop Shopee', group: 'Cài đặt', adminOnly: true },
-  { key: 'settings/users', label: 'Quản lý người dùng', icon: UsersIcon, description: 'Quản lý tài khoản người dùng', group: 'Cài đặt', adminOnly: true },
-  { key: 'settings/api-response', label: 'API Response', icon: Globe, description: 'Xem API Response', group: 'Cài đặt', adminOnly: true },
-];
 
 const SYSTEM_ROLES = [
   { value: 'admin', label: 'Quản trị viên', description: 'Toàn quyền quản lý hệ thống' },
@@ -281,7 +272,7 @@ export default function UsersSettingsPage() {
 
   // Chọn tất cả / Bỏ chọn tất cả
   const toggleAllPermissions = () => {
-    const availablePermissions = FEATURE_PERMISSIONS.filter(f => !f.adminOnly).map(f => f.key);
+    const availablePermissions = getAllAssignablePermissionKeys();
     if (selectedPermissions.length === availablePermissions.length) {
       setSelectedPermissions([]);
     } else {
@@ -611,7 +602,7 @@ export default function UsersSettingsPage() {
             <div className="flex items-center justify-between mb-4 pb-3 border-b">
               <span className="text-sm font-medium text-slate-700">Chọn tất cả</span>
               <Checkbox
-                checked={selectedPermissions.length === FEATURE_PERMISSIONS.filter(f => !f.adminOnly).length}
+                checked={selectedPermissions.length === getAllAssignablePermissionKeys().length}
                 onCheckedChange={toggleAllPermissions}
               />
             </div>
@@ -674,7 +665,7 @@ export default function UsersSettingsPage() {
             {/* Info */}
             <div className="mt-4 p-3 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-700">
-                <strong>Lưu ý:</strong> Các chức năng quản trị (Quản lý Shop, Quản lý người dùng, API Response) chỉ dành cho tài khoản Admin.
+                <strong>Lưu ý:</strong> Các chức năng quản trị (Quản lý Shop, Quản lý người dùng) chỉ dành cho tài khoản Admin.
               </p>
             </div>
           </div>

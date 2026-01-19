@@ -234,6 +234,14 @@ export interface ReviewSyncStatus {
   total_synced: number;
 }
 
+/** Stats for all reviews in database (not just loaded ones) */
+export interface ReviewStats {
+  totalCount: number;
+  repliedCount: number;
+  avgRating: number;
+  ratingCounts: Record<number, number>;
+}
+
 export interface UseReviewsDataReturn {
   reviews: Review[];
   loading: boolean;
@@ -244,52 +252,144 @@ export interface UseReviewsDataReturn {
   syncReviews: (forceInitial?: boolean) => Promise<{ success: boolean; message: string }>;
   dataUpdatedAt: number | undefined;
   isFetching: boolean;
+  /** Load more reviews */
+  loadMore: () => Promise<void>;
+  /** Whether more reviews can be loaded */
+  hasMore: boolean;
+  /** Whether load more is in progress */
+  loadingMore: boolean;
+  /** Total count of reviews in database */
+  totalCount: number;
+  /** Stats for all reviews in database */
+  stats: ReviewStats;
 }
 
+// Pagination constants
+const INITIAL_LIMIT = 100;
+const LOAD_MORE_LIMIT = 50;
+
+// Select columns for reviews query (reusable)
+const REVIEW_SELECT_COLUMNS = `
+  id,
+  shop_id,
+  comment_id,
+  order_sn,
+  item_id,
+  model_id,
+  buyer_username,
+  rating_star,
+  comment,
+  create_time,
+  reply_text,
+  reply_time,
+  images,
+  videos,
+  item_name,
+  item_image,
+  editable,
+  synced_at
+`;
+
 /**
- * Specialized hook for Reviews data
+ * Specialized hook for Reviews data with pagination
  * - Realtime subscription for instant UI updates when DB changes
  * - Cron job handles sync from Shopee API
  * - Enriches reviews with product info
+ * - Pagination: loads 100 initially, then 50 more on demand
  */
+const DEFAULT_STATS: ReviewStats = {
+  totalCount: 0,
+  repliedCount: 0,
+  avgRating: 0,
+  ratingCounts: {},
+};
+
 export function useReviewsData(shopId: number, userId: string): UseReviewsDataReturn {
   const queryClient = useQueryClient();
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<ReviewSyncStatus | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [stats, setStats] = useState<ReviewStats>(DEFAULT_STATS);
+  const [productMap, setProductMap] = useState<Map<number, { item_name: string; image_url_list: string[] }>>(new Map());
 
   // Query key for reviews
   const queryKey = ['reviews', shopId, userId];
 
-  // Fetch reviews with product enrichment
+  // Fetch stats for all reviews (total, replied, rating counts, avg)
+  const fetchStats = useCallback(async (): Promise<ReviewStats> => {
+    if (!shopId) return DEFAULT_STATS;
+    
+    // Fetch rating_star and reply_text for all reviews (lightweight query)
+    const { data, error } = await supabase
+      .from('apishopee_reviews')
+      .select('rating_star, reply_text')
+      .eq('shop_id', shopId);
+    
+    if (error || !data || data.length === 0) {
+      console.error('[useReviewsData] Error fetching stats:', error);
+      return DEFAULT_STATS;
+    }
+
+    const totalCount = data.length;
+    const repliedCount = data.filter(r => r.reply_text).length;
+    const sumRating = data.reduce((acc, r) => acc + r.rating_star, 0);
+    const avgRating = totalCount > 0 ? sumRating / totalCount : 0;
+    
+    const ratingCounts: Record<number, number> = {};
+    data.forEach(r => {
+      ratingCounts[r.rating_star] = (ratingCounts[r.rating_star] || 0) + 1;
+    });
+
+    return { totalCount, repliedCount, avgRating, ratingCounts };
+  }, [shopId]);
+
+  // Fetch products for enrichment (cached separately)
+  const fetchProducts = useCallback(async () => {
+    if (!shopId) return new Map();
+    const { data } = await supabase
+      .from('apishopee_products')
+      .select('item_id, item_name, image_url_list')
+      .eq('shop_id', shopId);
+    return new Map(data?.map(p => [p.item_id, p]) || []);
+  }, [shopId]);
+
+  // Enrich reviews with product info
+  const enrichReviews = useCallback((reviews: Review[], products: Map<number, { item_name: string; image_url_list: string[] }>): Review[] => {
+    return reviews.map(r => ({
+      ...r,
+      reply_hidden: false,
+      item_name: products.get(r.item_id)?.item_name || r.item_name,
+      item_image: products.get(r.item_id)?.image_url_list?.[0] || r.item_image,
+    }));
+  }, []);
+
+  // Fetch reviews with pagination - initial load
   const fetchReviews = async (): Promise<Review[]> => {
     if (!shopId || !userId) return [];
 
-    // Fetch reviews
-    const { data: reviewsData, error: reviewsError } = await supabase
-      .from('apishopee_reviews')
-      .select('*')
-      .eq('shop_id', shopId)
-      .order('create_time', { ascending: false });
+    // Fetch reviews, products, and stats in parallel
+    const [reviewsResult, products, reviewStats] = await Promise.all([
+      supabase
+        .from('apishopee_reviews')
+        .select(REVIEW_SELECT_COLUMNS)
+        .eq('shop_id', shopId)
+        .order('create_time', { ascending: false })
+        .limit(INITIAL_LIMIT),
+      fetchProducts(),
+      fetchStats()
+    ]);
 
-    if (reviewsError) throw new Error(reviewsError.message);
-    if (!reviewsData || reviewsData.length === 0) return [];
+    if (reviewsResult.error) throw new Error(reviewsResult.error.message);
+    
+    // Cache products and stats
+    setProductMap(products);
+    setStats(reviewStats);
+    setTotalCount(reviewStats.totalCount);
 
-    // Fetch product info
-    const itemIds = [...new Set(reviewsData.map(r => r.item_id))];
-    const { data: productsData } = await supabase
-      .from('apishopee_products')
-      .select('item_id, item_name, image_url_list')
-      .eq('shop_id', shopId)
-      .in('item_id', itemIds);
+    if (!reviewsResult.data || reviewsResult.data.length === 0) return [];
 
-    const productMap = new Map(productsData?.map(p => [p.item_id, p]) || []);
-
-    // Enrich reviews
-    return reviewsData.map(r => ({
-      ...r,
-      item_name: productMap.get(r.item_id)?.item_name || r.item_name,
-      item_image: productMap.get(r.item_id)?.image_url_list?.[0] || r.item_image,
-    }));
+    return enrichReviews(reviewsResult.data as Review[], products);
   };
 
   // Fetch sync status
@@ -399,8 +499,42 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
   }, [shopId, userId, queryClient, queryKey]);
 
   const refetch = async () => {
+    // Refetch stats and reviews
+    const reviewStats = await fetchStats();
+    setStats(reviewStats);
+    setTotalCount(reviewStats.totalCount);
     await queryRefetch();
   };
+
+  // Load more reviews (append to existing data)
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !data || data.length >= totalCount) return;
+
+    setLoadingMore(true);
+    try {
+      const offset = data.length;
+      const { data: moreReviews, error: moreError } = await supabase
+        .from('apishopee_reviews')
+        .select(REVIEW_SELECT_COLUMNS)
+        .eq('shop_id', shopId)
+        .order('create_time', { ascending: false })
+        .range(offset, offset + LOAD_MORE_LIMIT - 1);
+
+      if (moreError) throw moreError;
+      if (!moreReviews || moreReviews.length === 0) return;
+
+      // Enrich and append to cache
+      const enrichedMore = enrichReviews(moreReviews as Review[], productMap);
+      queryClient.setQueryData(queryKey, [...data, ...enrichedMore]);
+    } catch (err) {
+      console.error('[useReviewsData] Error loading more:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, data, totalCount, shopId, productMap, enrichReviews, queryClient, queryKey]);
+
+  // Calculate hasMore
+  const hasMore = (data?.length || 0) < totalCount;
 
   return {
     reviews: data || [],
@@ -412,5 +546,10 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
     syncReviews,
     dataUpdatedAt,
     isFetching,
+    loadMore,
+    hasMore,
+    loadingMore,
+    totalCount,
+    stats,
   };
 }

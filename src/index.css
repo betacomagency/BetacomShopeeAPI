@@ -117,10 +117,29 @@
   border-color: hsl(var(--border));
 }
 
+/* Đồng nhất font cho toàn bộ hệ thống */
+html {
+  font-family: var(--font-sans);
+}
+
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: var(--font-sans);
+  font-family: inherit;
+}
+
+/* Đảm bảo font được áp dụng cho tất cả elements */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+}
+
+/* Pre và code dùng font monospace */
+pre,
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 /* Custom scrollbar */

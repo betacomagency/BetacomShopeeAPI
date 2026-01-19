@@ -33,7 +33,6 @@ import ReviewsPage from '@/pages/ReviewsPage';
 import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
 import AdsPage from '@/pages/AdsPage';
 import AdsHistoryPage from '@/pages/AdsHistoryPage';
-import ApiResponsePage from '@/pages/ApiResponsePage';
 
 function App() {
   const [queryClient] = useState(
@@ -83,7 +82,6 @@ function App() {
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />
                   <Route path="/settings/shops" element={<ShopsSettingsPage />} />
                   <Route path="/settings/users" element={<UsersSettingsPage />} />
-                  <Route path="/settings/api-response" element={<ApiResponsePage />} />
                 </Route>
 
                 {/* 404 */}

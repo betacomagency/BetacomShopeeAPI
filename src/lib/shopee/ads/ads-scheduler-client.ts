@@ -137,6 +137,23 @@ export async function runScheduleNow(shopId: number, scheduleId: string) {
   return data;
 }
 
+/**
+ * Tạm dừng hoặc bật lại một schedule
+ */
+export async function toggleSchedulePause(shopId: number, scheduleId: string, isPaused: boolean) {
+  const { data, error } = await supabase.functions.invoke('shopee-ads-scheduler', {
+    body: { 
+      action: 'update', 
+      shop_id: shopId, 
+      schedule_id: scheduleId, 
+      is_active: !isPaused 
+    },
+  });
+
+  if (error) return { success: false, error: error.message };
+  return data;
+}
+
 // ==================== HELPER FUNCTIONS ====================
 
 /**

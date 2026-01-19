@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCw, Clock, History, Trash2, Search } from 'lucide-react';
+import { RefreshCw, Clock, History, Trash2, Search, Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useShopeeAuth } from '@/contexts/ShopeeAuthContext';
-import { deleteBudgetSchedule, type ScheduledAdsBudget, type AdsBudgetLog } from '@/lib/shopee/ads';
+import { deleteBudgetSchedule, toggleSchedulePause, type ScheduledAdsBudget, type AdsBudgetLog } from '@/lib/shopee/ads';
 import { cn } from '@/lib/utils';
 
 const AD_TYPE_MAP: Record<string, { label: string; color: string }> = {
@@ -42,6 +42,7 @@ export default function AdsHistoryPage() {
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [scheduleFilter, setScheduleFilter] = useState('');
   const [logFilter, setLogFilter] = useState('');
+  const [togglingScheduleId, setTogglingScheduleId] = useState<string | null>(null);
 
   // Filtered data
   const filteredSchedules = useMemo(() => {
@@ -95,7 +96,7 @@ export default function AdsHistoryPage() {
           .from('apishopee_scheduled_ads_budget')
           .select('*')
           .eq('shop_id', shopId)
-          .eq('is_active', true)
+          .order('is_active', { ascending: false }) // Active schedules first
           .order('created_at', { ascending: false }),
         supabase
           .from('apishopee_ads_budget_logs')
@@ -111,6 +112,24 @@ export default function AdsHistoryPage() {
       toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTogglePause = async (schedule: ScheduledAdsBudget) => {
+    if (!shopId) return;
+    setTogglingScheduleId(schedule.id);
+    try {
+      const result = await toggleSchedulePause(shopId, schedule.id, schedule.is_active);
+      if (!result.success) throw new Error(result.error);
+      toast({ 
+        title: schedule.is_active ? 'Đã tạm dừng lịch' : 'Đã bật lại lịch',
+        description: schedule.campaign_name || `Campaign ${schedule.campaign_id}`
+      });
+      loadData();
+    } catch (e) {
+      toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
+    } finally {
+      setTogglingScheduleId(null);
     }
   };
 
@@ -177,48 +196,89 @@ export default function AdsHistoryPage() {
               </div>
             ) : (
               <div className="bg-white rounded-lg border overflow-hidden">
-                <div className="grid grid-cols-[1fr_80px_80px_80px_40px] gap-2 px-3 py-2 bg-gray-50 border-b text-xs font-medium text-gray-500 uppercase">
+                <div className="grid grid-cols-[1fr_80px_80px_80px_70px] gap-2 px-3 py-2 bg-gray-50 border-b text-xs font-medium text-gray-500 uppercase">
                   <div>Chiến dịch</div>
                   <div className="text-center">Khung giờ</div>
                   <div className="text-center">Ngày</div>
                   <div className="text-right">Ngân sách</div>
-                  <div></div>
+                  <div className="text-center">Hành động</div>
                 </div>
                 <div className="divide-y">
-                  {filteredSchedules.map(s => (
-                    <div key={s.id} className="grid grid-cols-[1fr_80px_80px_80px_40px] gap-2 px-3 py-2 items-center hover:bg-gray-50">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{s.campaign_name || 'Campaign ' + s.campaign_id}</p>
-                        <p className="text-xs text-gray-400">ID: {s.campaign_id}</p>
+                  {filteredSchedules.map(s => {
+                    const isPaused = !s.is_active;
+                    const isToggling = togglingScheduleId === s.id;
+                    
+                    return (
+                      <div 
+                        key={s.id} 
+                        className={cn(
+                          "grid grid-cols-[1fr_80px_80px_80px_70px] gap-2 px-3 py-2 items-center hover:bg-gray-50",
+                          isPaused && "bg-gray-50 opacity-60"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className={cn("text-sm font-medium truncate", isPaused && "text-gray-500")}>
+                              {s.campaign_name || 'Campaign ' + s.campaign_id}
+                            </p>
+                            {isPaused && (
+                              <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-medium flex-shrink-0">
+                                Đã dừng
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400">ID: {s.campaign_id}</p>
+                        </div>
+                        <div className={cn("text-sm text-center font-medium", isPaused ? "text-gray-400" : "text-blue-600")}>
+                          {formatTimeSlot(s.hour_start, s.minute_start)}
+                        </div>
+                        <div className="text-xs text-center text-gray-600">
+                          {s.days_of_week && s.days_of_week.length === 7
+                            ? <span className={cn("px-1.5 py-0.5 rounded text-[10px]", isPaused ? "bg-gray-100 text-gray-500" : "bg-green-100 text-green-700")}>Hàng ngày</span>
+                            : s.specific_dates && s.specific_dates.length > 0
+                            ? <span className={cn("px-1.5 py-0.5 rounded text-[10px]", isPaused ? "bg-gray-100 text-gray-500" : "bg-blue-100 text-blue-700")} title={s.specific_dates.join(', ')}>
+                                {s.specific_dates.length} ngày
+                              </span>
+                            : '-'}
+                        </div>
+                        <div className={cn("text-sm text-right font-medium", isPaused ? "text-gray-400" : "text-orange-600")}>
+                          {formatPrice(s.budget)}
+                        </div>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              "h-6 w-6",
+                              isPaused 
+                                ? "text-green-500 hover:text-green-600 hover:bg-green-50" 
+                                : "text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50"
+                            )}
+                            onClick={() => handleTogglePause(s)}
+                            disabled={isToggling}
+                            title={isPaused ? "Bật lại lịch" : "Tạm dừng lịch"}
+                          >
+                            {isToggling ? (
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            ) : isPaused ? (
+                              <Play className="h-3.5 w-3.5" />
+                            ) : (
+                              <Pause className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => setDeleteScheduleId(s.id)}
+                            title="Xóa lịch"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="text-sm text-center font-medium text-blue-600">
-                        {formatTimeSlot(s.hour_start, s.minute_start)}
-                      </div>
-                      <div className="text-xs text-center text-gray-600">
-                        {s.days_of_week && s.days_of_week.length === 7
-                          ? <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">Hàng ngày</span>
-                          : s.specific_dates && s.specific_dates.length > 0
-                          ? <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]" title={s.specific_dates.join(', ')}>
-                              {s.specific_dates.length} ngày
-                            </span>
-                          : '-'}
-                      </div>
-                      <div className="text-sm text-right font-medium text-orange-600">
-                        {formatPrice(s.budget)}
-                      </div>
-                      <div className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-50"
-                          onClick={() => setDeleteScheduleId(s.id)}
-                          title="Xóa lịch"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -357,9 +417,50 @@ export default function AdsHistoryPage() {
       <AlertDialog open={!!deleteScheduleId} onOpenChange={() => setDeleteScheduleId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
-            <AlertDialogDescription>
-              Bạn có chắc muốn xóa lịch ngân sách này? Hành động này không thể hoàn tác.
+            <AlertDialogTitle>Xác nhận xóa lịch tự động</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>Bạn có chắc chắn muốn xóa lịch tự động này không?</p>
+                {deleteScheduleId && (() => {
+                  const schedule = schedules.find(s => s.id === deleteScheduleId);
+                  if (!schedule) return null;
+                  return (
+                    <div className="bg-gray-50 rounded-lg p-3 border text-sm">
+                      <div className="font-medium text-gray-900 mb-2">
+                        {schedule.campaign_name || `Campaign ${schedule.campaign_id}`}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-gray-600">
+                        <div>
+                          <span className="text-gray-400">Khung giờ:</span>{' '}
+                          <span className="font-medium text-blue-600">{formatTimeSlot(schedule.hour_start, schedule.minute_start)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Ngân sách:</span>{' '}
+                          <span className="font-medium text-orange-600">{formatPrice(schedule.budget)}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-gray-400">Ngày áp dụng:</span>{' '}
+                          <span className="font-medium text-green-600">
+                            {schedule.days_of_week && schedule.days_of_week.length === 7
+                              ? 'Hàng ngày'
+                              : schedule.days_of_week && schedule.days_of_week.length > 0
+                              ? schedule.days_of_week.map(d => ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d]).join(', ')
+                              : schedule.specific_dates && schedule.specific_dates.length > 0
+                              ? schedule.specific_dates.map(d => {
+                                  const [, month, day] = d.split('-');
+                                  return `${day}/${month}`;
+                                }).join(', ')
+                              : 'Không xác định'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <p className="text-red-600 text-sm font-medium">
+                  ⚠️ Hành động này không thể hoàn tác.
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -369,7 +470,7 @@ export default function AdsHistoryPage() {
               disabled={isDeleting}
               className="bg-red-500 hover:bg-red-600"
             >
-              {isDeleting ? 'Đang xóa...' : 'Xóa'}
+              {isDeleting ? 'Đang xóa...' : 'Xóa lịch'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

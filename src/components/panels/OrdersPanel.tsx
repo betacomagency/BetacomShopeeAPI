@@ -3,11 +3,18 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { RefreshCw, Search, ShoppingCart, Package, Copy, Check } from 'lucide-react';
+import { RefreshCw, Search, ShoppingCart, Package, Copy, Check, FileJson } from 'lucide-react';
 import { ImageWithZoom } from '@/components/ui/image-with-zoom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -83,6 +90,11 @@ export function OrdersPanel({ shopId }: OrdersPanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   
+  // API Response state
+  const [showApiResponse, setShowApiResponse] = useState(false);
+  const [apiResponses, setApiResponses] = useState<Record<string, any>>({});
+  const [loadingResponse, setLoadingResponse] = useState(false);
+  
   // Ref để track mounted state
   const isMountedRef = useRef(true);
 
@@ -156,6 +168,56 @@ export function OrdersPanel({ shopId }: OrdersPanelProps) {
     };
   }, [shopId]); // Chỉ depend vào shopId, không depend vào fetchOrders
 
+  // Fetch all API responses để hiển thị
+  const fetchAllApiResponses = async () => {
+    setLoadingResponse(true);
+    const responses: Record<string, any> = {};
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const timeFrom = now - (7 * 24 * 60 * 60);
+
+      const params: Record<string, string> = {
+        time_range_field: 'create_time',
+        time_from: timeFrom.toString(),
+        time_to: now.toString(),
+        page_size: '20', // Giới hạn để response nhỏ gọn
+      };
+
+      // 1. Get Order List
+      const listRes = await supabase.functions.invoke('apishopee-proxy', {
+        body: { api_path: '/api/v2/order/get_order_list', method: 'GET', shop_id: shopId, params },
+      });
+      responses['get_order_list'] = listRes.data;
+
+      // 2. Get Order Detail (nếu có orders)
+      const orderList = listRes.data?.response?.data?.response?.order_list || [];
+      if (orderList.length > 0) {
+        const sns = orderList.slice(0, 5).map((o: { order_sn: string }) => o.order_sn).join(',');
+        const detailRes = await supabase.functions.invoke('apishopee-proxy', {
+          body: {
+            api_path: '/api/v2/order/get_order_detail',
+            method: 'GET',
+            shop_id: shopId,
+            params: {
+              order_sn_list: sns,
+              response_optional_fields: 'buyer_username,recipient_address,actual_shipping_fee,estimated_shipping_fee,total_amount,item_list,payment_method,shipping_carrier,tracking_no,ship_by_date',
+            },
+          },
+        });
+        responses['get_order_detail'] = detailRes.data;
+      }
+
+      setApiResponses(responses);
+      setShowApiResponse(true);
+      toast({ title: 'Đã tải API responses', description: `${Object.keys(responses).length} API calls` });
+    } catch (e) {
+      toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
+    } finally {
+      setLoadingResponse(false);
+    }
+  };
+
   const filteredOrders = useMemo(() => {
     let result = orders;
     if (statusFilter !== 'ALL') result = result.filter(o => o.order_status === statusFilter);
@@ -205,6 +267,10 @@ export function OrdersPanel({ shopId }: OrdersPanelProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input placeholder="Tìm mã đơn, tên người mua..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 h-9" />
           </div>
+          <Button variant="outline" size="sm" onClick={fetchAllApiResponses} disabled={loading || loadingResponse}>
+            <FileJson className={cn("h-4 w-4 mr-1", loadingResponse && "animate-spin")} />
+            Response
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchOrders} disabled={loading}>
             <RefreshCw className={cn("h-4 w-4 mr-1", loading && "animate-spin")} />
             Làm mới
@@ -248,6 +314,44 @@ export function OrdersPanel({ shopId }: OrdersPanelProps) {
           </div>
         )}
       </CardContent>
+
+      {/* API Response Dialog */}
+      {showApiResponse && (
+        <Dialog open={showApiResponse} onOpenChange={setShowApiResponse}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle>API Responses - Đơn hàng</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-auto space-y-4 py-4">
+              {Object.entries(apiResponses).map(([apiName, response]) => (
+                <div key={apiName} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm">{apiName}</h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(response, null, 2));
+                        toast({ title: 'Đã copy', description: `Response của ${apiName}` });
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <pre className="bg-gray-50 p-3 rounded text-xs overflow-auto max-h-96">
+                    {JSON.stringify(response, null, 2)}
+                  </pre>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowApiResponse(false)}>
+                Đóng
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   );
 }

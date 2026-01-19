@@ -23,7 +23,6 @@ const routeNames: Record<string, string> = {
   'profile': 'Hồ sơ',
   'shops': 'Quản lý Shop',
   'users': 'Quản lý người dùng',
-  'api-response': 'API Response',
 };
 
 // Parent route names for nested routes
