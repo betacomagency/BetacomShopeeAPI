@@ -216,6 +216,8 @@ async function syncCampaigns(
     const batch = campaignList.slice(i, i + batchSize);
     const campaignIds = batch.map((c: { campaign_id: number }) => c.campaign_id).join(',');
 
+    console.log(`[ADS-SYNC] Fetching batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(campaignList.length / batchSize)} - Campaigns: ${batch.length}`);
+
     const detailResult = await callShopeeAPI(
       credentials,
       shopId,
@@ -224,10 +226,14 @@ async function syncCampaigns(
       { campaign_id_list: campaignIds, info_type_list: '1,3' }
     );
 
+    console.log(`[ADS-SYNC] Batch ${Math.floor(i / batchSize) + 1} response:`, JSON.stringify(detailResult).substring(0, 500));
+
     if (detailResult.response?.campaign_list) {
+      console.log(`[ADS-SYNC] Batch ${Math.floor(i / batchSize) + 1} - Processing ${detailResult.response.campaign_list.length} campaigns`);
+
       for (const detail of detailResult.response.campaign_list) {
         const original = batch.find((c: { campaign_id: number }) => c.campaign_id === detail.campaign_id);
-        allCampaigns.push({
+        const campaignInfo: CampaignInfo = {
           campaign_id: detail.campaign_id,
           ad_type: original?.ad_type || detail.common_info?.ad_type || 'auto',
           name: detail.common_info?.ad_name,
@@ -239,10 +245,19 @@ async function syncCampaigns(
           start_time: detail.common_info?.campaign_duration?.start_time,
           end_time: detail.common_info?.campaign_duration?.end_time,
           item_count: detail.common_info?.item_id_list?.length || 0,
-        });
+        };
+
+        allCampaigns.push(campaignInfo);
+
+        // In ra thông tin chi tiết từng campaign
+        console.log(`[ADS-SYNC] Campaign detail - ID: ${campaignInfo.campaign_id}, Name: ${campaignInfo.name}, Status: ${campaignInfo.status}, Type: ${campaignInfo.ad_type}, Budget: ${campaignInfo.campaign_budget}, ROAS Target: ${campaignInfo.roas_target}, Items: ${campaignInfo.item_count}`);
       }
+    } else {
+      console.warn(`[ADS-SYNC] Batch ${Math.floor(i / batchSize) + 1} - No campaigns returned`);
     }
   }
+
+  console.log(`[ADS-SYNC] Total campaigns collected: ${allCampaigns.length}`);
 
   // Step 3: UPSERT vào database (tránh trùng lặp)
   const now = new Date().toISOString();
@@ -344,9 +359,11 @@ async function syncDailyPerformanceForDate(
     }
 
     const campaignPerfList = perfResult.response?.campaign_list || [];
+    console.log(`[ADS-SYNC] Daily perf batch ${Math.floor(i / BATCH_SIZE) + 1} - Found ${campaignPerfList.length} campaigns with data`);
 
     for (const campPerf of campaignPerfList) {
       const metricsList = campPerf.metrics_list || campPerf.performance_list || [];
+      console.log(`[ADS-SYNC] Campaign ${campPerf.campaign_id} - ${metricsList.length} day(s) of metrics`);
 
       for (const dayMetrics of metricsList) {
         const expense = dayMetrics.expense || 0;
@@ -354,7 +371,7 @@ async function syncDailyPerformanceForDate(
         const roas = expense > 0 ? broadGmv / expense : 0;
         const acos = broadGmv > 0 ? (expense / broadGmv) * 100 : 0;
 
-        allUpsertData.push({
+        const perfData = {
           shop_id: shopId,
           campaign_id: campPerf.campaign_id,
           performance_date: dbDate,
@@ -371,7 +388,15 @@ async function syncDailyPerformanceForDate(
           roas,
           acos,
           synced_at: now,
-        });
+        };
+
+        allUpsertData.push(perfData);
+
+        // In ra metrics chi tiết
+        console.log(`[ADS-SYNC] Daily metrics for campaign ${campPerf.campaign_id} on ${dbDate}:`);
+        console.log(`  - Impressions: ${perfData.impression}, Clicks: ${perfData.clicks}, CTR: ${perfData.ctr.toFixed(2)}%`);
+        console.log(`  - Expense: ${perfData.expense}, Broad GMV: ${perfData.broad_gmv}, ROAS: ${perfData.roas.toFixed(2)}`);
+        console.log(`  - Broad Orders: ${perfData.broad_order}, Broad Items Sold: ${perfData.broad_item_sold}`);
       }
     }
 
@@ -482,9 +507,11 @@ async function syncHourlyPerformanceForDate(
     }
 
     const campaignPerfList = perfResult.response?.campaign_list || [];
+    console.log(`[ADS-SYNC] Hourly perf batch ${Math.floor(i / BATCH_SIZE) + 1} - Found ${campaignPerfList.length} campaigns with data`);
 
     for (const campPerf of campaignPerfList) {
       const metricsList = campPerf.metrics_list || [];
+      console.log(`[ADS-SYNC] Campaign ${campPerf.campaign_id} - ${metricsList.length} hour(s) of metrics`);
 
       for (const hourMetrics of metricsList) {
         const expense = hourMetrics.expense || 0;
@@ -492,7 +519,7 @@ async function syncHourlyPerformanceForDate(
         const roas = expense > 0 ? broadGmv / expense : 0;
         const acos = broadGmv > 0 ? (expense / broadGmv) * 100 : 0;
 
-        allUpsertData.push({
+        const hourlyData = {
           shop_id: shopId,
           campaign_id: campPerf.campaign_id,
           performance_date: dbDate,
@@ -510,7 +537,17 @@ async function syncHourlyPerformanceForDate(
           roas,
           acos,
           synced_at: now,
-        });
+        };
+
+        allUpsertData.push(hourlyData);
+
+        // In ra metrics chi tiết (chỉ in các giờ có dữ liệu)
+        if (hourlyData.impression > 0 || hourlyData.clicks > 0 || hourlyData.expense > 0) {
+          console.log(`[ADS-SYNC] Hourly metrics for campaign ${campPerf.campaign_id} on ${dbDate} at ${hourlyData.hour}:00:`);
+          console.log(`  - Impressions: ${hourlyData.impression}, Clicks: ${hourlyData.clicks}, CTR: ${hourlyData.ctr.toFixed(2)}%`);
+          console.log(`  - Expense: ${hourlyData.expense}, Broad GMV: ${hourlyData.broad_gmv}, ROAS: ${hourlyData.roas.toFixed(2)}`);
+          console.log(`  - Orders: ${hourlyData.broad_order}, Items Sold: ${hourlyData.broad_item_sold}`);
+        }
       }
     }
 
@@ -668,7 +705,8 @@ async function syncShopLevelDailyPerformance(
     { start_date: startDate, end_date: endDate }
   );
 
-  console.log('[ADS-SYNC] Shop-level daily response:', JSON.stringify(perfResult).substring(0, 1000));
+  console.log('[ADS-SYNC] Shop-level daily response:', JSON.stringify(perfResult, null, 2).substring(0, 2000));
+  console.log('[ADS-SYNC] Full shop-level daily API response:', JSON.stringify(perfResult));
 
   let hasShopLevelData = false;
 
@@ -906,7 +944,8 @@ async function syncShopLevelHourlyPerformance(
     { performance_date: dateStr }
   );
 
-  console.log('[ADS-SYNC] Shop-level hourly response:', JSON.stringify(perfResult).substring(0, 1000));
+  console.log('[ADS-SYNC] Shop-level hourly response:', JSON.stringify(perfResult, null, 2).substring(0, 2000));
+  console.log('[ADS-SYNC] Full shop-level hourly API response:', JSON.stringify(perfResult));
 
   let savedCount = 0;
   let hasShopLevelData = false;
@@ -1129,30 +1168,35 @@ async function syncAdsData(
     // Get credentials
     const credentials = await getShopCredentials(supabase, shopId);
 
-    // Step 0: Sync shop-level performance (nhanh, không phụ thuộc số campaigns)
-    console.log('[ADS-SYNC] === SHOP-LEVEL PERFORMANCE ===');
-    await syncShopLevelDailyPerformance(supabase, credentials, shopId);
-    await syncShopLevelHourlyPerformance(supabase, credentials, shopId);
-    console.log('[ADS-SYNC] === END SHOP-LEVEL ===');
-
     // Step 1: Sync campaigns (lấy danh sách)
     await updateSyncStatus(supabase, shopId, {
       sync_progress: { step: 'syncing_campaigns', progress: 20 },
     });
-    const { total, ongoing, ongoingCampaigns } = await syncCampaigns(supabase, credentials, shopId);
+    const { total, ongoing, allCampaigns } = await syncCampaigns(supabase, credentials, shopId);
 
-    // Step 2: Sync daily performance - CHỈ ONGOING CAMPAIGNS để nhanh
+    // Step 2: Sync daily performance - TẤT CẢ CAMPAIGNS (giống sync thủ công)
+    // QUAN TRỌNG: Phải sync campaign-level TRƯỚC shop-level để có item_sold data
     await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_daily_performance', progress: 50 },
+      sync_progress: { step: 'syncing_daily_performance', progress: 40 },
     });
-    // REALTIME: Chỉ sync ongoing campaigns (ít hơn nhiều)
-    const dailyRecords = await syncDailyPerformance(supabase, credentials, shopId, ongoingCampaigns);
+    const dailyRecords = await syncDailyPerformance(supabase, credentials, shopId, allCampaigns);
 
-    // Step 3: Sync hourly performance - CHỈ ONGOING CAMPAIGNS
+    // Step 3: Sync hourly performance - TẤT CẢ CAMPAIGNS (giống sync thủ công)
+    // QUAN TRỌNG: Phải sync campaign-level TRƯỚC shop-level để có item_sold data
     await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_hourly_performance', progress: 80 },
+      sync_progress: { step: 'syncing_hourly_performance', progress: 60 },
     });
-    const hourlyRecords = await syncHourlyPerformance(supabase, credentials, shopId, ongoingCampaigns);
+    const hourlyRecords = await syncHourlyPerformance(supabase, credentials, shopId, allCampaigns);
+
+    // Step 4: Sync shop-level performance (sau khi có campaign data để tính item_sold)
+    // QUAN TRỌNG: Shop-level phụ thuộc vào campaign-level data cho item_sold field
+    await updateSyncStatus(supabase, shopId, {
+      sync_progress: { step: 'syncing_shop_level', progress: 80 },
+    });
+    console.log('[ADS-SYNC] === SHOP-LEVEL PERFORMANCE (after campaign data) ===');
+    await syncShopLevelDailyPerformance(supabase, credentials, shopId);
+    await syncShopLevelHourlyPerformance(supabase, credentials, shopId);
+    console.log('[ADS-SYNC] === END SHOP-LEVEL ===');
 
     // Update status: completed
     await updateSyncStatus(supabase, shopId, {
@@ -1164,12 +1208,23 @@ async function syncAdsData(
       ongoing_campaigns: ongoing,
     });
 
-    console.log(`[ADS-SYNC] Sync completed for shop ${shopId} (${ongoing} ongoing campaigns)`);
+    console.log(`[ADS-SYNC] === SYNC COMPLETED SUCCESSFULLY ===`);
+    console.log(`[ADS-SYNC] Shop ID: ${shopId}`);
+    console.log(`[ADS-SYNC] Total Campaigns: ${total}`);
+    console.log(`[ADS-SYNC] Ongoing Campaigns: ${ongoing}`);
+    console.log(`[ADS-SYNC] Daily Performance Records: ${dailyRecords}`);
+    console.log(`[ADS-SYNC] Hourly Performance Records: ${hourlyRecords}`);
+    console.log(`[ADS-SYNC] Sync Time: ${new Date().toISOString()}`);
+    console.log(`[ADS-SYNC] === END ===`);
+
     return {
       success: true,
-      campaigns_synced: ongoing,
+      campaigns_synced: total,
       daily_records: dailyRecords,
       hourly_records: hourlyRecords,
+      total_campaigns: total,
+      ongoing_campaigns: ongoing,
+      sync_time: new Date().toISOString(),
     };
   } catch (error) {
     const errorMessage = (error as Error).message;
@@ -1295,12 +1350,16 @@ async function syncAdsDataBackfill(
 // ==================== MAIN HANDLER ====================
 
 serve(async (req) => {
+  console.log(`[ADS-SYNC] === REQUEST RECEIVED === Method: ${req.method}, URL: ${req.url}`);
+
   if (req.method === 'OPTIONS') {
+    console.log('[ADS-SYNC] OPTIONS request handled');
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
     const body = await req.json();
+    console.log('[ADS-SYNC] Request body:', JSON.stringify(body, null, 2));
     const { action, shop_id } = body;
 
     if (!shop_id) {
