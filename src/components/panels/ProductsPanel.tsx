@@ -366,56 +366,66 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
     <Card className="border-0 shadow-sm">
       <CardContent className="p-0">
         {/* Header với sync status */}
-        <div className="p-4 border-b flex items-center justify-between gap-4 flex-wrap">
-          <div className="relative flex-1 max-w-md">
+        <div className="p-3 md:p-4 border-b">
+          {/* Search bar */}
+          <div className="relative mb-2 md:mb-0 md:max-w-md md:flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Tìm theo tên, SKU hoặc ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
+              className="pl-9 text-sm"
             />
           </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Sync status */}
-            {lastSyncedAt && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+
+          {/* Actions row */}
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Sync status - compact on mobile */}
+              {lastSyncedAt && (
+                <div className="flex items-center gap-1 text-[10px] md:text-xs text-slate-500">
+                  <Clock className="h-3 w-3" />
+                  <span className="hidden md:inline">Đồng bộ:</span>
+                  <span>{formatRelativeTime(lastSyncedAt)}</span>
+                </div>
+              )}
+
+              {/* Auto-sync indicator - hide on mobile */}
+              <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-400">
                 <Database className="h-3.5 w-3.5" />
-                <span>Đồng bộ: {formatRelativeTime(lastSyncedAt)}</span>
+                <span>Tự động mỗi 1h</span>
               </div>
-            )}
-            
-            {/* Auto-sync indicator */}
-            <div className="flex items-center gap-1.5 text-xs text-slate-400">
-              <Clock className="h-3.5 w-3.5" />
-              <span>Tự động mỗi 1h</span>
             </div>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchAllApiResponses}
-              disabled={loading || syncing || loadingApiResponse}
-            >
-              <FileJson className={cn("h-4 w-4 mr-2", loadingApiResponse && "animate-spin")} />
-              Response
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={syncProducts}
-              disabled={loading || syncing}
-            >
-              <RefreshCw className={cn("h-4 w-4 mr-2", (loading || syncing) && "animate-spin")} />
-              {syncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
-            </Button>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchAllApiResponses}
+                disabled={loading || syncing || loadingApiResponse}
+                className="h-8 text-xs hidden md:flex"
+              >
+                <FileJson className={cn("h-4 w-4 mr-2", loadingApiResponse && "animate-spin")} />
+                Response
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={syncProducts}
+                disabled={loading || syncing}
+                className="h-8 text-xs"
+              >
+                <RefreshCw className={cn("h-4 w-4 mr-1 md:mr-2", (loading || syncing) && "animate-spin")} />
+                <span className="hidden md:inline">{syncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}</span>
+                <span className="md:hidden">Sync</span>
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Table Header */}
-        <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-50 border-b text-sm font-medium text-slate-600">
+        {/* Table Header - Desktop only */}
+        <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-slate-50 border-b text-sm font-medium text-slate-600">
           <div className="col-span-3">Sản phẩm</div>
           <div className="col-span-7">
             <div className="grid grid-cols-7 gap-2">
@@ -425,6 +435,11 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
             </div>
           </div>
           <div className="col-span-2">Thời gian</div>
+        </div>
+
+        {/* Mobile Header */}
+        <div className="md:hidden px-3 py-2 bg-slate-50 border-b text-xs font-medium text-slate-600">
+          Danh sách sản phẩm ({filteredProducts.length})
         </div>
 
         {/* Loading */}
@@ -459,7 +474,8 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
 
           return (
             <div key={product.id} className="border-b last:border-b-0">
-              <div className="grid grid-cols-12 gap-4 px-4 py-4 hover:bg-slate-50/50">
+              {/* Desktop Layout */}
+              <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-4 hover:bg-slate-50/50">
                 {/* Product Info */}
                 <div className="col-span-3 flex gap-3">
                   <div className="relative flex-shrink-0">
@@ -538,7 +554,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                           <div className="col-span-2 text-center">
                             <span className={cn(
                               "text-sm",
-                              model.total_available_stock === 0 ? "text-red-500" : 
+                              model.total_available_stock === 0 ? "text-red-500" :
                               model.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
                             )}>
                               {model.total_available_stock}
@@ -546,7 +562,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                           </div>
                         </div>
                       ))}
-                      
+
                       {hasMoreModels && (
                         <div className="py-2 border-t border-dashed border-slate-200">
                           <button
@@ -584,7 +600,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                       <div className="col-span-2 text-center">
                         <span className={cn(
                           "text-sm",
-                          product.total_available_stock === 0 ? "text-red-500" : 
+                          product.total_available_stock === 0 ? "text-red-500" :
                           product.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
                         )}>
                           {product.total_available_stock}
@@ -602,21 +618,159 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                   <div className="font-medium text-slate-700">{formatDateTime(product.update_time)}</div>
                 </div>
               </div>
+
+              {/* Mobile Layout - Card style */}
+              <div className="md:hidden p-3 hover:bg-slate-50/50">
+                {/* Product Header */}
+                <div className="flex gap-3 mb-3">
+                  <div className="relative flex-shrink-0">
+                    <input type="checkbox" className="absolute -left-1 top-0 w-4 h-4" />
+                    {product.image_url_list?.[0] ? (
+                      <div className="ml-5">
+                        <ImageWithZoom
+                          src={product.image_url_list[0]}
+                          alt={product.item_name}
+                          className="w-14 h-14 object-cover rounded border"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 bg-slate-100 rounded border flex items-center justify-center ml-5">
+                        <Package className="w-5 h-5 text-slate-400" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-slate-800 line-clamp-2 leading-tight">
+                      {product.item_name}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded",
+                        product.item_status === 'NORMAL' ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-500"
+                      )}>
+                        {product.item_status === 'NORMAL' ? 'Hoạt động' : product.item_status}
+                      </span>
+                      {product.brand_name && product.brand_name !== 'NoBrand' && (
+                        <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded">
+                          {product.brand_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Models/Variants on Mobile */}
+                {product.has_model && productModels.length > 0 ? (
+                  <div className="space-y-2">
+                    {visibleModels.map((model, idx) => (
+                      <div
+                        key={model.id}
+                        className={cn(
+                          "flex items-center gap-2 py-2 px-2 bg-slate-50 rounded-lg",
+                          idx !== visibleModels.length - 1 && "mb-1"
+                        )}
+                      >
+                        {model.image_url ? (
+                          <ImageWithZoom
+                            src={model.image_url}
+                            alt={model.model_name}
+                            className="w-10 h-10 object-cover rounded border flex-shrink-0"
+                            zoomSize={150}
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-slate-200 rounded border flex items-center justify-center flex-shrink-0">
+                            <Link2 className="h-3 w-3 text-slate-400" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-slate-700 truncate">{model.model_name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{model.model_sku}</div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-sm font-semibold text-orange-600">{formatPrice(model.current_price)}</div>
+                          {model.original_price > model.current_price && (
+                            <div className="text-[10px] text-slate-400 line-through">{formatPrice(model.original_price)}</div>
+                          )}
+                        </div>
+                        <div className="text-center flex-shrink-0 w-8">
+                          <span className={cn(
+                            "text-xs font-medium",
+                            model.total_available_stock === 0 ? "text-red-500" :
+                            model.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
+                          )}>
+                            {model.total_available_stock}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {hasMoreModels && (
+                      <button
+                        onClick={() => toggleExpand(product.item_id)}
+                        className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 py-1"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp className="h-3 w-3" />
+                            Thu gọn
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3 w-3" />
+                            Xem thêm {remainingModels} SKU
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between py-2 px-2 bg-slate-50 rounded-lg">
+                    <div className="text-xs text-slate-400">
+                      {product.item_sku ? `SKU: ${product.item_sku}` : 'Không có SKU'}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-sm font-semibold text-orange-600">{formatPrice(product.current_price)}</span>
+                        {product.original_price > product.current_price && (
+                          <div className="text-[10px] text-slate-400 line-through">{formatPrice(product.original_price)}</div>
+                        )}
+                      </div>
+                      <div className="text-center w-8">
+                        <span className={cn(
+                          "text-xs font-medium",
+                          product.total_available_stock === 0 ? "text-red-500" :
+                          product.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
+                        )}>
+                          {product.total_available_stock}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Time - collapsed on mobile */}
+                <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
+                  <span>Tạo: {formatDateTime(product.create_time)}</span>
+                  <span>•</span>
+                  <span>Cập nhật: {formatDateTime(product.update_time)}</span>
+                </div>
+              </div>
             </div>
           );
         })}
 
         {/* Footer */}
         {products.length > 0 && (
-          <div className="px-4 py-3 border-t bg-slate-50/50 flex items-center justify-between">
-            <div className="text-sm text-slate-500">
-              Hiển thị {filteredProducts.length} / {products.length} sản phẩm
+          <div className="px-3 md:px-4 py-2 md:py-3 border-t bg-slate-50/50 flex items-center justify-between">
+            <div className="text-xs md:text-sm text-slate-500">
+              {filteredProducts.length}/{products.length} sản phẩm
             </div>
             <div className="flex items-center gap-2">
               {syncing && (
-                <span className="text-xs text-orange-500 flex items-center gap-1">
+                <span className="text-[10px] md:text-xs text-orange-500 flex items-center gap-1">
                   <RefreshCw className="h-3 w-3 animate-spin" />
-                  Đang đồng bộ...
+                  <span className="hidden md:inline">Đang đồng bộ...</span>
+                  <span className="md:hidden">Sync...</span>
                 </span>
               )}
             </div>

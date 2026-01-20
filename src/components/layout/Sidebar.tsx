@@ -107,14 +107,24 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
   };
 
   return (
-    <aside
-      className={cn(
-        'fixed left-0 top-0 h-screen bg-white border-r border-slate-200 transition-all duration-300 z-50 flex flex-col',
-        collapsed ? 'md:w-16' : 'md:w-64',
-        'w-64', // Mobile width
-        mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'
+    <>
+      {/* Mobile Overlay/Backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
       )}
-    >
+
+      <aside
+        className={cn(
+          'fixed left-0 top-0 h-screen bg-white border-r border-slate-200 transition-all duration-300 z-50 flex flex-col',
+          collapsed ? 'md:w-16' : 'md:w-64',
+          'w-64', // Mobile width
+          mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'
+        )}
+      >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 border-b border-slate-200 h-[73px] overflow-hidden">
         <img
@@ -296,5 +306,6 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
         </div>
       </div>
     </aside>
+    </>
   );
 }

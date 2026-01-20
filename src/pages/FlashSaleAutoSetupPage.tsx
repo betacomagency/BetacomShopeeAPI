@@ -16,11 +16,10 @@ import {
   Play,
   Square,
   AlertCircle,
-  Trash2,
-  Filter
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
@@ -290,7 +289,6 @@ export default function FlashSaleAutoSetupPage() {
         .from('apishopee_flash_sale_auto_history')
         .select('*')
         .eq('shop_id', selectedShopId)
-        .order('created_at', { ascending: false })
         .limit(100);
 
       if (statusFilter !== 'all') {
@@ -299,7 +297,26 @@ export default function FlashSaleAutoSetupPage() {
 
       const { data, error } = await query;
       if (error) throw error;
-      setHistory(data || []);
+
+      // Sort: scheduled/pending (by slot_start_time asc) first, then others (by created_at desc)
+      const sorted = (data || []).sort((a, b) => {
+        const isPendingA = a.status === 'scheduled' || a.status === 'pending';
+        const isPendingB = b.status === 'scheduled' || b.status === 'pending';
+
+        // Pending/scheduled items come first
+        if (isPendingA && !isPendingB) return -1;
+        if (!isPendingA && isPendingB) return 1;
+
+        // Both pending: sort by slot_start_time ascending (soonest first)
+        if (isPendingA && isPendingB) {
+          return a.slot_start_time - b.slot_start_time;
+        }
+
+        // Both not pending: sort by created_at descending (newest first)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      setHistory(sorted);
     } catch (err) {
       toast({ title: 'Lỗi', description: (err as Error).message, variant: 'destructive' });
       setHistory([]);
@@ -752,38 +769,70 @@ export default function FlashSaleAutoSetupPage() {
   }
 
   return (
-    <div className="h-full bg-slate-50 flex flex-col overflow-hidden">
-      <div className="px-6 py-6 space-y-6 flex flex-col flex-1 min-h-0 overflow-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
-              <Zap className="h-6 w-6 text-green-600" />
-              Lịch sử tự động cài Flash Sale
-            </h1>
-          </div>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            {isRunning ? (
-              <Button variant="destructive" onClick={stopAutoSetup} className="w-full md:w-auto">
-                <Square className="h-4 w-4 mr-2" />
-                Dừng
-              </Button>
-            ) : (
-              <Button
-                onClick={handleStartClick}
-                className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 w-full md:w-auto"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                Bắt đầu
-              </Button>
-            )}
-          </div>
-        </div>
+    <div className="h-full flex flex-col">
+      <Card className="border-0 shadow-sm h-full flex flex-col">
+        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+          {/* Header with Filter and Actions */}
+          <div className="border-b">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
+              {/* Filter Tabs */}
+              <div className="flex w-full md:w-auto overflow-x-auto no-scrollbar pl-4 md:pl-0">
+                {[
+                  { value: 'all', label: 'Tất cả', count: stats.total },
+                  { value: 'success', label: 'Thành công', count: stats.success },
+                  { value: 'error', label: 'Lỗi', count: stats.error },
+                  { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
+                ].map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() => setStatusFilter(tab.value)}
+                    className={cn(
+                      "px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                      statusFilter === tab.value
+                        ? "border-orange-500 text-orange-600"
+                        : "border-transparent text-slate-500 hover:text-slate-700"
+                    )}
+                  >
+                    {tab.label}
+                    {tab.count > 0 && (
+                      <span className="ml-1 text-xs text-slate-400">({tab.count})</span>
+                    )}
+                  </button>
+                ))}
+              </div>
 
-        {/* Progress */}
-        {isRunning && (
-          <Card>
-            <CardContent className="py-4">
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 w-full md:w-auto justify-end px-4 md:px-0 md:pr-4 pb-3 md:pb-0">
+                <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory} className="h-8 md:h-9">
+                  <RefreshCw className={cn("h-4 w-4 mr-2", loadingHistory && "animate-spin")} />
+                  Làm mới
+                </Button>
+                <Button variant="outline" size="sm" onClick={clearAllHistory} disabled={history.length === 0} className="h-8 md:h-9 text-red-600 hover:text-red-700 hover:bg-red-50">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Xóa hết
+                </Button>
+                {isRunning ? (
+                  <Button variant="destructive" size="sm" onClick={stopAutoSetup} className="h-8 md:h-9">
+                    <Square className="h-4 w-4 mr-2" />
+                    Dừng
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleStartClick}
+                    className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 h-8 md:h-9"
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    Tạo mới
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Progress */}
+          {isRunning && (
+            <div className="px-4 py-3 border-b bg-green-50">
               <div className="flex items-center gap-4">
                 <RefreshCw className="h-5 w-5 animate-spin text-green-500" />
                 <div className="flex-1">
@@ -791,18 +840,14 @@ export default function FlashSaleAutoSetupPage() {
                 </div>
                 <span className="text-sm font-medium text-slate-600">{progress}%</span>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
 
-        {/* Process Logs - only show for immediate setup */}
-        {processLogs.length > 0 && isImmediateSetup && (
-          <Card>
-            <CardHeader className="border-b pb-4">
-              <CardTitle className="text-base">Kết quả xử lý</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 max-h-[300px] overflow-y-auto">
-              <div className="divide-y">
+          {/* Process Logs - only show for immediate setup */}
+          {processLogs.length > 0 && isImmediateSetup && (
+            <div className="border-b">
+              <div className="px-4 py-2 bg-slate-50 text-sm font-medium text-slate-600">Kết quả xử lý</div>
+              <div className="max-h-[200px] overflow-y-auto divide-y">
                 {processLogs.map((log) => {
                   const slot = timeSlots.find(s => s.timeslot_id === log.timeslot_id);
                   return (
@@ -827,93 +872,55 @@ export default function FlashSaleAutoSetupPage() {
                   );
                 })}
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-
-
-        {/* History Table */}
-        <Card className="border-0 shadow-sm flex-1 flex flex-col min-h-0">
-          <CardHeader className="border-b pb-4 flex-shrink-0">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <CardTitle className="text-base">Lịch sử tự động cài</CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
-                <Filter className="h-4 w-4 text-slate-400" />
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[120px] md:w-40 text-xs md:text-sm h-8 md:h-10">
-                    <SelectValue placeholder="Lọc trạng thái" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
-                    <SelectItem value="success">Thành công</SelectItem>
-                    <SelectItem value="error">Lỗi</SelectItem>
-                    <SelectItem value="pending">Đang chờ</SelectItem>
-                    <SelectItem value="scheduled">Đã lên lịch</SelectItem>
-                    <SelectItem value="processing">Đang xử lý</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory} className="h-8 md:h-10 text-xs md:text-sm">
-                  <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5 md:mr-2", loadingHistory && "animate-spin")} />
-                  <span className="md:inline">Làm mới</span>
-                </Button>
-                <Button variant="outline" size="sm" onClick={clearAllHistory} disabled={history.length === 0} className="h-8 md:h-10 text-xs md:text-sm">
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5 md:mr-2" />
-                  <span className="md:inline">Xóa hết</span>
-                </Button>
-              </div>
             </div>
-          </CardHeader>
-          <CardContent className="p-0 flex-1 min-h-0 overflow-hidden">
-            {/* Mobile List View */}
-            <div className="md:hidden flex-1 overflow-y-auto">
-              {loadingHistory ? (
-                <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
-              ) : history.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  <AlertCircle className="h-12 w-12 mb-3 mx-auto text-slate-300" />
-                  <p>Chưa có lịch sử nào</p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {history.map((record) => {
-                    const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
-                    const startDate = new Date(record.slot_start_time * 1000);
-                    const endDate = new Date(record.slot_end_time * 1000);
-                    const dateStr = startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    const startTimeStr = startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                    const endTimeStr = endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+          )}
 
-                    return (
-                      <div key={record.id} className="p-4 bg-white">
-                        {/* Row 1: Date + Time + Delete */}
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-3 text-sm text-slate-600">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                              {dateStr}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              {startTimeStr} - {endTimeStr}
-                            </span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteRecord(record.id)}
-                            className="text-slate-400 hover:text-red-500 h-7 w-7 p-0"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+          {/* Mobile List View */}
+          <div className="md:hidden flex-1 overflow-y-auto">
+            {loadingHistory ? (
+              <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+            ) : history.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                <AlertCircle className="h-12 w-12 mb-3 mx-auto text-slate-300" />
+                <p>Chưa có lịch sử nào</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {history.map((record) => {
+                  const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
+                  const startDate = new Date(record.slot_start_time * 1000);
+                  const endDate = new Date(record.slot_end_time * 1000);
+                  const dateStr = startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                  const startTimeStr = startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                  const endTimeStr = endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+                  return (
+                    <div key={record.id} className="p-4 bg-white">
+                      {/* Row 1: Date + Time + Status Badge */}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3 text-sm text-slate-600">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            {dateStr}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            {startTimeStr} - {endTimeStr}
+                          </span>
                         </div>
+                        <Badge className={cn("flex items-center gap-1 text-[10px] px-1.5 py-0.5", statusConfig.color)}>
+                          {statusConfig.icon}
+                          {statusConfig.label}
+                        </Badge>
+                      </div>
 
-                        {/* Row 2: Status Badge + Flash Sale ID */}
-                        <div className="mt-2 flex items-center gap-2">
-                          <Badge className={cn("flex items-center gap-1 text-[10px] px-1.5 py-0.5", statusConfig.color)}>
-                            {statusConfig.icon}
-                            {statusConfig.label}
-                          </Badge>
+                      {/* Row 2: Items count + Flash Sale ID + Delete */}
+                      <div className="mt-2 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-slate-600">
+                            <span className="text-slate-500">Số SP: </span>
+                            <span className="font-medium">{record.items_count}</span>
+                          </span>
                           {record.status === 'success' && record.flash_sale_id && (
                             <span className="text-xs text-green-600 font-mono">
                               FS #{record.flash_sale_id}
@@ -925,122 +932,124 @@ export default function FlashSaleAutoSetupPage() {
                             </span>
                           )}
                         </div>
-
-                        {/* Row 3: Items count */}
-                        <div className="mt-2 text-sm text-slate-600">
-                          <span className="text-slate-500">Số sản phẩm: </span>
-                          <span className="font-medium">{record.items_count}</span>
-                        </div>
-
-                        {/* Error message if any */}
-                        {record.status === 'error' && record.error_message && (
-                          <div className="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded">
-                            {record.error_message}
-                          </div>
-                        )}
-
-                        {/* Scheduled info */}
-                        {record.status === 'scheduled' && record.scheduled_at && (
-                          <div className="mt-2 text-xs text-blue-500 bg-blue-50 p-2 rounded">
-                            Chờ đến: {formatDateTime(record.scheduled_at)}
-                          </div>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteRecord(record.id)}
+                          className="text-slate-400 hover:text-red-500 h-7 w-7 p-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
+
+                      {/* Error message if any */}
+                      {record.status === 'error' && record.error_message && (
+                        <div className="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded">
+                          {record.error_message}
+                        </div>
+                      )}
+
+                      {/* Scheduled info */}
+                      {record.status === 'scheduled' && record.scheduled_at && (
+                        <div className="mt-2 text-xs text-blue-500 bg-blue-50 p-2 rounded">
+                          Chờ đến: {formatDateTime(record.scheduled_at)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table */}
+          <div className="hidden md:block flex-1 overflow-auto">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
+              </div>
+            ) : history.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <AlertCircle className="h-12 w-12 mb-3" />
+                <p>Chưa có lịch sử nào</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr className="border-b">
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Trạng thái</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Chi tiết</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Khung giờ</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo trước</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Số SP</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo lúc</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Thực hiện</th>
+                    <th className="text-center px-4 py-3 font-medium text-slate-600 w-12"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {history.map((record) => {
+                    const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
+                    return (
+                      <tr key={record.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <Badge className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
+                            {statusConfig.icon}
+                            {statusConfig.label}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          {record.status === 'success' && record.flash_sale_id ? (
+                            <span className="text-green-600 text-xs">FS #{record.flash_sale_id}</span>
+                          ) : record.status === 'error' && record.error_message ? (
+                            <p className="text-xs text-red-500 max-w-[250px]" title={record.error_message}>
+                              {record.error_message}
+                            </p>
+                          ) : record.status === 'scheduled' ? (
+                            <span className="text-xs text-blue-500">Chờ đến {record.scheduled_at ? formatDateTime(record.scheduled_at) : '-'}</span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-slate-700">
+                            {formatDate(record.slot_start_time)}
+                          </div>
+                          <div className="text-slate-500 text-xs">
+                            {formatTime(record.slot_start_time)} - {formatTime(record.slot_end_time)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {record.lead_time_minutes > 0 ? (
+                            <span className="text-blue-600">{record.lead_time_minutes} phút</span>
+                          ) : (
+                            <span className="text-slate-400">Ngay</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{record.items_count}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{formatDateTime(record.created_at)}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">
+                          {record.executed_at ? formatDateTime(record.executed_at) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteRecord(record.id)}
+                            className="text-slate-400 hover:text-red-500 h-8 w-8 p-0"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
                     );
                   })}
-                </div>
-              )}
-            </div>
-
-            {/* Desktop Table */}
-            <div className="hidden md:block h-full overflow-auto">
-              {loadingHistory ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
-                </div>
-              ) : history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                  <AlertCircle className="h-12 w-12 mb-3" />
-                  <p>Chưa có lịch sử nào</p>
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 sticky top-0 z-10">
-                    <tr className="border-b">
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Trạng thái</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Chi tiết</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Khung giờ</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo trước</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Số SP</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo lúc</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Thực hiện</th>
-                      <th className="text-center px-4 py-3 font-medium text-slate-600 w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {history.map((record) => {
-                      const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
-                      return (
-                        <tr key={record.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <Badge className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
-                              {statusConfig.icon}
-                              {statusConfig.label}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            {record.status === 'success' && record.flash_sale_id ? (
-                              <span className="text-green-600 text-xs">FS #{record.flash_sale_id}</span>
-                            ) : record.status === 'error' && record.error_message ? (
-                              <p className="text-xs text-red-500 max-w-[250px]" title={record.error_message}>
-                                {record.error_message}
-                              </p>
-                            ) : record.status === 'scheduled' ? (
-                              <span className="text-xs text-blue-500">Chờ đến {record.scheduled_at ? formatDateTime(record.scheduled_at) : '-'}</span>
-                            ) : (
-                              <span className="text-slate-400 text-xs">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-slate-700">
-                              {formatDate(record.slot_start_time)}
-                            </div>
-                            <div className="text-slate-500 text-xs">
-                              {formatTime(record.slot_start_time)} - {formatTime(record.slot_end_time)}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {record.lead_time_minutes > 0 ? (
-                              <span className="text-blue-600">{record.lead_time_minutes} phút</span>
-                            ) : (
-                              <span className="text-slate-400">Ngay</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{record.items_count}</td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">{formatDateTime(record.created_at)}</td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">
-                            {record.executed_at ? formatDateTime(record.executed_at) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deleteRecord(record.id)}
-                              className="text-slate-400 hover:text-red-500 h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Setup Dialog */}
       <Dialog open={showSetupDialog} onOpenChange={setShowSetupDialog}>

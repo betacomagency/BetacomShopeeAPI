@@ -130,6 +130,12 @@ interface SimpleColumn<TData> {
   header: string;
   width?: string;
   render: (item: TData) => React.ReactNode;
+  /** Hide this column on mobile (shown in card view) */
+  hideOnMobile?: boolean;
+  /** Show this column as primary info in mobile card header */
+  mobileHeader?: boolean;
+  /** Show this column as badge/tag in mobile card */
+  mobileBadge?: boolean;
 }
 
 interface SimpleDataTableProps<TData> {
@@ -140,6 +146,8 @@ interface SimpleDataTableProps<TData> {
   emptyDescription?: string;
   loading?: boolean;
   loadingMessage?: string;
+  /** Enable mobile card view (default: true) */
+  mobileCardView?: boolean;
 }
 
 export function SimpleDataTable<TData>({
@@ -150,6 +158,7 @@ export function SimpleDataTable<TData>({
   emptyDescription,
   loading = false,
   loadingMessage = "Đang tải...",
+  mobileCardView = true,
 }: SimpleDataTableProps<TData>) {
   if (loading) {
     return (
@@ -162,25 +171,45 @@ export function SimpleDataTable<TData>({
     );
   }
 
+  // Get column groups for mobile view
+  const headerColumn = columns.find(col => col.mobileHeader);
+  const badgeColumn = columns.find(col => col.mobileBadge);
+  const actionColumn = columns.find(col => col.key === 'actions');
+
+  // Empty state
+  if (data.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-slate-500">{emptyMessage}</p>
+          {emptyDescription && (
+            <p className="text-sm text-slate-400">{emptyDescription}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full overflow-x-auto">
-      <table className="w-full">
-        <thead className="bg-slate-50 border-b">
-          <tr>
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap"
-                style={{ width: col.width }}
-              >
-                {col.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.length > 0 ? (
-            data.map((item) => (
+    <div className="w-full">
+      {/* Desktop Table View */}
+      <div className={cn("overflow-x-auto", mobileCardView && "hidden md:block")}>
+        <table className="w-full">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap"
+                  style={{ width: col.width }}
+                >
+                  {col.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((item) => (
               <tr
                 key={keyExtractor(item)}
                 className="border-b transition-colors hover:bg-slate-50/50"
@@ -191,21 +220,36 @@ export function SimpleDataTable<TData>({
                   </td>
                 ))}
               </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={columns.length} className="h-32 text-center">
-                <div className="flex flex-col items-center gap-2">
-                  <p className="text-slate-500">{emptyMessage}</p>
-                  {emptyDescription && (
-                    <p className="text-sm text-slate-400">{emptyDescription}</p>
-                  )}
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile Card View */}
+      {mobileCardView && (
+        <div className="md:hidden divide-y">
+          {data.map((item) => (
+            <div key={keyExtractor(item)} className="p-4 space-y-3">
+              {/* Card Header: Primary info + Badge + Actions */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  {headerColumn && headerColumn.render(item)}
                 </div>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {badgeColumn && badgeColumn.render(item)}
+                </div>
+              </div>
+
+              {/* Card Actions */}
+              {actionColumn && (
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  {actionColumn.render(item)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

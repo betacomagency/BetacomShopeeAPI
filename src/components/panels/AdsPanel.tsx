@@ -40,6 +40,7 @@ import { supabase } from '@/lib/supabase';
 import {
   deleteBudgetSchedule,
   createBudgetSchedule,
+  listBudgetSchedules,
   getCampaignIdList,
   getCampaignSettingInfo,
   type ScheduledAdsBudget,
@@ -191,7 +192,19 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
   const [autoAdsBudget, setAutoAdsBudget] = useState('');
   const [autoAdsDateType, setAutoAdsDateType] = useState<'daily' | 'specific'>('daily');
   const [autoAdsSpecificDates, setAutoAdsSpecificDates] = useState<string[]>([]);
-  const [autoAdsProcessing, setAutoAdsProcessing] = useState<'increase' | 'decrease' | null>(null);
+  const [autoAdsProcessing, setAutoAdsProcessing] = useState<'set' | null>(null);
+  const [existingSchedules, setExistingSchedules] = useState<ScheduledAdsBudget[]>([]);
+
+  // Fetch existing schedules when dialog opens
+  useEffect(() => {
+    if (showAutoAdsDialog && shopId) {
+      listBudgetSchedules(shopId).then((result) => {
+        if (result.success && result.schedules) {
+          setExistingSchedules(result.schedules);
+        }
+      });
+    }
+  }, [showAutoAdsDialog, shopId]);
 
   // Show realtime error
   useEffect(() => {
@@ -304,9 +317,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
   /**
    * Xử lý Tự động ADS - Tạo schedule để cron job thực thi
-   * @param action 'increase' | 'decrease' - Hành động tăng hoặc giảm (dùng để validate)
    */
-  const handleAutoAds = async (action: 'increase' | 'decrease') => {
+  const handleAutoAds = async () => {
     // Validation
     if (autoAdsSelectedCampaigns.length === 0) {
       toast({ title: 'Lỗi', description: 'Vui lòng chọn ít nhất 1 chiến dịch', variant: 'destructive' });
@@ -330,32 +342,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
       return;
     }
 
-    // Validate ngân sách nhập so với ngân sách hiện tại của các chiến dịch
-    const invalidCampaigns: string[] = [];
-    for (const campaignId of autoAdsSelectedCampaigns) {
-      const campaign = campaigns.find(c => c.campaign_id === campaignId);
-      if (!campaign) continue;
-
-      const currentBudget = campaign.campaign_budget || 0;
-
-      if (action === 'increase' && budget <= currentBudget) {
-        invalidCampaigns.push(`"${campaign.name || campaignId}" (hiện tại: ${new Intl.NumberFormat('vi-VN').format(currentBudget)}đ)`);
-      } else if (action === 'decrease' && budget >= currentBudget) {
-        invalidCampaigns.push(`"${campaign.name || campaignId}" (hiện tại: ${new Intl.NumberFormat('vi-VN').format(currentBudget)}đ)`);
-      }
-    }
-
-    if (invalidCampaigns.length > 0) {
-      const actionText = action === 'increase' ? 'lớn hơn' : 'nhỏ hơn';
-      toast({
-        title: 'Lỗi ngân sách',
-        description: `Ngân sách nhập phải ${actionText} ngân sách hiện tại của: ${invalidCampaigns.slice(0, 3).join(', ')}${invalidCampaigns.length > 3 ? ` và ${invalidCampaigns.length - 3} chiến dịch khác` : ''}`,
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    setAutoAdsProcessing(action);
+    setAutoAdsProcessing('set');
 
     try {
       // Tính khung giờ từ slot (mỗi slot = 30 phút)
@@ -424,7 +411,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
       if (successCount > 0 && failCount === 0) {
         toast({
           title: 'Đã lên lịch thành công',
-          description: `${successCount} chiến dịch sẽ ${action === 'increase' ? 'tăng' : 'giảm'} ngân sách lên ${new Intl.NumberFormat('vi-VN').format(budget)}đ vào ${timeLabel} ${dateLabel}`,
+          description: `${successCount} chiến dịch sẽ đặt ngân sách ${new Intl.NumberFormat('vi-VN').format(budget)}đ vào ${timeLabel} ${dateLabel}`,
         });
       } else if (successCount > 0 && failCount > 0) {
         toast({
@@ -442,6 +429,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
       // Reset form và đóng dialog
       if (successCount > 0) {
+        // Refresh existing schedules before closing
+        const refreshResult = await listBudgetSchedules(shopId);
+        if (refreshResult.success && refreshResult.schedules) {
+          setExistingSchedules(refreshResult.schedules);
+        }
         setShowAutoAdsDialog(false);
         setAutoAdsSelectedCampaigns([]);
         setAutoAdsTimeSlots([]);
@@ -545,48 +537,50 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
         {/* Header với filter và tabs */}
         <div className="bg-white border-b">
           {/* Date Filter */}
-          <div className="px-4 py-2 border-b flex items-center gap-3">
-            <span className="text-xs text-gray-500 font-medium">Khoảng thời gian:</span>
-            <button
-              onClick={() => setDateRange('today')}
-              disabled={isFetching}
-              className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                dateRange === 'today'
-                  ? "bg-blue-500 text-white shadow-md"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                isFetching && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              Hôm nay
-            </button>
-            <button
-              onClick={() => setDateRange('7days')}
-              disabled={isFetching}
-              className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                dateRange === '7days'
-                  ? "bg-blue-500 text-white shadow-md"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                isFetching && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              7 ngày
-            </button>
-            <button
-              onClick={() => setDateRange('30days')}
-              disabled={isFetching}
-              className={cn(
-                "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                dateRange === '30days'
-                  ? "bg-blue-500 text-white shadow-md"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                isFetching && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              30 ngày
-            </button>
-            <div className="h-4 w-px bg-gray-300" />
+          <div className="px-4 py-2 border-b flex flex-wrap items-center gap-2 md:gap-3">
+            <span className="text-xs text-gray-500 font-medium hidden md:inline">Khoảng thời gian:</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setDateRange('today')}
+                disabled={isFetching}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
+                  dateRange === 'today'
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
+                  isFetching && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                Hôm nay
+              </button>
+              <button
+                onClick={() => setDateRange('7days')}
+                disabled={isFetching}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
+                  dateRange === '7days'
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
+                  isFetching && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                7 ngày
+              </button>
+              <button
+                onClick={() => setDateRange('30days')}
+                disabled={isFetching}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
+                  dateRange === '30days'
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
+                  isFetching && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                30 ngày
+              </button>
+            </div>
+            <div className="h-4 w-px bg-gray-300 hidden md:block" />
             <input
               type="date"
               value={selectedDate.toISOString().split('T')[0]}
@@ -598,7 +592,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                 isFetching && "opacity-50 cursor-not-allowed"
               )}
             />
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-400 hidden md:inline">
               {dateRange === 'today'
                 ? `Ngày ${selectedDate.toLocaleDateString('vi-VN')}`
                 : dateRange === '7days'
@@ -615,9 +609,9 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
           </div>
 
           {/* Action Buttons */}
-          <div className="px-4 py-2 border-b flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-3">
-              <span className="text-sm text-gray-600">
+          <div className="px-4 py-2 border-b flex flex-col md:flex-row md:items-center gap-2">
+            <div className="flex-1 flex flex-wrap items-center gap-2 md:gap-3">
+              <span className="text-xs md:text-sm text-gray-600">
                 Hiển thị <span className="font-semibold text-green-600">{campaigns.length}</span> chiến dịch đang chạy
               </span>
               {/* Realtime Status Indicator */}
@@ -625,39 +619,43 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                 {syncing ? (
                   <div className="flex items-center gap-1 text-orange-600">
                     <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
-                    <span className="text-xs">Đang sync từ Shopee...</span>
+                    <span className="text-[10px] md:text-xs">Đang sync...</span>
                   </div>
                 ) : isFetching ? (
                   <div className="flex items-center gap-1 text-blue-600">
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                    <span className="text-xs">Đang cập nhật...</span>
+                    <span className="text-[10px] md:text-xs">Đang cập nhật...</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1 text-green-600">
                     <Wifi className="w-3 h-3" />
-                    <span className="text-xs">Realtime (15 phút/lần)</span>
+                    <span className="text-[10px] md:text-xs">Realtime</span>
                   </div>
                 )}
               </div>
               {/* Last Sync Info */}
               {lastSyncAt && (
-                <span className="text-xs text-gray-400">
+                <span className="text-[10px] md:text-xs text-gray-400 hidden md:inline">
                   Sync lần cuối: {new Date(lastSyncAt).toLocaleTimeString('vi-VN')}
                 </span>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowAutoAdsDialog(true)} disabled={loading || syncing}>
-              <Zap className="h-4 w-4 mr-2" />
-              Tự động ADS
-            </Button>
-            <Button variant="outline" size="sm" onClick={fetchAllApiResponses} disabled={loading || syncing}>
-              <FileJson className="h-4 w-4 mr-2" />
-              Response
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleSyncFromAPI} disabled={loading || syncing}>
-              <RefreshCw className={cn("h-4 w-4 mr-2", (loading || syncing) && "animate-spin")} />
-              {syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ Shopee'}
-            </Button>
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <Button variant="outline" size="sm" onClick={() => setShowAutoAdsDialog(true)} disabled={loading || syncing} className="h-8 text-xs whitespace-nowrap">
+                <Zap className="h-4 w-4 mr-1 md:mr-2" />
+                <span className="hidden md:inline">Tự động ADS</span>
+                <span className="md:hidden">ADS</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={fetchAllApiResponses} disabled={loading || syncing} className="h-8 text-xs whitespace-nowrap hidden md:flex">
+                <FileJson className="h-4 w-4 mr-2" />
+                Response
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleSyncFromAPI} disabled={loading || syncing} className="h-8 text-xs whitespace-nowrap">
+                <RefreshCw className={cn("h-4 w-4 mr-1 md:mr-2", (loading || syncing) && "animate-spin")} />
+                <span className="hidden md:inline">{syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ Shopee'}</span>
+                <span className="md:hidden">Sync</span>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -732,24 +730,24 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
         {/* Auto ADS Dialog */}
         <Dialog open={showAutoAdsDialog} onOpenChange={setShowAutoAdsDialog}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogContent className="max-w-4xl w-[95vw] md:w-auto max-h-[90vh] md:max-h-[80vh] overflow-hidden flex flex-col">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-orange-500" />
+              <DialogTitle className="flex items-center gap-2 text-base md:text-lg">
+                <Zap className="h-4 w-4 md:h-5 md:w-5 text-orange-500" />
                 Tự động ADS - Cấu hình chiến dịch
               </DialogTitle>
             </DialogHeader>
-            <div className="flex-1 overflow-auto py-4">
-              <div className="grid grid-cols-2 gap-6">
+            <div className="flex-1 overflow-auto py-2 md:py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 {/* Cột trái: Danh sách chiến dịch đang chạy */}
-                <div className="border rounded-lg p-4">
-                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                    <Play className="h-4 w-4 text-green-500" />
+                <div className="border rounded-lg p-3 md:p-4">
+                  <h3 className="font-semibold text-xs md:text-sm mb-2 md:mb-3 flex items-center gap-2">
+                    <Play className="h-3 w-3 md:h-4 md:w-4 text-green-500" />
                     Chiến dịch đang chạy ({campaigns.length})
                   </h3>
-                  <div className="space-y-2 max-h-[400px] overflow-auto">
+                  <div className="space-y-1.5 md:space-y-2 max-h-[200px] md:max-h-[400px] overflow-auto">
                     {campaigns.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">
+                      <p className="text-xs md:text-sm text-gray-500 text-center py-4">
                         Không có chiến dịch nào đang chạy
                       </p>
                     ) : (
@@ -757,7 +755,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                         <label
                           key={campaign.campaign_id}
                           className={cn(
-                            "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                            "flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg border cursor-pointer transition-all",
                             autoAdsSelectedCampaigns.includes(campaign.campaign_id)
                               ? "border-orange-500 bg-orange-50"
                               : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
@@ -776,20 +774,20 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                             className="w-4 h-4 text-orange-500 rounded border-gray-300 focus:ring-orange-500"
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{campaign.name}</p>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <p className="text-xs md:text-sm font-medium truncate">{campaign.name}</p>
+                            <div className="flex items-center gap-1.5 md:gap-2 mt-1 flex-wrap">
                               <span className={cn(
-                                "text-xs px-2 py-0.5 rounded-full",
+                                "text-[10px] md:text-xs px-1.5 md:px-2 py-0.5 rounded-full",
                                 AD_TYPE_MAP[campaign.ad_type]?.color || 'bg-gray-100 text-gray-600'
                               )}>
                                 {AD_TYPE_MAP[campaign.ad_type]?.label || campaign.ad_type}
                               </span>
                               {campaign.performance && (
-                                <span className="text-xs text-gray-500">
+                                <span className="text-[10px] md:text-xs text-gray-500">
                                   ROAS: {campaign.performance.roas?.toFixed(2) || '0.00'}
                                 </span>
                               )}
-                              <span className="text-xs text-orange-600 font-medium">
+                              <span className="text-[10px] md:text-xs text-orange-600 font-medium">
                                 NS: {campaign.campaign_budget
                                   ? new Intl.NumberFormat('vi-VN').format(campaign.campaign_budget) + 'đ'
                                   : '--'}
@@ -801,7 +799,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                     )}
                   </div>
                   {campaigns.length > 0 && (
-                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                    <div className="mt-2 md:mt-3 pt-2 md:pt-3 border-t flex items-center justify-between">
                       <button
                         onClick={() => {
                           if (autoAdsSelectedCampaigns.length === campaigns.length) {
@@ -810,11 +808,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                             setAutoAdsSelectedCampaigns(campaigns.map(c => c.campaign_id));
                           }
                         }}
-                        className="text-xs text-orange-600 hover:text-orange-700 font-medium"
+                        className="text-[10px] md:text-xs text-orange-600 hover:text-orange-700 font-medium"
                       >
                         {autoAdsSelectedCampaigns.length === campaigns.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
                       </button>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-[10px] md:text-xs text-gray-500">
                         Đã chọn: {autoAdsSelectedCampaigns.length}/{campaigns.length}
                       </span>
                     </div>
@@ -822,10 +820,10 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                 </div>
 
                 {/* Cột phải: Khung thời gian */}
-                <div className="border rounded-lg p-4">
+                <div className="border rounded-lg p-3 md:p-4">
                   {/* Dropdown chọn ngày */}
-                  <div className="mb-4">
-                    <label className="text-xs font-medium text-gray-700 mb-2 block">Chọn ngày áp dụng</label>
+                  <div className="mb-3 md:mb-4">
+                    <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1.5 md:mb-2 block">Chọn ngày áp dụng</label>
                     <select
                       value={autoAdsDateType}
                       onChange={(e) => {
@@ -834,7 +832,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                           setAutoAdsSpecificDates([]);
                         }
                       }}
-                      className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="daily">Hàng ngày</option>
                       <option value="specific">Ngày cụ thể</option>
@@ -843,9 +841,9 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
                   {/* Bảng chọn ngày cụ thể */}
                   {autoAdsDateType === 'specific' && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                      <p className="text-xs text-gray-600 mb-2">Chọn các ngày:</p>
-                      <div className="grid grid-cols-7 gap-1">
+                    <div className="mb-3 md:mb-4 p-2 md:p-3 bg-gray-50 rounded-lg">
+                      <p className="text-[10px] md:text-xs text-gray-600 mb-2">Chọn các ngày:</p>
+                      <div className="grid grid-cols-7 gap-0.5 md:gap-1">
                         {Array.from({ length: 14 }, (_, i) => {
                           const date = new Date();
                           date.setDate(date.getDate() + i);
@@ -863,13 +861,13 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                                 );
                               }}
                               className={cn(
-                                "p-1.5 rounded text-[10px] font-medium transition-all flex flex-col items-center",
+                                "p-1 md:p-1.5 rounded text-[8px] md:text-[10px] font-medium transition-all flex flex-col items-center",
                                 isSelected
                                   ? "bg-blue-500 text-white"
                                   : "bg-white border border-gray-200 hover:border-blue-300 text-gray-600"
                               )}
                             >
-                              <span className="text-[8px] opacity-70">{dayOfWeek}</span>
+                              <span className="text-[6px] md:text-[8px] opacity-70">{dayOfWeek}</span>
                               <span>{date.getDate()}/{date.getMonth() + 1}</span>
                             </button>
                           );
@@ -877,12 +875,12 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                       </div>
                       {autoAdsSpecificDates.length > 0 && (
                         <div className="mt-2 flex items-center justify-between">
-                          <span className="text-xs text-gray-500">
+                          <span className="text-[10px] md:text-xs text-gray-500">
                             Đã chọn: {autoAdsSpecificDates.length} ngày
                           </span>
                           <button
                             onClick={() => setAutoAdsSpecificDates([])}
-                            className="text-xs text-red-500 hover:text-red-600"
+                            className="text-[10px] md:text-xs text-red-500 hover:text-red-600"
                           >
                             Xóa tất cả
                           </button>
@@ -891,42 +889,59 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                     </div>
                   )}
 
-                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-blue-500" />
+                  <h3 className="font-semibold text-xs md:text-sm mb-2 md:mb-3 flex items-center gap-2">
+                    <Clock className="h-3 w-3 md:h-4 md:w-4 text-blue-500" />
                     Khung thời gian chạy ADS
                   </h3>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Chọn khung giờ áp dụng
+                  <p className="text-[10px] md:text-xs text-gray-500 mb-2 md:mb-3">
+                    Chọn khung giờ áp dụng <span className="text-orange-500">(● = đã có lịch)</span>
                   </p>
-                  <div className="grid grid-cols-8 gap-1.5 max-h-[280px] overflow-auto">
+                  <div className="grid grid-cols-4 md:grid-cols-8 gap-1 md:gap-1.5 max-h-[180px] md:max-h-[280px] overflow-auto">
                     {Array.from({ length: 48 }, (_, slot) => {
                       const hour = Math.floor(slot / 2);
                       const minute = (slot % 2) * 30;
                       const timeLabel = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
                       const isSelected = autoAdsTimeSlots[0] === slot;
+
+                      // Check if this slot has existing schedule
+                      const schedulesForSlot = existingSchedules.filter(s =>
+                        s.hour_start === hour && (s.minute_start || 0) === minute
+                      );
+                      const hasSchedule = schedulesForSlot.length > 0;
+                      const scheduleInfo = hasSchedule
+                        ? schedulesForSlot.map(s => `${s.campaign_name || 'Campaign'}: ${new Intl.NumberFormat('vi-VN').format(s.budget)}đ`).join('\n')
+                        : '';
+
                       return (
                         <button
                           key={slot}
                           onClick={() => {
-                            // Chỉ cho chọn 1 khung giờ
+                            if (hasSchedule) return;
                             setAutoAdsTimeSlots(isSelected ? [] : [slot]);
                           }}
+                          disabled={hasSchedule}
+                          title={hasSchedule ? `Đã có lịch:\n${scheduleInfo}` : timeLabel}
                           className={cn(
-                            "p-1.5 rounded-lg border text-[10px] font-medium transition-all",
+                            "p-1 md:p-1.5 rounded-lg border text-[9px] md:text-[10px] font-medium transition-all relative",
                             isSelected
                               ? "bg-blue-500 text-white border-blue-500 shadow-md"
-                              : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                              : hasSchedule
+                                ? "bg-orange-100 text-orange-400 border-orange-200 cursor-not-allowed opacity-70"
+                                : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
                           )}
                         >
                           {timeLabel}
+                          {hasSchedule && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-orange-500 rounded-full" />
+                          )}
                         </button>
                       );
                     })}
                   </div>
 
                   {/* Ngân sách */}
-                  <div className="mt-4 pt-3 border-t">
-                    <label className="text-xs font-medium text-gray-700 mb-2 block">
+                  <div className="mt-3 md:mt-4 pt-2 md:pt-3 border-t">
+                    <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1.5 md:mb-2 block">
                       Ngân sách (VNĐ) <span className="text-gray-400 font-normal">- Tối thiểu 100.000đ</span>
                     </label>
                     <Input
@@ -937,19 +952,19 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                         setAutoAdsBudget(raw);
                       }}
                       placeholder="Tối thiểu 100.000"
-                      className="text-sm"
+                      className="text-xs md:text-sm h-8 md:h-10"
                     />
                     {autoAdsBudget && parseFloat(autoAdsBudget.replace(/\./g, '')) < 100000 && (
-                      <p className="text-xs text-red-500 mt-1">Ngân sách tối thiểu là 100.000đ</p>
+                      <p className="text-[10px] md:text-xs text-red-500 mt-1">Ngân sách tối thiểu là 100.000đ</p>
                     )}
                   </div>
 
                 </div>
               </div>
             </div>
-            <DialogFooter className="border-t pt-4">
-              <div className="flex items-center justify-between w-full">
-                <div className="text-sm text-gray-500">
+            <DialogFooter className="border-t pt-3 md:pt-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-2 md:gap-0">
+                <div className="text-[10px] md:text-sm text-gray-500 order-2 md:order-1">
                   {(() => {
                     const hasCampaigns = autoAdsSelectedCampaigns.length > 0;
                     const hasTimeSlot = autoAdsTimeSlots.length === 1;
@@ -981,9 +996,10 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                     );
                   })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 order-1 md:order-2">
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => {
                       setShowAutoAdsDialog(false);
                       setAutoAdsSelectedCampaigns([]);
@@ -993,11 +1009,13 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                       setAutoAdsSpecificDates([]);
                     }}
                     disabled={autoAdsProcessing !== null}
+                    className="h-8 md:h-9 text-xs md:text-sm"
                   >
                     Hủy
                   </Button>
                   <Button
-                    onClick={() => handleAutoAds('decrease')}
+                    onClick={() => handleAutoAds()}
+                    size="sm"
                     disabled={
                       autoAdsProcessing !== null ||
                       autoAdsSelectedCampaigns.length === 0 ||
@@ -1006,38 +1024,14 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                       parseFloat(autoAdsBudget.replace(/\./g, '')) < 100000 ||
                       (autoAdsDateType === 'specific' && autoAdsSpecificDates.length === 0)
                     }
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+                    className="bg-orange-500 hover:bg-orange-600 h-8 md:h-9 text-xs md:text-sm"
                   >
-                    {autoAdsProcessing === 'decrease' ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    {autoAdsProcessing === 'set' ? (
+                      <RefreshCw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2 animate-spin" />
                     ) : (
-                      <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                      </svg>
+                      <Zap className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
                     )}
-                    Giảm
-                  </Button>
-                  <Button
-                    onClick={() => handleAutoAds('increase')}
-                    disabled={
-                      autoAdsProcessing !== null ||
-                      autoAdsSelectedCampaigns.length === 0 ||
-                      autoAdsTimeSlots.length === 0 ||
-                      !autoAdsBudget ||
-                      parseFloat(autoAdsBudget.replace(/\./g, '')) < 100000 ||
-                      (autoAdsDateType === 'specific' && autoAdsSpecificDates.length === 0)
-                    }
-                    className="bg-green-500 hover:bg-green-600"
-                  >
-                    {autoAdsProcessing === 'increase' ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                      </svg>
-                    )}
-                    Tăng
+                    Áp dụng
                   </Button>
                 </div>
               </div>
@@ -1051,7 +1045,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
 // ==================== SUB-COMPONENTS ====================
 
-// Component hiển thị chi tiết theo giờ với carousel (8 ô/hàng, mũi tên qua lại)
+// Component hiển thị chi tiết theo giờ với carousel (8 ô/hàng desktop, 3 ô/hàng mobile)
 function HourlyPerformanceCarousel({
   hourlyData,
   selectedDate,
@@ -1062,42 +1056,61 @@ function HourlyPerformanceCarousel({
   dateRange: 'today' | '7days' | '30days';
 }) {
   const [currentPage, setCurrentPage] = useState(0);
-  const itemsPerPage = 8;
-  const totalPages = Math.ceil(24 / itemsPerPage); // 3 pages: 0-7, 8-15, 16-23
+  // Use 3 items on mobile, 8 on desktop - we'll show mobile-specific view
+  const desktopItemsPerPage = 8;
+  const mobileItemsPerPage = 3;
+  const desktopTotalPages = Math.ceil(24 / desktopItemsPerPage); // 3 pages
+  const mobileTotalPages = Math.ceil(24 / mobileItemsPerPage); // 8 pages
 
-  const startIndex = currentPage * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const visibleHours = hourlyData.slice(startIndex, endIndex);
+  const desktopStartIndex = currentPage * desktopItemsPerPage;
+  const desktopEndIndex = desktopStartIndex + desktopItemsPerPage;
+  const mobileStartIndex = currentPage * mobileItemsPerPage;
+  const mobileEndIndex = mobileStartIndex + mobileItemsPerPage;
+
+  const desktopVisibleHours = hourlyData.slice(desktopStartIndex, desktopEndIndex);
+  const mobileVisibleHours = hourlyData.slice(mobileStartIndex, Math.min(mobileEndIndex, 24));
 
   const hoursWithData = hourlyData.filter((h: any) => h.expense > 0 || h.broad_gmv > 0).length;
 
+  const handlePrevPage = (isMobile: boolean) => {
+    setCurrentPage(prev => Math.max(0, prev - 1));
+  };
+
+  const handleNextPage = (isMobile: boolean) => {
+    const maxPage = isMobile ? mobileTotalPages - 1 : desktopTotalPages - 1;
+    setCurrentPage(prev => Math.min(maxPage, prev + 1));
+  };
+
+  // Reset page when switching between mobile/desktop
+  const currentTotalPages = typeof window !== 'undefined' && window.innerWidth < 768 ? mobileTotalPages : desktopTotalPages;
+  const effectiveCurrentPage = Math.min(currentPage, currentTotalPages - 1);
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-gray-700">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-3 gap-1">
+        <h4 className="text-xs md:text-sm font-semibold text-gray-700">
           📊 Chi tiết theo giờ - {selectedDate.toLocaleDateString('vi-VN')}
         </h4>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">
+        <div className="flex items-center gap-2 md:gap-3">
+          <span className="text-[10px] md:text-xs text-gray-500">
             {hoursWithData}/24 giờ có dữ liệu
           </span>
           {dateRange !== 'today' && (
-            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+            <span className="hidden md:inline text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
               ℹ️ Hiển thị dữ liệu của ngày {selectedDate.toLocaleDateString('vi-VN')}
             </span>
           )}
         </div>
       </div>
 
-      {/* Carousel với mũi tên */}
-      <div className="flex items-center gap-2">
-        {/* Mũi tên trái */}
+      {/* Desktop Carousel */}
+      <div className="hidden md:flex items-center gap-2">
         <button
-          onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
-          disabled={currentPage === 0}
+          onClick={() => handlePrevPage(false)}
+          disabled={effectiveCurrentPage === 0}
           className={cn(
             "p-2 rounded-full border transition-all flex-shrink-0",
-            currentPage === 0
+            effectiveCurrentPage === 0
               ? "bg-gray-100 text-gray-300 cursor-not-allowed"
               : "bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300"
           )}
@@ -1107,9 +1120,8 @@ function HourlyPerformanceCarousel({
           </svg>
         </button>
 
-        {/* Grid 8 ô */}
         <div className="flex-1 grid grid-cols-8 gap-2">
-          {visibleHours.map((hour: any) => {
+          {desktopVisibleHours.map((hour: any) => {
             const hourNum = hour.hour ?? 0;
             const roas = hour.expense > 0 ? hour.broad_gmv / hour.expense : 0;
             const hasData = hour.expense > 0 || hour.broad_gmv > 0;
@@ -1169,13 +1181,12 @@ function HourlyPerformanceCarousel({
           })}
         </div>
 
-        {/* Mũi tên phải */}
         <button
-          onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
-          disabled={currentPage === totalPages - 1}
+          onClick={() => handleNextPage(false)}
+          disabled={effectiveCurrentPage === desktopTotalPages - 1}
           className={cn(
             "p-2 rounded-full border transition-all flex-shrink-0",
-            currentPage === totalPages - 1
+            effectiveCurrentPage === desktopTotalPages - 1
               ? "bg-gray-100 text-gray-300 cursor-not-allowed"
               : "bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300"
           )}
@@ -1186,26 +1197,130 @@ function HourlyPerformanceCarousel({
         </button>
       </div>
 
-      {/* Page indicator */}
-      <div className="flex justify-center items-center gap-2 mt-3">
+      {/* Mobile Carousel */}
+      <div className="md:hidden flex items-center gap-1">
+        <button
+          onClick={() => handlePrevPage(true)}
+          disabled={effectiveCurrentPage === 0}
+          className={cn(
+            "p-1.5 rounded-full border transition-all flex-shrink-0",
+            effectiveCurrentPage === 0
+              ? "bg-gray-100 text-gray-300 cursor-not-allowed"
+              : "bg-white text-gray-600"
+          )}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div className="flex-1 grid grid-cols-3 gap-1.5">
+          {mobileVisibleHours.map((hour: any) => {
+            const hourNum = hour.hour ?? 0;
+            const roas = hour.expense > 0 ? hour.broad_gmv / hour.expense : 0;
+            const hasData = hour.expense > 0 || hour.broad_gmv > 0;
+
+            return (
+              <div
+                key={hourNum}
+                className={cn(
+                  "p-1.5 rounded-lg border text-[10px] transition-all",
+                  hasData
+                    ? "bg-white border-blue-300 shadow-sm"
+                    : "bg-gray-50 border-gray-200 opacity-60"
+                )}
+              >
+                <div className={cn(
+                  "font-bold text-center mb-1 pb-0.5 border-b text-xs",
+                  hasData ? "text-blue-600 border-blue-200" : "text-gray-400 border-gray-200"
+                )}>
+                  {hourNum.toString().padStart(2, '0')}h
+                </div>
+                {hasData ? (
+                  <div className="space-y-0.5">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">CP</span>
+                      <span className="font-semibold text-red-600">{formatPrice(hour.expense || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">DS</span>
+                      <span className="font-semibold text-green-600">{formatPrice(hour.broad_gmv || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">ROAS</span>
+                      <span className={cn(
+                        "font-bold",
+                        roas >= 2 ? "text-green-600" : roas >= 1 ? "text-yellow-600" : "text-red-600"
+                      )}>
+                        {roas.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center text-[9px] text-gray-400 py-1">
+                    --
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => handleNextPage(true)}
+          disabled={effectiveCurrentPage >= mobileTotalPages - 1}
+          className={cn(
+            "p-1.5 rounded-full border transition-all flex-shrink-0",
+            effectiveCurrentPage >= mobileTotalPages - 1
+              ? "bg-gray-100 text-gray-300 cursor-not-allowed"
+              : "bg-white text-gray-600"
+          )}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Desktop Page indicator */}
+      <div className="hidden md:flex justify-center items-center gap-2 mt-3">
         <span className="text-xs text-gray-500">
-          {startIndex.toString().padStart(2, '0')}h - {(endIndex - 1).toString().padStart(2, '0')}h
+          {desktopStartIndex.toString().padStart(2, '0')}h - {(desktopEndIndex - 1).toString().padStart(2, '0')}h
         </span>
         <div className="flex gap-1">
-          {Array.from({ length: totalPages }).map((_, idx) => (
+          {Array.from({ length: desktopTotalPages }).map((_, idx) => (
             <button
               key={idx}
               onClick={() => setCurrentPage(idx)}
               className={cn(
                 "w-2 h-2 rounded-full transition-all",
-                currentPage === idx ? "bg-blue-500 w-4" : "bg-gray-300 hover:bg-gray-400"
+                effectiveCurrentPage === idx ? "bg-blue-500 w-4" : "bg-gray-300 hover:bg-gray-400"
               )}
             />
           ))}
         </div>
         <span className="text-xs text-gray-400">
-          Trang {currentPage + 1}/{totalPages}
+          Trang {effectiveCurrentPage + 1}/{desktopTotalPages}
         </span>
+      </div>
+
+      {/* Mobile Page indicator */}
+      <div className="md:hidden flex justify-center items-center gap-1.5 mt-2">
+        <span className="text-[10px] text-gray-500">
+          {mobileStartIndex.toString().padStart(2, '0')}h - {(Math.min(mobileEndIndex, 24) - 1).toString().padStart(2, '0')}h
+        </span>
+        <div className="flex gap-0.5">
+          {Array.from({ length: mobileTotalPages }).map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentPage(idx)}
+              className={cn(
+                "w-1.5 h-1.5 rounded-full transition-all",
+                effectiveCurrentPage === idx ? "bg-blue-500 w-3" : "bg-gray-300"
+              )}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1448,8 +1563,8 @@ function CampaignList({
 
   return (
     <div className="bg-white rounded-lg border overflow-hidden">
-      {/* Table Header */}
-      <div className="grid grid-cols-[40px_minmax(250px,1fr)_100px_90px_110px_100px_90px_90px_90px] gap-3 px-4 py-3 bg-gray-50 border-b text-xs font-semibold text-gray-600">
+      {/* Desktop Table Header - Hidden on mobile */}
+      <div className="hidden md:grid grid-cols-[40px_minmax(250px,1fr)_100px_90px_110px_100px_90px_90px_90px] gap-3 px-4 py-3 bg-gray-50 border-b text-xs font-semibold text-gray-600">
         <div></div>
         <div>Thông tin chiến dịch</div>
         <div className="text-right" title="Ngân sách hàng ngày (từ cấu hình chiến dịch)">Ngân sách</div>
@@ -1461,19 +1576,26 @@ function CampaignList({
         <div className="text-right" title={`ACOS = (Chi phí / Doanh số) × 100% (${dateRange === 'today' ? 'hôm nay' : dateRange === '7days' ? '7 ngày' : '30 ngày'})`}>ACOS (%)</div>
       </div>
 
+      {/* Mobile Header */}
+      <div className="md:hidden px-4 py-2 bg-gray-50 border-b text-xs font-semibold text-gray-600">
+        Thông tin chiến dịch
+      </div>
+
       {/* Table Body */}
       <div className="divide-y max-h-[600px] overflow-auto">
         {campaigns.map(c => {
           const truncatedName = c.name && c.name.length > 80 ? c.name.substring(0, 80) + '...' : c.name;
+          const mobileTruncatedName = c.name && c.name.length > 40 ? c.name.substring(0, 40) + '...' : c.name;
           const perf = c.performance;
           const isExpanded = expandedCampaignId === c.campaign_id;
           const hourlyData = campaignHourlyData[c.campaign_id];
 
           return (
             <div key={c.campaign_id}>
+              {/* Desktop Row - Hidden on mobile */}
               <div
                 className={cn(
-                  "grid grid-cols-[40px_minmax(250px,1fr)_100px_90px_110px_100px_90px_90px_90px] gap-3 px-4 py-3 items-start hover:bg-gray-50 transition-colors cursor-pointer",
+                  "hidden md:grid grid-cols-[40px_minmax(250px,1fr)_100px_90px_110px_100px_90px_90px_90px] gap-3 px-4 py-3 items-start hover:bg-gray-50 transition-colors cursor-pointer",
                   isExpanded && "bg-blue-50"
                 )}
                 onClick={() => onToggleExpand(c.campaign_id)}
@@ -1601,6 +1723,63 @@ function CampaignList({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Mobile Card View */}
+              <div
+                className={cn(
+                  "md:hidden p-4 hover:bg-gray-50 transition-colors cursor-pointer",
+                  isExpanded && "bg-blue-50"
+                )}
+                onClick={() => onToggleExpand(c.campaign_id)}
+              >
+                {/* Campaign Name & Status */}
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm leading-tight" title={c.name || undefined}>
+                      {mobileTruncatedName || `Campaign ${c.campaign_id}`}
+                    </p>
+                    <span className={cn(
+                      "inline-block text-[10px] px-1.5 py-0.5 rounded mt-1",
+                      c.status === 'ongoing' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    )}>
+                      {STATUS_MAP[c.status || '']?.label || '-'}
+                    </span>
+                  </div>
+                  {isExpanded ? (
+                    <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Mobile Metrics Grid */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-red-50 rounded p-2">
+                    <div className="text-gray-500">Chi phí</div>
+                    <div className="font-semibold text-red-600">{perf ? formatPrice(perf.expense) : '₫0'}</div>
+                  </div>
+                  <div className="bg-green-50 rounded p-2">
+                    <div className="text-gray-500">Doanh số</div>
+                    <div className="font-semibold text-green-600">{perf ? formatPrice(perf.gmv) : '₫0'}</div>
+                  </div>
+                  <div className="bg-blue-50 rounded p-2">
+                    <div className="text-gray-500">ROAS</div>
+                    <div className="font-semibold text-blue-600">{perf && perf.roas > 0 ? perf.roas.toFixed(2) : '0.00'}</div>
+                  </div>
+                  <div className="bg-orange-50 rounded p-2">
+                    <div className="text-gray-500">Ngân sách</div>
+                    <div className="font-semibold text-orange-600">{c.campaign_budget ? formatPrice(c.campaign_budget) : '-'}</div>
+                  </div>
+                </div>
+
+                {!isExpanded && (
+                  <p className="text-[10px] text-gray-400 italic mt-2 text-center">Nhấn để xem chi tiết theo giờ</p>
+                )}
               </div>
 
               {/* Hourly Performance Details */}

@@ -103,9 +103,12 @@ export function AutoSetupDialog({
   const fetchTimeSlots = async () => {
     setLoadingSlots(true);
     try {
+      const startTime = Math.floor(Date.now() / 1000);
+
       const { data, error } = await supabase.functions.invoke('apishopee-flash-sale', {
-        body: { action: 'get-time-slots', shop_id: shopId },
+        body: { action: 'get-time-slots', shop_id: shopId, start_time: startTime },
       });
+
       if (error) throw error;
 
       if (data?.error === 'shop_flash_sale_param_error') {
@@ -115,8 +118,13 @@ export function AutoSetupDialog({
       if (data?.error) throw new Error(data.error);
 
       let slots: TimeSlot[] = [];
-      if (data?.response?.time_slot_list) slots = data.response.time_slot_list;
-      else if (Array.isArray(data?.response)) slots = data.response;
+      if (data?.response?.time_slot_list) {
+        slots = data.response.time_slot_list;
+      } else if (Array.isArray(data?.response)) {
+        slots = data.response;
+      } else if (data?.time_slot_list) {
+        slots = data.time_slot_list;
+      }
 
       // Fetch existing flash sales
       const { data: existingFS } = await supabase

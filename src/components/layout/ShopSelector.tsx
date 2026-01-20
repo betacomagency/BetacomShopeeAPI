@@ -96,8 +96,8 @@ export default function ShopSelector() {
         )}
 
         {/* Shop Name */}
-        <div className="text-left flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-700 whitespace-nowrap">
+        <div className="text-left flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-slate-700 truncate">
             {currentShop?.shop_name || `Shop ${selectedShopId}`}
           </p>
         </div>
@@ -141,7 +141,7 @@ export default function ShopSelector() {
                   placeholder="Tìm shop..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full pl-8 pr-3 py-1.5 text-base border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   autoFocus
                 />
               </div>

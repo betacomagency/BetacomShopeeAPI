@@ -101,7 +101,8 @@ export const menuItems: MenuItem[] = [
     description: 'Quản lý quảng cáo',
     children: [
       { title: 'Quản lý quảng cáo', icon: Megaphone, path: '/ads', permissionKey: 'ads' },
-      { title: 'Lịch sử', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
+      { title: 'Lịch tự động', icon: Clock, path: '/ads/schedules', permissionKey: 'ads' },
+      { title: 'Lịch sử thực thi', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
     ],
   },
   {

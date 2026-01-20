@@ -274,14 +274,17 @@ serve(async (req) => {
       case 'get-time-slots': {
         const { start_time, end_time } = body;
         const now = Math.floor(Date.now() / 1000);
-        
+
+        // Thêm buffer 5 phút để đảm bảo start_time > now của Shopee server
+        // (tránh lỗi do chênh lệch thời gian giữa các server)
+        const buffer = 5 * 60; // 5 phút
+        const safeStartTime = Math.max(start_time || now, now) + buffer;
+
         // Shopee API yêu cầu BẮT BUỘC cả start_time và end_time
         const extraParams: Record<string, number> = {
-          start_time: start_time || now,
+          start_time: safeStartTime,
           end_time: end_time || (now + 30 * 24 * 60 * 60), // +30 days
         };
-
-        console.log('[FLASH-SALE] get-time-slots params:', extraParams);
 
         result = await callShopeeAPIWithRetry(
           supabase,
@@ -293,8 +296,6 @@ serve(async (req) => {
           undefined,
           extraParams
         );
-        
-        console.log('[FLASH-SALE] get-time-slots result:', JSON.stringify(result));
         break;
       }
 
@@ -558,11 +559,9 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('[FLASH-SALE] Error:', error);
-    // Return 200 with error in body to allow frontend to read error details
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       error: (error as Error).message,
       success: false,
-      details: 'Check Supabase Edge Function logs for more details'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

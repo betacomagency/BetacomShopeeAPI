@@ -294,6 +294,7 @@ export default function UsersSettingsPage() {
       key: 'user',
       header: 'Người dùng',
       width: '280px',
+      mobileHeader: true,
       render: (user: UserProfile) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
@@ -312,6 +313,7 @@ export default function UsersSettingsPage() {
       key: 'system_role',
       header: 'Vai trò',
       width: '140px',
+      mobileBadge: true,
       render: (user: UserProfile) => (
         <CellBadge variant={user.system_role === 'admin' ? 'warning' : 'default'}>
           {user.system_role === 'admin' ? (
@@ -329,6 +331,7 @@ export default function UsersSettingsPage() {
       key: 'phone',
       header: 'Số điện thoại',
       width: '140px',
+      hideOnMobile: true,
       render: (user: UserProfile) => (
         <CellText muted={!user.phone}>{user.phone || '-'}</CellText>
       ),
@@ -337,6 +340,7 @@ export default function UsersSettingsPage() {
       key: 'created_at',
       header: 'Ngày tạo',
       width: '120px',
+      hideOnMobile: true,
       render: (user: UserProfile) => (
         <CellText muted>{formatDate(user.created_at)}</CellText>
       ),
@@ -345,6 +349,7 @@ export default function UsersSettingsPage() {
       key: 'status',
       header: 'Trạng thái',
       width: '100px',
+      hideOnMobile: true,
       render: (user: UserProfile) => (
         <CellBadge variant={user.id === currentUser?.id ? 'success' : 'default'}>
           {user.id === currentUser?.id ? 'Bạn' : 'Active'}
@@ -355,6 +360,7 @@ export default function UsersSettingsPage() {
       key: 'shops',
       header: 'Shop quản lý',
       width: '200px',
+      hideOnMobile: true,
       render: (user: UserProfile) => {
         const shops = user.shops || [];
         if (shops.length === 0) {
@@ -416,12 +422,12 @@ export default function UsersSettingsPage() {
   ];
 
   return (
-    <div className="space-y-6 bg-white min-h-full">
+    <div className="space-y-4 sm:space-y-6 bg-white min-h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-6 border-b">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">Quản lý người dùng</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-lg sm:text-xl font-semibold text-slate-800">Quản lý người dùng</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Xem danh sách và tạo tài khoản cho người dùng mới
           </p>
         </div>
@@ -432,22 +438,22 @@ export default function UsersSettingsPage() {
             onClick={fetchUsers}
             disabled={loading}
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Làm mới
+            <RefreshCw className={`w-4 h-4 sm:mr-2 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Làm mới</span>
           </Button>
           <Button
             size="sm"
             onClick={() => setIsCreateDialogOpen(true)}
             className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
           >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Tạo tài khoản
+            <UserPlus className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Tạo tài khoản</span>
           </Button>
         </div>
       </div>
 
       {/* Users Table */}
-      <div className="px-6 pb-6">
+      <div className="px-4 sm:px-6 pb-4 sm:pb-6">
         <div className="border rounded-lg overflow-hidden">
           <SimpleDataTable
             columns={columns}
@@ -460,7 +466,7 @@ export default function UsersSettingsPage() {
           />
         </div>
         {!loading && users.length > 0 && (
-          <p className="text-sm text-slate-500 mt-3">
+          <p className="text-xs sm:text-sm text-slate-500 mt-2 sm:mt-3">
             Tổng cộng: {users.length} người dùng
           </p>
         )}

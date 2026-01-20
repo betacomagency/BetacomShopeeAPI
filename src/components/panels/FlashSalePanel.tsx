@@ -514,7 +514,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                 : 'Không có Flash Sale nào phù hợp.'}
             </div>
           ) : (
-            <div className="space-y-3 p-4 bg-slate-50/50">
+            <div className="divide-y">
               {mobileData.map((sale) => {
                 const startDate = new Date(sale.start_time * 1000);
                 const endDate = new Date(sale.end_time * 1000);
@@ -523,19 +523,17 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                 const endTimeStr = endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
                 return (
-                  <div key={sale.flash_sale_id} className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex justify-between items-center mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className={cn(
-                          "px-2.5 py-1 rounded-full text-xs font-semibold",
-                          sale.type === 2 ? "bg-green-100 text-green-700" :
-                            sale.type === 1 ? "bg-blue-100 text-blue-700" :
-                              "bg-slate-100 text-slate-600"
-                        )}>
-                          {TYPE_LABELS[sale.type]}
+                  <div key={sale.flash_sale_id} className="p-4 bg-white">
+                    {/* Row 1: Date + Time + Toggle */}
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3 text-sm text-slate-600">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          {dateStr}
                         </span>
-                        <span className="text-xs text-slate-400 font-mono">
-                          #{sale.flash_sale_id}
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          {startTimeStr} - {endTimeStr}
                         </span>
                       </div>
                       <Switch
@@ -546,46 +544,47 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                       />
                     </div>
 
-                    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        <span className="text-sm font-medium text-slate-900">{dateStr}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-slate-400" />
-                        <span className="text-sm text-slate-600">
-                          {startTimeStr} - {endTimeStr}
-                        </span>
-                      </div>
+                    {/* Row 2: Badge + ID */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-full text-xs font-medium",
+                        sale.type === 2 ? "bg-green-100 text-green-700" :
+                          sale.type === 1 ? "bg-blue-100 text-blue-700" :
+                            "bg-slate-100 text-slate-600"
+                      )}>
+                        {TYPE_LABELS[sale.type]}
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono">
+                        #{sale.flash_sale_id}
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-50">
+                    {/* Row 3: Actions */}
+                    <div className="mt-3 flex items-center justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-slate-600 border-slate-200"
+                        className="h-7 text-xs"
                         onClick={() => handleViewDetail(sale)}
                       >
-                        <Eye className="w-3.5 h-3.5 mr-1.5" /> Chi tiết
+                        <Eye className="w-3 h-3 mr-1" /> Chi tiết
                       </Button>
-
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700"
+                        className="h-7 text-xs text-green-600 border-green-200"
                         onClick={() => handleCopy(sale)}
                       >
-                        <Copy className="w-3.5 h-3.5 mr-1.5" /> Sao chép
+                        <Copy className="w-3 h-3 mr-1" /> Sao chép
                       </Button>
-
                       {canDelete(sale) && (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          className="h-7 text-xs text-red-600"
                           onClick={() => handleDeleteClick(sale)}
                         >
-                          <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Xóa
+                          <Trash2 className="w-3 h-3 mr-1" /> Xóa
                         </Button>
                       )}
                     </div>

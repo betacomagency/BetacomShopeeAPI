@@ -23,7 +23,6 @@ export default function Header() {
             />
             <div>
               <h1 className="font-bold text-xl text-red-500">BETACOM</h1>
-              <p className="text-xs text-slate-500">Quản lý Shop Shopee</p>
             </div>
           </div>
 

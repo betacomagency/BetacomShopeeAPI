@@ -1,5 +1,5 @@
 /**
- * Home Page - Dashboard tổng quan
+ * Home Page - Dashboard tổng quan cho shop đang chọn
  */
 
 import { useEffect, useState } from 'react';
@@ -17,25 +17,20 @@ import {
   CheckCircle2,
   XCircle,
   Star,
-  Users,
-  Activity
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
+import { ADMIN_EMAIL } from '@/config/menu-config';
 
-interface DashboardStats {
-  totalShops: number;
-  activeShops: number;
-  expiringSoonShops: number;
-  expiredShops: number;
-}
-
-interface ShopInfo {
+interface ShopDetail {
   id: string;
   shop_id: number;
   shop_name: string;
@@ -46,100 +41,55 @@ interface ShopInfo {
 }
 
 export default function HomePage() {
-  const { user } = useAuth();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalShops: 0,
-    activeShops: 0,
-    expiringSoonShops: 0,
-    expiredShops: 0,
-  });
-  const [shops, setShops] = useState<ShopInfo[]>([]);
+  const { user, profile } = useAuth();
+  const { shops, selectedShopId, isLoading: isShopLoading } = useShopeeAuth();
+  const [shopDetail, setShopDetail] = useState<ShopDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Kiểm tra admin
+  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() || profile?.system_role === 'admin';
+
+  // Tìm shop đang được chọn từ context
+  const currentShop = shops.find((shop) => shop.shop_id === selectedShopId);
 
   useEffect(() => {
     const abortController = new AbortController();
 
-    if (user?.id) {
-      loadDashboardData(abortController.signal);
-    } else {
+    if (user?.id && selectedShopId) {
+      loadShopDetail(abortController.signal);
+    } else if (!isShopLoading) {
       setIsLoading(false);
     }
 
     return () => {
       abortController.abort();
     };
-  }, [user?.id]);
+  }, [user?.id, selectedShopId, isShopLoading]);
 
-  const loadDashboardData = async (signal?: AbortSignal) => {
-    if (!user) return;
+  const loadShopDetail = async (signal?: AbortSignal) => {
+    if (!user || !selectedShopId) return;
 
     setIsLoading(true);
     try {
-      const { data: memberData, error: memberError } = await supabase
-        .from('apishopee_shop_members')
-        .select(`
-          apishopee_shops (
-            id,
-            shop_id,
-            shop_name,
-            shop_logo,
-            region,
-            expired_at,
-            access_token_expired_at
-          )
-        `)
-        .eq('profile_id', user.id)
-        .eq('is_active', true)
+      const { data, error } = await supabase
+        .from('apishopee_shops')
+        .select('id, shop_id, shop_name, shop_logo, region, expired_at, access_token_expired_at')
+        .eq('shop_id', selectedShopId)
+        .single()
         .abortSignal(signal!);
 
       if (signal?.aborted) return;
 
-      if (memberError) {
-        if (memberError.message?.includes('abort')) return;
-        console.error('Error loading shops:', memberError);
-      } else if (memberData) {
-        const shopList = memberData
-          .map((m) => m.apishopee_shops as unknown as ShopInfo)
-          .filter(Boolean);
-
-        setShops(shopList);
-
-        const now = Date.now(); // milliseconds
-        const sevenDaysLater = now + 7 * 24 * 60 * 60 * 1000;
-
-        // Helper: chuẩn hóa timestamp về milliseconds
-        const normalizeTimestamp = (ts: number | null): number | null => {
-          if (!ts) return null;
-          // Nếu timestamp < 10^12 thì đang là seconds, cần nhân 1000
-          return ts < 1e12 ? ts * 1000 : ts;
-        };
-
-        const activeShops = shopList.filter(s => {
-          const expiry = normalizeTimestamp(s.access_token_expired_at) || normalizeTimestamp(s.expired_at);
-          return expiry && expiry > now;
-        });
-
-        const expiringSoon = shopList.filter(s => {
-          const expiry = normalizeTimestamp(s.access_token_expired_at) || normalizeTimestamp(s.expired_at);
-          return expiry && expiry > now && expiry < sevenDaysLater;
-        });
-
-        const expiredShops = shopList.filter(s => {
-          const expiry = normalizeTimestamp(s.access_token_expired_at) || normalizeTimestamp(s.expired_at);
-          return !expiry || expiry <= now;
-        });
-
-        setStats({
-          totalShops: shopList.length,
-          activeShops: activeShops.length,
-          expiringSoonShops: expiringSoon.length,
-          expiredShops: expiredShops.length,
-        });
+      if (error) {
+        if (error.message?.includes('abort')) return;
+        console.error('Error loading shop detail:', error);
+      } else if (data) {
+        setShopDetail(data);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       if (signal?.aborted) return;
-      console.error('Error loading dashboard:', err);
+      console.error('Error loading shop detail:', err);
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false);
@@ -150,36 +100,36 @@ export default function HomePage() {
   // Helper: chuẩn hóa timestamp về milliseconds
   const normalizeTimestamp = (ts: number | null): number | null => {
     if (!ts) return null;
-    // Nếu timestamp < 10^12 thì đang là seconds, cần nhân 1000
     return ts < 1e12 ? ts * 1000 : ts;
   };
 
-  const getTokenStatus = (shop: ShopInfo) => {
-    const now = Date.now(); // milliseconds
-    const rawExpiry = shop.access_token_expired_at || shop.expired_at;
+  const getTokenStatus = () => {
+    if (!shopDetail) return null;
+
+    const now = Date.now();
+    const rawExpiry = shopDetail.access_token_expired_at || shopDetail.expired_at;
     const expiry = normalizeTimestamp(rawExpiry);
 
-    if (!expiry) return { status: 'unknown', label: 'Chưa xác thực', color: 'bg-slate-100 text-slate-600' };
+    if (!expiry) return { status: 'unknown', label: 'Chưa xác thực', color: 'bg-slate-100 text-slate-600', icon: AlertCircle };
 
     const diffMs = expiry - now;
     const hoursLeft = Math.floor(diffMs / (60 * 60 * 1000));
     const daysLeft = Math.floor(diffMs / (24 * 60 * 60 * 1000));
 
     if (diffMs <= 0) {
-      return { status: 'expired', label: 'Hết hạn', color: 'bg-red-100 text-red-700' };
+      return { status: 'expired', label: 'Token hết hạn', color: 'bg-red-100 text-red-700', icon: XCircle };
     } else if (daysLeft < 1) {
-      // Còn ít hơn 1 ngày - hiển thị số giờ
-      return { status: 'critical', label: `${hoursLeft} giờ`, color: 'bg-red-100 text-red-700' };
+      return { status: 'critical', label: `Còn ${hoursLeft} giờ`, color: 'bg-red-100 text-red-700', icon: Clock };
     } else if (daysLeft <= 3) {
-      return { status: 'critical', label: `${daysLeft} ngày`, color: 'bg-red-100 text-red-700' };
+      return { status: 'critical', label: `Còn ${daysLeft} ngày`, color: 'bg-red-100 text-red-700', icon: Clock };
     } else if (daysLeft <= 7) {
-      return { status: 'warning', label: `${daysLeft} ngày`, color: 'bg-amber-100 text-amber-700' };
+      return { status: 'warning', label: `Còn ${daysLeft} ngày`, color: 'bg-amber-100 text-amber-700', icon: Clock };
     } else {
-      return { status: 'active', label: `${daysLeft} ngày`, color: 'bg-emerald-100 text-emerald-700' };
+      return { status: 'active', label: `Còn ${daysLeft} ngày`, color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 };
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isShopLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Spinner className="w-8 h-8" />
@@ -191,236 +141,141 @@ export default function HomePage() {
     return <LandingContent />;
   }
 
-  return (
-    <div className="p-6 space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
-          title="Tổng Shop"
-          value={stats.totalShops}
-          icon={Store}
-          gradient="from-blue-500 to-blue-600"
-          bgColor="bg-blue-50"
-        />
-        <StatsCard
-          title="Đang hoạt động"
-          value={stats.activeShops}
-          icon={CheckCircle2}
-          gradient="from-emerald-500 to-emerald-600"
-          bgColor="bg-emerald-50"
-          subtitle={stats.totalShops > 0 ? `${Math.round(stats.activeShops / stats.totalShops * 100)}%` : undefined}
-        />
-        <StatsCard
-          title="Sắp hết hạn"
-          value={stats.expiringSoonShops}
-          icon={Clock}
-          gradient="from-amber-500 to-amber-600"
-          bgColor="bg-amber-50"
-          alert={stats.expiringSoonShops > 0}
-        />
-        <StatsCard
-          title="Đã hết hạn"
-          value={stats.expiredShops}
-          icon={XCircle}
-          gradient="from-red-500 to-red-600"
-          bgColor="bg-red-50"
-          alert={stats.expiredShops > 0}
-        />
+  // Nếu chưa có shop nào
+  if (shops.length === 0) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="py-16">
+            <div className="text-center">
+              <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-6">
+                <Store className="w-10 h-10 text-slate-400" />
+              </div>
+              <h2 className="text-xl font-semibold text-slate-800 mb-2">Chưa có shop nào</h2>
+              <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                Kết nối shop Shopee của bạn để bắt đầu quản lý đơn hàng, sản phẩm và nhiều hơn nữa
+              </p>
+              <Link to="/settings/shops">
+                <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                  <Store className="w-4 h-4 mr-2" />
+                  Kết nối Shop Shopee
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+    );
+  }
 
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Shop List */}
-        <div className="lg:col-span-2">
-          <Card className="h-full">
-            <CardHeader className="pb-4 border-b">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Store className="w-5 h-5 text-orange-500" />
-                  Shop của bạn
-                </CardTitle>
+  const tokenStatus = getTokenStatus();
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      {/* Current Shop Info Card */}
+      <Card className="overflow-hidden">
+        <div className="bg-gradient-to-r from-orange-500 to-red-500 px-4 md:px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-lg flex-shrink-0">
+              {currentShop?.shop_logo || shopDetail?.shop_logo ? (
+                <img
+                  src={currentShop?.shop_logo || shopDetail?.shop_logo || ''}
+                  alt={currentShop?.shop_name || shopDetail?.shop_name || 'Shop'}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <Store className="w-7 h-7 md:w-8 md:h-8 text-orange-500" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0 text-white">
+              <h1 className="text-lg md:text-xl font-bold truncate">
+                {currentShop?.shop_name || shopDetail?.shop_name || `Shop ${selectedShopId}`}
+              </h1>
+              <p className="text-orange-100 text-sm">
+                ID: {selectedShopId} • {currentShop?.region || shopDetail?.region || 'VN'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Token Alerts - Chỉ hiển thị cho Admin */}
+      {isAdmin && tokenStatus && (tokenStatus.status === 'expired' || tokenStatus.status === 'critical' || tokenStatus.status === 'warning') && (
+        <Card className={cn(
+          "border",
+          tokenStatus.status === 'expired' ? "border-red-200 bg-gradient-to-br from-red-50 to-rose-50" :
+          tokenStatus.status === 'critical' ? "border-red-200 bg-gradient-to-br from-red-50 to-rose-50" :
+          "border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50"
+        )}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex gap-3">
+              <div className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
+                tokenStatus.status === 'warning' ? "bg-amber-100" : "bg-red-100"
+              )}>
+                {tokenStatus.status === 'expired' ? (
+                  <XCircle className="w-5 h-5 text-red-600" />
+                ) : tokenStatus.status === 'critical' ? (
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                ) : (
+                  <Clock className="w-5 h-5 text-amber-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className={cn(
+                  "font-semibold",
+                  tokenStatus.status === 'warning' ? "text-amber-800" : "text-red-800"
+                )}>
+                  {tokenStatus.status === 'expired' ? 'Token đã hết hạn' :
+                   tokenStatus.status === 'critical' ? 'Token sắp hết hạn' : 'Cảnh báo Token'}
+                </p>
+                <p className={cn(
+                  "text-sm mt-1",
+                  tokenStatus.status === 'warning' ? "text-amber-700" : "text-red-700"
+                )}>
+                  {tokenStatus.status === 'expired'
+                    ? 'Vui lòng kết nối lại shop để tiếp tục sử dụng'
+                    : `Token sẽ hết hạn trong ${tokenStatus.label.replace('Còn ', '')}. Hãy gia hạn ngay!`
+                  }
+                </p>
                 <Link to="/settings/shops">
-                  <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50">
-                    Xem tất cả <ArrowRight className="w-4 h-4 ml-1" />
+                  <Button
+                    size="sm"
+                    className={cn(
+                      "mt-3 text-white",
+                      tokenStatus.status === 'warning' ? "bg-amber-500 hover:bg-amber-600" : "bg-red-500 hover:bg-red-600"
+                    )}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1.5" />
+                    {tokenStatus.status === 'expired' ? 'Kết nối lại' : 'Gia hạn ngay'}
                   </Button>
                 </Link>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {shops.length === 0 ? (
-                <div className="text-center py-12 px-4">
-                  <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                    <Store className="w-8 h-8 text-slate-400" />
-                  </div>
-                  <p className="text-slate-600 font-medium mb-2">Chưa có shop nào</p>
-                  <p className="text-sm text-slate-500 mb-4">Kết nối shop Shopee để bắt đầu quản lý</p>
-                  <Link to="/settings/shops">
-                    <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
-                      <Store className="w-4 h-4 mr-2" />
-                      Kết nối Shop
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {shops.slice(0, 5).map((shop) => {
-                    const tokenStatus = getTokenStatus(shop);
-                    return (
-                      <div
-                        key={shop.id}
-                        className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50/50 transition-colors"
-                      >
-                        <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm">
-                          {shop.shop_logo ? (
-                            <img src={shop.shop_logo} alt={shop.shop_name} className="w-full h-full object-cover" />
-                          ) : (
-                            <Store className="w-5 h-5 text-slate-400" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-slate-800 truncate">
-                            {shop.shop_name || `Shop ${shop.shop_id}`}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            ID: {shop.shop_id} • {shop.region}
-                          </p>
-                        </div>
-                        <Badge className={cn("font-medium", tokenStatus.color)}>
-                          {tokenStatus.label}
-                        </Badge>
-                      </div>
-                    );
-                  })}
-                  {shops.length > 5 && (
-                    <div className="px-4 py-3 text-center">
-                      <Link to="/settings/shops" className="text-sm text-orange-600 hover:text-orange-700 font-medium">
-                        và {shops.length - 5} shop khác...
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="pb-3 border-b">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Activity className="w-5 h-5 text-blue-500" />
-                Truy cập nhanh
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-2">
-              <div className="space-y-1">
-                <QuickActionButton icon={Package} label="Quản lý sản phẩm" href="/products" color="blue" />
-                <QuickActionButton icon={ShoppingCart} label="Quản lý đơn hàng" href="/orders" color="emerald" />
-                <QuickActionButton icon={Star} label="Đánh giá" href="/reviews" color="amber" />
-                <QuickActionButton icon={Zap} label="Flash Sale" href="/flash-sale" color="orange" />
-                <QuickActionButton icon={Store} label="Quản lý Shop" href="/settings/shops" color="purple" />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Token Alert */}
-          {stats.expiringSoonShops > 0 && (
-            <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
-              <CardContent className="pt-4 pb-4">
-                <div className="flex gap-3">
-                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <AlertCircle className="w-5 h-5 text-amber-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-amber-800">Cảnh báo Token</p>
-                    <p className="text-sm text-amber-700 mt-1">
-                      {stats.expiringSoonShops} shop sắp hết hạn trong 7 ngày
-                    </p>
-                    <Link to="/settings/shops">
-                      <Button size="sm" className="mt-3 bg-amber-500 hover:bg-amber-600 text-white">
-                        <RefreshCw className="w-4 h-4 mr-1.5" />
-                        Gia hạn ngay
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Expired Alert */}
-          {stats.expiredShops > 0 && (
-            <Card className="border-red-200 bg-gradient-to-br from-red-50 to-rose-50">
-              <CardContent className="pt-4 pb-4">
-                <div className="flex gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                    <XCircle className="w-5 h-5 text-red-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-red-800">Token đã hết hạn</p>
-                    <p className="text-sm text-red-700 mt-1">
-                      {stats.expiredShops} shop cần kết nối lại
-                    </p>
-                    <Link to="/settings/shops">
-                      <Button size="sm" className="mt-3 bg-red-500 hover:bg-red-600 text-white">
-                        <RefreshCw className="w-4 h-4 mr-1.5" />
-                        Kết nối lại
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// Stats Card Component
-function StatsCard({
-  title,
-  value,
-  icon: Icon,
-  gradient,
-  bgColor,
-  subtitle,
-  alert
-}: {
-  title: string;
-  value: number;
-  icon: React.ElementType;
-  gradient: string;
-  bgColor: string;
-  subtitle?: string;
-  alert?: boolean;
-}) {
-  return (
-    <Card className={cn(
-      "relative overflow-hidden transition-all hover:shadow-md",
-      alert && value > 0 && "ring-2 ring-amber-300"
-    )}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-slate-500 font-medium">{title}</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-3xl font-bold text-slate-800">{value}</p>
-              {subtitle && (
-                <span className="text-sm text-slate-400 font-medium">{subtitle}</span>
-              )}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Activity className="w-5 h-5 text-blue-500" />
+            Truy cập nhanh
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+            <QuickActionButton icon={Package} label="Quản lý sản phẩm" href="/products" color="blue" />
+            <QuickActionButton icon={ShoppingCart} label="Quản lý đơn hàng" href="/orders" color="emerald" />
+            <QuickActionButton icon={Star} label="Đánh giá" href="/reviews" color="amber" />
+            <QuickActionButton icon={Zap} label="Flash Sale" href="/flash-sale" color="orange" />
+            <QuickActionButton icon={Store} label="Quản lý Shop" href="/settings/shops" color="purple" />
+            <QuickActionButton icon={TrendingUp} label="Quảng cáo" href="/ads" color="pink" />
           </div>
-          <div className={cn("p-2.5 rounded-xl", bgColor)}>
-            <Icon className={cn("w-5 h-5 bg-gradient-to-r bg-clip-text", gradient.replace('from-', 'text-').split(' ')[0].replace('text-', 'text-'))} style={{ color: gradient.includes('blue') ? '#3b82f6' : gradient.includes('emerald') ? '#10b981' : gradient.includes('amber') ? '#f59e0b' : '#ef4444' }} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -434,7 +289,7 @@ function QuickActionButton({
   icon: React.ElementType;
   label: string;
   href: string;
-  color: 'blue' | 'emerald' | 'amber' | 'orange' | 'purple';
+  color: 'blue' | 'emerald' | 'amber' | 'orange' | 'purple' | 'pink';
 }) {
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600 group-hover:bg-blue-100',
@@ -442,6 +297,7 @@ function QuickActionButton({
     amber: 'bg-amber-50 text-amber-600 group-hover:bg-amber-100',
     orange: 'bg-orange-50 text-orange-600 group-hover:bg-orange-100',
     purple: 'bg-purple-50 text-purple-600 group-hover:bg-purple-100',
+    pink: 'bg-pink-50 text-pink-600 group-hover:bg-pink-100',
   };
 
   return (
@@ -481,7 +337,7 @@ function LandingContent() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 p-6">
       <div className="text-center py-12">
         <img
           src="/logo_betacom.png"
