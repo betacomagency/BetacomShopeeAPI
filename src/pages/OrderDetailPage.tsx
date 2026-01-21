@@ -17,7 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import type { ShopeeOrder } from '@/components/panels/OrdersPanel';
+import type { Order as ShopeeOrder, OrderItem } from '@/hooks/useOrdersData';
 
 // ==================== ESCROW INTERFACES ====================
 
@@ -332,7 +332,7 @@ export default function OrderDetailPage() {
                         </span>
                       </div>
                       <p className="text-slate-500">
-                        {order.recipient_address.full_address?.replace(/[^,\s]/g, (char, i, str) => {
+                        {order.recipient_address.full_address?.replace(/[^,\s]/g, (char: string, i: number, str: string) => {
                           const commaIndex = str.lastIndexOf(',');
                           return i < commaIndex - 10 ? '*' : char;
                         })}
@@ -367,7 +367,7 @@ export default function OrderDetailPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex -space-x-2">
-                      {items.slice(0, 3).map((item, idx) => (
+                      {items.slice(0, 3).map((item: OrderItem, idx: number) => (
                         item.image_info?.image_url ? (
                           <img
                             key={idx}
@@ -428,7 +428,7 @@ export default function OrderDetailPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {items.map((item, idx) => {
+                    {items.map((item: OrderItem, idx: number) => {
                       const escrowItem = escrowData?.order_income.items?.find(
                         ei => ei.item_id === item.item_id && ei.model_id === item.model_id
                       );
@@ -503,7 +503,7 @@ export default function OrderDetailPage() {
                     {(() => {
                       // Tính tổng giá sản phẩm từ item list nếu không có escrow data
                       const productTotal = escrowData?.order_income.order_selling_price
-                        || items.reduce((sum, item) => sum + (item.model_discounted_price * item.model_quantity_purchased), 0)
+                        || items.reduce((sum: number, item: OrderItem) => sum + (item.model_discounted_price * item.model_quantity_purchased), 0)
                         || order.total_amount;
 
                       return (

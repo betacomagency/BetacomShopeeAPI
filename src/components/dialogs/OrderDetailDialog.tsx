@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { ImageWithZoom } from '@/components/ui/image-with-zoom';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import type { ShopeeOrder } from '@/components/panels/OrdersPanel';
+import type { Order as ShopeeOrder, OrderItem, PackageInfo, PackageItem, PaymentInfo } from '@/hooks/useOrdersData';
 
 interface OrderDetailDialogProps {
   order: ShopeeOrder;
@@ -420,7 +420,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, shopId }: OrderDe
                   <div className="mt-4 pt-4 border-t">
                     <h5 className="text-sm font-medium text-slate-700 mb-2">Chi tiết thanh toán</h5>
                     <div className="space-y-2">
-                      {order.payment_info.map((pi, idx) => (
+                      {order.payment_info.map((pi: PaymentInfo, idx: number) => (
                         <div key={idx} className="bg-slate-50 rounded p-3 text-sm">
                           <div className="flex justify-between">
                             <span>{pi.payment_method}</span>
@@ -440,7 +440,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, shopId }: OrderDe
                 <div className="bg-yellow-50 rounded-lg border border-yellow-200 p-4">
                   <SectionTitle icon={Clock} title="Đang chờ xử lý" />
                   <div className="space-y-2">
-                    {order.pending_terms.map((term, idx) => (
+                    {order.pending_terms.map((term: string, idx: number) => (
                       <div key={idx} className="flex items-start gap-2">
                         <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
                         <div>
@@ -459,7 +459,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, shopId }: OrderDe
             {/* Tab 2: Sản phẩm */}
             <TabsContent value="products" className="mt-0 space-y-4">
               {order.item_list && order.item_list.length > 0 ? (
-                order.item_list.map((item, idx) => (
+                order.item_list.map((item: OrderItem, idx: number) => (
                   <div key={idx} className="bg-white rounded-lg border p-4">
                     <div className="flex gap-4">
                       {/* Image */}
@@ -645,7 +645,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, shopId }: OrderDe
                 <div className="bg-white rounded-lg border p-4">
                   <SectionTitle icon={Package} title={`Kiện hàng (${order.package_list.length})`} />
                   <div className="space-y-4">
-                    {order.package_list.map((pkg, idx) => (
+                    {order.package_list.map((pkg: PackageInfo, idx: number) => (
                       <div key={idx} className="bg-slate-50 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -699,7 +699,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, shopId }: OrderDe
                           <div className="mt-3 pt-3 border-t border-slate-200">
                             <p className="text-xs font-medium text-slate-500 mb-2">Sản phẩm trong kiện ({pkg.item_list.length})</p>
                             <div className="space-y-1">
-                              {pkg.item_list.map((pi, pidx) => (
+                              {pkg.item_list.map((pi: PackageItem, pidx: number) => (
                                 <div key={pidx} className="flex justify-between text-xs bg-white rounded px-2 py-1">
                                   <span className="text-slate-600">
                                     Item {pi.item_id} / Model {pi.model_id}
@@ -1110,7 +1110,7 @@ export function OrderDetailDialog({ order, open, onOpenChange, shopId }: OrderDe
                     <div className="mt-3">
                       <p className="text-xs font-medium text-slate-500 mb-2">Ảnh xác nhận nhận hàng:</p>
                       <div className="flex gap-2">
-                        {order.buyer_proof_of_collection.map((url, idx) => (
+                        {order.buyer_proof_of_collection.map((url: string, idx: number) => (
                           <img
                             key={idx}
                             src={url}
