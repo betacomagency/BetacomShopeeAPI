@@ -135,6 +135,76 @@ async function getProduct(
 }
 
 /**
+ * Safely parse images from Lazada SKU
+ * Handles: JSON array string, URL string, array, empty string, null
+ */
+function parseImages(images: unknown): string[] {
+  if (!images) return [];
+
+  // Already an array
+  if (Array.isArray(images)) {
+    return images.filter((img): img is string => typeof img === 'string' && img.length > 0);
+  }
+
+  // String handling
+  if (typeof images === 'string') {
+    const trimmed = images.trim();
+    if (!trimmed) return [];
+
+    // Try JSON parse first
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((img): img is string => typeof img === 'string' && img.length > 0);
+        }
+      } catch {
+        // Not valid JSON, continue
+      }
+    }
+
+    // Single URL string
+    if (trimmed.startsWith('http')) {
+      return [trimmed];
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Convert Lazada timestamp (milliseconds or seconds) to ISO string
+ */
+function parseTimestamp(timestamp: unknown): string | null {
+  if (!timestamp) return null;
+
+  let ts: number;
+
+  if (typeof timestamp === 'string') {
+    ts = parseInt(timestamp, 10);
+  } else if (typeof timestamp === 'number') {
+    ts = timestamp;
+  } else {
+    return null;
+  }
+
+  if (isNaN(ts)) return null;
+
+  // Lazada returns milliseconds (13 digits), convert to Date
+  // If it's 10 digits, it's seconds
+  if (ts > 9999999999999) {
+    // Too large, probably already an error
+    return null;
+  } else if (ts > 9999999999) {
+    // Milliseconds (13 digits)
+    return new Date(ts).toISOString();
+  } else {
+    // Seconds (10 digits)
+    return new Date(ts * 1000).toISOString();
+  }
+}
+
+/**
  * Sync products to database
  */
 async function syncProducts(
@@ -198,10 +268,8 @@ async function syncProducts(
           // Extract images from SKUs
           const allImages: string[] = [];
           for (const sku of skus) {
-            if (sku.Images) {
-              const images = JSON.parse(sku.Images || '[]');
-              allImages.push(...images);
-            }
+            const images = parseImages(sku.Images);
+            allImages.push(...images);
           }
           const uniqueImages = [...new Set(allImages)];
 
@@ -229,8 +297,8 @@ async function syncProducts(
             attributes: attributes,
             has_variation: skus.length > 1,
             skus: skus,
-            created_at_lazada: product.created_time,
-            updated_at_lazada: product.updated_time,
+            created_at_lazada: parseTimestamp(product.created_time),
+            updated_at_lazada: parseTimestamp(product.updated_time),
             raw_response: product,
             synced_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -249,7 +317,7 @@ async function syncProducts(
 
           // Save SKUs
           for (const sku of skus) {
-            const skuImages = sku.Images ? JSON.parse(sku.Images) : [];
+            const skuImages = parseImages(sku.Images);
 
             const skuData = {
               seller_id: shop.seller_id,
