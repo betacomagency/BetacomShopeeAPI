@@ -310,7 +310,12 @@ export function useMultiPlatformProducts(params: {
       });
 
       // Fetch Shopee products
-      if ((platform === 'all' || platform === 'shopee') && shopeeShops.length > 0) {
+      // Skip if a Lazada shop is specifically selected
+      const shouldFetchShopee = (platform === 'all' || platform === 'shopee')
+        && shopeeShops.length > 0
+        && !(shopId && shopId.startsWith('lazada-'));
+
+      if (shouldFetchShopee) {
         const shopIds = shopeeShops.map(s => s.shop_id);
 
         // Filter by specific shop if selected
@@ -357,7 +362,12 @@ export function useMultiPlatformProducts(params: {
       }
 
       // Fetch Lazada products
-      if ((platform === 'all' || platform === 'lazada') && lazadaShops.length > 0) {
+      // Skip if a Shopee shop is specifically selected
+      const shouldFetchLazada = (platform === 'all' || platform === 'lazada')
+        && lazadaShops.length > 0
+        && !(shopId && shopId.startsWith('shopee-'));
+
+      if (shouldFetchLazada) {
         const sellerIds = lazadaShops.map(s => s.seller_id);
 
         // Filter by specific shop if selected
