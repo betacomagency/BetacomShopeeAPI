@@ -192,6 +192,56 @@ export async function getSellerInfo(sellerId: number): Promise<Record<string, un
   });
 }
 
+/**
+ * Lấy valid access token (auto-refresh nếu cần)
+ */
+export async function getValidAccessToken(sellerId: number): Promise<{
+  access_token: string;
+  success: boolean;
+  error?: string;
+  need_reauth?: boolean;
+}> {
+  return callEdgeFunction(LAZADA_AUTH_FUNCTION, {
+    action: 'get-valid-token',
+    seller_id: sellerId,
+  });
+}
+
+/**
+ * Kiểm tra trạng thái token của shops
+ */
+export async function checkTokenStatus(sellerIds?: number[]): Promise<{
+  shops: Array<{
+    seller_id: number;
+    shop_name: string;
+    access_token_expired: boolean;
+    access_token_expiring_soon: boolean;
+    refresh_token_expired: boolean;
+    status: string;
+  }>;
+  success: boolean;
+}> {
+  return callEdgeFunction(LAZADA_AUTH_FUNCTION, {
+    action: 'check-token-status',
+    seller_ids: sellerIds,
+  });
+}
+
+/**
+ * Refresh tất cả tokens sắp hết hạn
+ */
+export async function refreshAllExpiringTokens(bufferHours: number = 24): Promise<{
+  refreshed: number;
+  failed: number;
+  results: Array<{ seller_id: number; success: boolean; error?: string }>;
+  success: boolean;
+}> {
+  return callEdgeFunction(LAZADA_AUTH_FUNCTION, {
+    action: 'refresh-all-expiring',
+    buffer_hours: bufferHours,
+  });
+}
+
 // ==================== ORDERS ====================
 
 /**

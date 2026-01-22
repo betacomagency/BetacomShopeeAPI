@@ -356,6 +356,101 @@ async function getToken(supabase: ReturnType<typeof createClient>, sellerId: num
 }
 
 /**
+ * Kiểm tra token có hết hạn chưa (với buffer 1 giờ)
+ */
+function isTokenExpired(expiresAt: string | null, bufferMinutes: number = 60): boolean {
+  if (!expiresAt) return true;
+
+  const expiryTime = new Date(expiresAt).getTime();
+  const now = Date.now();
+  const bufferMs = bufferMinutes * 60 * 1000;
+
+  return now >= expiryTime - bufferMs;
+}
+
+/**
+ * Lấy valid access token, tự động refresh nếu cần
+ */
+async function getValidAccessToken(
+  supabase: ReturnType<typeof createClient>,
+  sellerId: number
+): Promise<{ access_token: string; error?: string } | null> {
+  const shop = await getToken(supabase, sellerId);
+
+  if (!shop) {
+    return { access_token: '', error: 'Shop not found' };
+  }
+
+  // Kiểm tra access token còn hạn không (buffer 1 giờ)
+  if (!isTokenExpired(shop.access_token_expires_at, 60)) {
+    console.log('[LAZADA] Access token still valid');
+    return { access_token: shop.access_token };
+  }
+
+  console.log('[LAZADA] Access token expired or expiring soon, checking refresh token...');
+
+  // Kiểm tra refresh token còn hạn không
+  if (isTokenExpired(shop.refresh_token_expires_at, 0)) {
+    console.error('[LAZADA] Refresh token expired, need re-authorization');
+    // Update shop status
+    await supabase
+      .from('apilazada_shops')
+      .update({ status: 'token_expired' })
+      .eq('seller_id', sellerId);
+
+    return { access_token: '', error: 'Refresh token expired, please re-authorize' };
+  }
+
+  // Refresh token
+  console.log('[LAZADA] Refreshing access token...');
+  const credentials: AppCredentials = {
+    appKey: shop.app_key || DEFAULT_APP_KEY,
+    appSecret: shop.app_secret || DEFAULT_APP_SECRET,
+  };
+
+  try {
+    const newToken = await refreshAccessToken(credentials, shop.refresh_token, shop.region || 'VN');
+
+    if (newToken.code && newToken.code !== '0') {
+      console.error('[LAZADA] Failed to refresh token:', newToken.message);
+
+      // Nếu refresh thất bại, đánh dấu cần re-auth
+      await supabase
+        .from('apilazada_shops')
+        .update({ status: 'token_expired' })
+        .eq('seller_id', sellerId);
+
+      return { access_token: '', error: newToken.message || 'Failed to refresh token' };
+    }
+
+    // Lưu token mới
+    const now = new Date();
+    const accessTokenExpiresAt = new Date(now.getTime() + (newToken.expires_in as number) * 1000);
+    const refreshTokenExpiresAt = newToken.refresh_expires_in
+      ? new Date(now.getTime() + (newToken.refresh_expires_in as number) * 1000)
+      : shop.refresh_token_expires_at; // Keep old expiry if not provided
+
+    await supabase
+      .from('apilazada_shops')
+      .update({
+        access_token: newToken.access_token,
+        refresh_token: newToken.refresh_token || shop.refresh_token,
+        access_token_expires_at: accessTokenExpiresAt.toISOString(),
+        refresh_token_expires_at: refreshTokenExpiresAt,
+        token_updated_at: now.toISOString(),
+        status: 'active',
+      })
+      .eq('seller_id', sellerId);
+
+    console.log('[LAZADA] Token refreshed successfully');
+    return { access_token: newToken.access_token as string };
+  } catch (error) {
+    console.error('[LAZADA] Error refreshing token:', error);
+    return { access_token: '', error: (error as Error).message };
+  }
+}
+
+/**
  * Lấy thông tin seller từ Lazada API
  */
 async function getSellerInfo(
@@ -582,6 +677,129 @@ serve(async (req) => {
         const sellerInfo = await getSellerInfo(credentials, shop.access_token, shop.region || 'VN');
 
         return new Response(JSON.stringify(sellerInfo), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-valid-token': {
+        // Lấy valid access token với auto-refresh
+        const sellerId = Number(body.seller_id);
+
+        if (!sellerId) {
+          return new Response(JSON.stringify({
+            error: 'seller_id is required',
+            success: false
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const result = await getValidAccessToken(supabase, sellerId);
+
+        if (!result || result.error) {
+          return new Response(JSON.stringify({
+            error: result?.error || 'Failed to get valid token',
+            success: false,
+            need_reauth: result?.error?.includes('expired') || result?.error?.includes('re-authorize')
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        return new Response(JSON.stringify({
+          access_token: result.access_token,
+          success: true,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'check-token-status': {
+        // Kiểm tra trạng thái token của một hoặc nhiều shops
+        const sellerIds = body.seller_ids as number[] | undefined;
+
+        if (!sellerIds || sellerIds.length === 0) {
+          // Kiểm tra tất cả shops
+          const { data: shops } = await supabase
+            .from('apilazada_shops')
+            .select('seller_id, shop_name, access_token_expires_at, refresh_token_expires_at, status');
+
+          const results = (shops || []).map((shop) => ({
+            seller_id: shop.seller_id,
+            shop_name: shop.shop_name,
+            access_token_expired: isTokenExpired(shop.access_token_expires_at, 0),
+            access_token_expiring_soon: isTokenExpired(shop.access_token_expires_at, 60),
+            refresh_token_expired: isTokenExpired(shop.refresh_token_expires_at, 0),
+            status: shop.status,
+          }));
+
+          return new Response(JSON.stringify({
+            shops: results,
+            success: true,
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Kiểm tra shops cụ thể
+        const { data: shops } = await supabase
+          .from('apilazada_shops')
+          .select('seller_id, shop_name, access_token_expires_at, refresh_token_expires_at, status')
+          .in('seller_id', sellerIds);
+
+        const results = (shops || []).map((shop) => ({
+          seller_id: shop.seller_id,
+          shop_name: shop.shop_name,
+          access_token_expired: isTokenExpired(shop.access_token_expires_at, 0),
+          access_token_expiring_soon: isTokenExpired(shop.access_token_expires_at, 60),
+          refresh_token_expired: isTokenExpired(shop.refresh_token_expires_at, 0),
+          status: shop.status,
+        }));
+
+        return new Response(JSON.stringify({
+          shops: results,
+          success: true,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'refresh-all-expiring': {
+        // Refresh tất cả tokens sắp hết hạn (dùng cho cron job)
+        const bufferHours = body.buffer_hours || 24; // Default: refresh nếu còn < 24 giờ
+
+        const { data: shops } = await supabase
+          .from('apilazada_shops')
+          .select('*')
+          .eq('status', 'active');
+
+        const results: Array<{ seller_id: number; success: boolean; error?: string }> = [];
+
+        for (const shop of shops || []) {
+          // Chỉ refresh nếu access token sắp hết hạn
+          if (!isTokenExpired(shop.access_token_expires_at, bufferHours * 60)) {
+            continue;
+          }
+
+          console.log(`[LAZADA] Refreshing token for shop ${shop.seller_id}...`);
+
+          const result = await getValidAccessToken(supabase, shop.seller_id);
+
+          results.push({
+            seller_id: shop.seller_id,
+            success: !result?.error,
+            error: result?.error,
+          });
+        }
+
+        return new Response(JSON.stringify({
+          refreshed: results.filter((r) => r.success).length,
+          failed: results.filter((r) => !r.success).length,
+          results,
+          success: true,
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
