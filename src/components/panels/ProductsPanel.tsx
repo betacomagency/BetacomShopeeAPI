@@ -6,22 +6,23 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, Search, Package, ChevronDown, ChevronUp, Link2, Clock, Database, FileJson } from 'lucide-react';
+import { RefreshCw, Search, Package, ChevronDown, ChevronUp, Link2, Database, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 import { ImageWithZoom } from '@/components/ui/image-with-zoom';
+
+// Status tabs cho sản phẩm
+const STATUS_TABS = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'NORMAL', label: 'Đang hoạt động' },
+  { key: 'UNLIST', label: 'Đã ẩn' },
+  { key: 'BANNED', label: 'Vi phạm' },
+];
 
 interface ProductsPanelProps {
   shopId: number;
@@ -79,36 +80,20 @@ function formatDateTime(timestamp: number): string {
   });
 }
 
-// Format relative time
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  
-  if (diffMins < 1) return 'Vừa xong';
-  if (diffMins < 60) return `${diffMins} phút trước`;
-  
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours} giờ trước`;
-  
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays} ngày trước`;
-}
-
 export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   // Local state
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
   const [syncing, setSyncing] = useState(false);
 
-  // API Response state
-  const [showApiResponse, setShowApiResponse] = useState(false);
-  const [apiResponses, setApiResponses] = useState<Record<string, any>>({});
-  const [loadingApiResponse, setLoadingApiResponse] = useState(false);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
+
 
   // Query keys
   const productsQueryKey = ['products', shopId];
@@ -163,8 +148,8 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
     refetchOnReconnect: false,
   });
 
-  // Fetch sync status
-  const { data: syncStatus } = useQuery({
+  // Fetch sync status (for cache invalidation)
+  useQuery({
     queryKey: syncStatusQueryKey,
     queryFn: async () => {
       const { data } = await supabase
@@ -175,12 +160,11 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
       return data;
     },
     enabled: !!shopId,
-    staleTime: 60 * 1000, // 1 phút
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
-  const lastSyncedAt = syncStatus?.products_synced_at || null;
   const loading = loadingProducts || loadingModels;
 
   // Subscribe to realtime changes - chỉ invalidate khi có thay đổi thực sự
@@ -233,15 +217,15 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
     };
   }, [shopId, queryClient, productsQueryKey, modelsQueryKey, syncStatusQueryKey]);
 
-  // Sync products từ Shopee API (chạy background, không block UI)
+  // Kiểm tra và sync products nếu có thay đổi
   const syncProducts = async () => {
     if (syncing) return;
-    
+
     setSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('apishopee-product', {
         body: {
-          action: 'sync-products',
+          action: 'check-updates',
           shop_id: shopId,
           user_id: userId,
         },
@@ -255,10 +239,17 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
       await queryClient.invalidateQueries({ queryKey: modelsQueryKey });
       await queryClient.invalidateQueries({ queryKey: syncStatusQueryKey });
 
-      toast({
-        title: 'Đồng bộ thành công',
-        description: `Đã đồng bộ ${data?.synced_count || 0} sản phẩm`,
-      });
+      if (data?.has_changes === false) {
+        toast({
+          title: 'Không có thay đổi',
+          description: 'Dữ liệu sản phẩm đã cập nhật mới nhất',
+        });
+      } else {
+        toast({
+          title: 'Đồng bộ thành công',
+          description: `Đã đồng bộ ${data?.synced_count || 0} sản phẩm`,
+        });
+      }
     } catch (err) {
       toast({
         title: 'Lỗi đồng bộ',
@@ -270,80 +261,57 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
     }
   };
 
-  // Reset expanded items khi shop thay đổi
+  // Reset state khi shop thay đổi
   useEffect(() => {
     setExpandedItems(new Set());
+    setCurrentPage(1);
+    setStatusFilter('ALL');
+    setSearchTerm('');
   }, [shopId]);
 
-  // Fetch API responses để xem raw data từ Shopee
-  const fetchAllApiResponses = async () => {
-    setLoadingApiResponse(true);
-    const responses: Record<string, any> = {};
+  // Đếm số lượng sản phẩm theo từng trạng thái
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { ALL: products.length };
+    products.forEach(p => {
+      const status = p.item_status || 'NORMAL';
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return counts;
+  }, [products]);
 
-    try {
-      // 1. Get Item List - lấy danh sách item IDs (chỉ lấy trang đầu để demo)
-      const { data: itemListRes, error: itemListErr } = await supabase.functions.invoke('apishopee-product', {
-        body: {
-          action: 'get-item-list',
-          shop_id: shopId,
-          offset: 0,
-          page_size: 20,
-          item_status: ['NORMAL'],
-        },
-      });
-      responses['get-item-list'] = itemListErr ? { error: itemListErr.message } : itemListRes;
-
-      // 2. Get Item Base Info - lấy chi tiết sản phẩm (nếu có item list)
-      const itemIds = itemListRes?.response?.item?.map((i: any) => i.item_id)?.slice(0, 5) || [];
-      if (itemIds.length > 0) {
-        const { data: itemBaseInfoRes, error: itemBaseInfoErr } = await supabase.functions.invoke('apishopee-product', {
-          body: {
-            action: 'get-item-base-info',
-            shop_id: shopId,
-            item_id_list: itemIds,
-          },
-        });
-        responses['get-item-base-info'] = itemBaseInfoErr ? { error: itemBaseInfoErr.message } : itemBaseInfoRes;
-
-        // 3. Get Model List - lấy models/variants cho sản phẩm đầu tiên có has_model = true
-        const itemWithModel = itemBaseInfoRes?.response?.item_list?.find((i: any) => i.has_model);
-        if (itemWithModel) {
-          const { data: modelListRes, error: modelListErr } = await supabase.functions.invoke('apishopee-product', {
-            body: {
-              action: 'get-model-list',
-              shop_id: shopId,
-              item_id: itemWithModel.item_id,
-            },
-          });
-          responses['get-model-list'] = modelListErr ? { error: modelListErr.message } : {
-            item_id: itemWithModel.item_id,
-            item_name: itemWithModel.item_name,
-            ...modelListRes,
-          };
-        }
-      }
-
-      setApiResponses(responses);
-      setShowApiResponse(true);
-      toast({ title: 'Đã tải API responses', description: `${Object.keys(responses).length} API calls` });
-    } catch (e) {
-      toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
-    } finally {
-      setLoadingApiResponse(false);
-    }
-  };
-
-  // Filter products theo search term
+  // Filter products theo status và search term
   const filteredProducts = useMemo(() => {
-    if (!searchTerm) return products;
-    
-    const term = searchTerm.toLowerCase();
-    return products.filter(p =>
-      p.item_name?.toLowerCase().includes(term) ||
-      p.item_sku?.toLowerCase().includes(term) ||
-      p.item_id.toString().includes(term)
-    );
-  }, [products, searchTerm]);
+    let filtered = products;
+
+    // Filter theo status
+    if (statusFilter !== 'ALL') {
+      filtered = filtered.filter(p => p.item_status === statusFilter);
+    }
+
+    // Filter theo search term
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(p =>
+        p.item_name?.toLowerCase().includes(term) ||
+        p.item_sku?.toLowerCase().includes(term) ||
+        p.item_id.toString().includes(term)
+      );
+    }
+
+    return filtered;
+  }, [products, statusFilter, searchTerm]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredProducts.length / pageSize);
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(startIndex, startIndex + pageSize);
+  }, [filteredProducts, currentPage, pageSize]);
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Toggle expand item
   const toggleExpand = (itemId: number) => {
@@ -365,62 +333,76 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
   return (
     <Card className="border-0 shadow-sm">
       <CardContent className="p-0">
-        {/* Header với sync status */}
-        <div className="p-3 md:p-4 border-b">
-          {/* Search bar */}
-          <div className="relative mb-2 md:mb-0 md:max-w-md md:flex-1">
+        {/* Status Tabs + Search + Actions - All in one row */}
+        <div className="flex items-center justify-between border-b bg-white px-2 gap-2">
+          {/* Left: Status Tabs */}
+          <div className="flex items-center flex-shrink-0">
+            {STATUS_TABS.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setStatusFilter(tab.key);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  'px-3 md:px-4 py-3 text-xs md:text-sm whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer',
+                  statusFilter === tab.key
+                    ? 'border-orange-500 text-orange-600 font-medium'
+                    : 'border-transparent text-slate-600 hover:text-slate-800'
+                )}
+              >
+                {tab.label}
+                {(statusCounts[tab.key] || 0) > 0 && (
+                  <span className="text-slate-400 ml-1">({statusCounts[tab.key]})</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Right: Search + Auto-sync + Buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0 py-2">
+            {/* Search bar - hidden on mobile */}
+            <div className="relative hidden md:block">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                placeholder="Tìm tên, SKU, ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8 h-8 text-xs w-40 lg:w-52"
+              />
+            </div>
+
+            {/* Auto-sync indicator - hide on mobile */}
+            <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400">
+              <Database className="h-3.5 w-3.5" />
+              <span>Tự động mỗi 1h</span>
+            </div>
+
+            {/* Sync Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncProducts}
+              disabled={loading || syncing}
+              className="h-8 text-xs"
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-1 md:mr-1.5", (loading || syncing) && "animate-spin")} />
+              <span className="hidden md:inline">{syncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}</span>
+              <span className="md:hidden">Sync</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Mobile Search - Only visible on small screens */}
+        <div className="md:hidden p-2 border-b bg-slate-50">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Tìm theo tên, SKU hoặc ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 text-sm"
+              className="pl-9 text-sm h-9"
             />
-          </div>
-
-          {/* Actions row */}
-          <div className="flex items-center justify-between gap-2 mt-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Sync status - compact on mobile */}
-              {lastSyncedAt && (
-                <div className="flex items-center gap-1 text-[10px] md:text-xs text-slate-500">
-                  <Clock className="h-3 w-3" />
-                  <span className="hidden md:inline">Đồng bộ:</span>
-                  <span>{formatRelativeTime(lastSyncedAt)}</span>
-                </div>
-              )}
-
-              {/* Auto-sync indicator - hide on mobile */}
-              <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-400">
-                <Database className="h-3.5 w-3.5" />
-                <span>Tự động mỗi 1h</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchAllApiResponses}
-                disabled={loading || syncing || loadingApiResponse}
-                className="h-8 text-xs hidden md:flex"
-              >
-                <FileJson className={cn("h-4 w-4 mr-2", loadingApiResponse && "animate-spin")} />
-                Response
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={syncProducts}
-                disabled={loading || syncing}
-                className="h-8 text-xs"
-              >
-                <RefreshCw className={cn("h-4 w-4 mr-1 md:mr-2", (loading || syncing) && "animate-spin")} />
-                <span className="hidden md:inline">{syncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}</span>
-                <span className="md:hidden">Sync</span>
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -465,7 +447,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
         )}
 
         {/* Product List */}
-        {filteredProducts.map((product) => {
+        {paginatedProducts.map((product) => {
           const isExpanded = expandedItems.has(product.item_id);
           const productModels = modelsData[product.item_id] || [];
           const visibleModels = productModels.slice(0, isExpanded ? undefined : DEFAULT_VISIBLE_MODELS);
@@ -759,78 +741,90 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
           );
         })}
 
-        {/* Footer */}
+        {/* Footer with Pagination */}
         {products.length > 0 && (
           <div className="px-3 md:px-4 py-2 md:py-3 border-t bg-slate-50/50 flex items-center justify-between">
             <div className="text-xs md:text-sm text-slate-500">
-              {filteredProducts.length}/{products.length} sản phẩm
-            </div>
-            <div className="flex items-center gap-2">
               {syncing && (
-                <span className="text-[10px] md:text-xs text-orange-500 flex items-center gap-1">
+                <span className="text-orange-500 flex items-center gap-1 mr-2">
                   <RefreshCw className="h-3 w-3 animate-spin" />
                   <span className="hidden md:inline">Đang đồng bộ...</span>
-                  <span className="md:hidden">Sync...</span>
                 </span>
               )}
+              <span>
+                {filteredProducts.length > 0 ? (
+                  <>
+                    Hiển thị {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredProducts.length)} / {filteredProducts.length} sản phẩm
+                    {searchTerm && ` (lọc từ ${products.length})`}
+                  </>
+                ) : (
+                  `0/${products.length} sản phẩm`
+                )}
+              </span>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1 md:gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="h-7 w-7 md:h-8 md:w-8 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {/* Page numbers - Desktop */}
+                <div className="hidden md:flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={cn(
+                          "h-8 w-8 p-0",
+                          currentPage === pageNum && "bg-orange-500 hover:bg-orange-600"
+                        )}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                {/* Page indicator - Mobile */}
+                <span className="md:hidden text-xs text-slate-600 min-w-[60px] text-center">
+                  {currentPage} / {totalPages}
+                </span>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="h-7 w-7 md:h-8 md:w-8 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* API Response Dialog */}
-        {showApiResponse && (
-          <Dialog open={showApiResponse} onOpenChange={setShowApiResponse}>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-              <DialogHeader>
-                <DialogTitle>API Responses - Products</DialogTitle>
-              </DialogHeader>
-              <div className="flex-1 overflow-auto space-y-4 py-4">
-                {Object.entries(apiResponses).map(([apiName, response]) => (
-                  <div key={apiName} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-semibold text-sm">
-                        {apiName}
-                        {apiName === 'get-item-list' && (
-                          <span className="ml-2 text-xs font-normal text-slate-500">
-                            (Lấy danh sách item IDs)
-                          </span>
-                        )}
-                        {apiName === 'get-item-base-info' && (
-                          <span className="ml-2 text-xs font-normal text-slate-500">
-                            (Lấy chi tiết sản phẩm)
-                          </span>
-                        )}
-                        {apiName === 'get-model-list' && (
-                          <span className="ml-2 text-xs font-normal text-slate-500">
-                            (Lấy models/variants)
-                          </span>
-                        )}
-                      </h3>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(JSON.stringify(response, null, 2));
-                          toast({ title: 'Đã copy', description: `Response của ${apiName}` });
-                        }}
-                      >
-                        Copy
-                      </Button>
-                    </div>
-                    <pre className="bg-slate-50 p-3 rounded text-xs overflow-auto max-h-96">
-                      {JSON.stringify(response, null, 2)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowApiResponse(false)}>
-                  Đóng
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
       </CardContent>
     </Card>
   );

@@ -395,7 +395,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
     {
       accessorKey: 'actions',
       header: 'Thao tác',
-      size: 100,
+      size: 130,
       cell: ({ row }) => (
         <div className="flex items-center justify-center gap-1">
           <TooltipProvider>
@@ -411,6 +411,22 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Xem chi tiết</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-slate-500 hover:text-green-600"
+                  onClick={() => handleCopy(row.original)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sao chép vào cài FS tự động</TooltipContent>
             </Tooltip>
           </TooltipProvider>
 

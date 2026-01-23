@@ -1,11 +1,23 @@
 /**
  * Supabase Edge Function: Shopee Orders Sync
- * Đồng bộ đơn hàng từ Shopee API
+ * Đồng bộ đơn hàng từ Shopee API - "Nguồn sự thật"
  *
  * Logic nghiệp vụ:
- * A. Month Sync: Lấy đơn hàng theo tháng cụ thể (chunked để tránh timeout)
- * B. Periodic Sync: Kiểm tra đơn hàng mới hoặc có cập nhật (7 ngày gần nhất)
- * C. Quick Sync: Lấy nhanh đơn hàng 7 ngày gần nhất (cho initial load)
+ * A. Month Sync: Lấy đơn hàng theo tháng cụ thể (chunked 15 ngày để tránh timeout)
+ * B. Date Range Sync: Lấy đơn hàng theo khoảng thời gian (start_date -> end_date)
+ * C. Periodic Sync: Kiểm tra đơn hàng có cập nhật (dùng update_time)
+ * D. Quick Sync: Lấy nhanh đơn hàng 7 ngày gần nhất (cho initial load)
+ *
+ * QUAN TRỌNG - Time Logic:
+ * - Month/Date Range Sync: Dùng time_range_field = "create_time" (lấy đơn theo ngày tạo)
+ * - Periodic Sync: Dùng time_range_field = "update_time" (bắt thay đổi trạng thái)
+ * - Tự động cắt khoảng thời gian thành các chunk 15 ngày (giới hạn cứng của Shopee)
+ * - Pagination với cursor khi response.more == true
+ *
+ * Finance Sync (Dòng tiền - "Tiền thực nhận"):
+ * - Endpoint: /api/v2/payment/get_escrow_detail
+ * - Sync escrow cho TẤT CẢ đơn hàng (kể cả ước tính)
+ * - Dữ liệu quan trọng hơn doanh số ảo (GMV)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -28,10 +40,13 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 // Constants
 const PAGE_SIZE = 100; // Max per Shopee API
-const CHUNK_SIZE_DAYS = 7; // Mỗi chunk chỉ xử lý 7 ngày để tránh timeout
+const CHUNK_SIZE_DAYS = 15; // Giới hạn cứng của Shopee: 15 ngày
 const CHUNK_SIZE_SECONDS = CHUNK_SIZE_DAYS * 24 * 60 * 60;
 const PERIODIC_DAYS = 7; // Kiểm tra 7 ngày gần nhất cho periodic sync
-const MAX_ORDERS_PER_CHUNK = 200; // Giới hạn số đơn hàng mỗi chunk
+// KHÔNG giới hạn số đơn - dùng pagination để lấy TẤT CẢ đơn hàng
+
+// Time range field - BẮT BUỘC dùng create_time theo yêu cầu Shopee
+const TIME_RANGE_FIELD = 'create_time'; // KHÔNG dùng update_time
 
 // Full optional fields for get_order_detail
 const FULL_OPTIONAL_FIELDS = [
@@ -138,6 +153,135 @@ interface ChunkSyncResult {
   next_chunk_end?: number;
   month_completed?: boolean;
   error?: string;
+}
+
+// Escrow interfaces
+interface EscrowItem {
+  item_id: number;
+  item_name: string;
+  item_sku?: string;
+  model_id: number;
+  model_name?: string;
+  model_sku?: string;
+  original_price: number;
+  selling_price: number;
+  discounted_price: number;
+  seller_discount: number;
+  shopee_discount: number;
+  discount_from_coin: number;
+  discount_from_voucher_shopee: number;
+  discount_from_voucher_seller: number;
+  quantity_purchased: number;
+  activity_type?: string;
+  activity_id?: number;
+  is_main_item?: boolean;
+  is_b2c_shop_item?: boolean;
+  ams_commission_fee?: number;
+  promotion_list?: { promotion_type: string; promotion_id: number }[];
+}
+
+interface OrderAdjustment {
+  amount: number;
+  date: number;
+  currency: string;
+  adjustment_reason?: string;
+}
+
+interface OrderIncome {
+  escrow_amount: number;
+  escrow_amount_after_adjustment?: number;
+  buyer_total_amount: number;
+  original_price?: number;
+  order_original_price?: number;
+  order_discounted_price?: number;
+  order_selling_price?: number;
+  order_seller_discount?: number;
+  seller_discount?: number;
+  shopee_discount?: number;
+  original_shopee_discount?: number;
+  voucher_from_seller?: number;
+  voucher_from_shopee?: number;
+  coins?: number;
+  buyer_paid_shipping_fee?: number;
+  buyer_transaction_fee?: number;
+  estimated_shipping_fee?: number;
+  final_shipping_fee?: number;
+  actual_shipping_fee?: number;
+  shopee_shipping_rebate?: number;
+  shipping_fee_discount_from_3pl?: number;
+  seller_shipping_discount?: number;
+  reverse_shipping_fee?: number;
+  shipping_fee_sst?: number;
+  reverse_shipping_fee_sst?: number;
+  commission_fee?: number;
+  service_fee?: number;
+  seller_transaction_fee?: number;
+  campaign_fee?: number;
+  order_ams_commission_fee?: number;
+  credit_card_promotion?: number;
+  credit_card_transaction_fee?: number;
+  payment_promotion?: number;
+  net_commission_fee?: number;
+  net_service_fee?: number;
+  seller_order_processing_fee?: number;
+  fbs_fee?: number;
+  escrow_tax?: number;
+  final_product_vat_tax?: number;
+  final_shipping_vat_tax?: number;
+  final_escrow_product_gst?: number;
+  final_escrow_shipping_gst?: number;
+  withholding_tax?: number;
+  withholding_vat_tax?: number;
+  withholding_pit_tax?: number;
+  cross_border_tax?: number;
+  sales_tax_on_lvg?: number;
+  vat_on_imported_goods?: number;
+  seller_lost_compensation?: number;
+  seller_coin_cash_back?: number;
+  seller_return_refund?: number;
+  drc_adjustable_refund?: number;
+  cost_of_goods_sold?: number;
+  original_cost_of_goods_sold?: number;
+  final_product_protection?: number;
+  rsf_seller_protection_fee_claim_amount?: number;
+  shipping_seller_protection_fee_amount?: number;
+  delivery_seller_protection_fee_premium_amount?: number;
+  overseas_return_service_fee?: number;
+  total_adjustment_amount?: number;
+  order_adjustment?: OrderAdjustment[];
+  buyer_payment_method?: string;
+  instalment_plan?: string;
+  seller_voucher_code?: string[];
+  items?: EscrowItem[];
+}
+
+interface BuyerPaymentInfo {
+  buyer_payment_method?: string;
+  buyer_total_amount?: number;
+  merchant_subtotal?: number;
+  shipping_fee?: number;
+  seller_voucher?: number;
+  shopee_voucher?: number;
+  shopee_coins_redeemed?: number;
+  credit_card_promotion?: number;
+  insurance_premium?: number;
+  buyer_service_fee?: number;
+  buyer_tax_amount?: number;
+  is_paid_by_credit_card?: boolean;
+}
+
+interface EscrowData {
+  order_sn: string;
+  buyer_user_name?: string;
+  return_order_sn_list?: string[];
+  order_income: OrderIncome;
+  buyer_payment_info?: BuyerPaymentInfo;
+}
+
+interface EscrowDetailResponse {
+  error?: string;
+  message?: string;
+  response?: EscrowData;
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -358,10 +502,11 @@ async function fetchOrderList(
   token: { access_token: string; refresh_token: string },
   timeFrom: number,
   timeTo: number,
-  cursor: string = ''
+  cursor: string = '',
+  timeRangeField: string = TIME_RANGE_FIELD // Mặc định dùng create_time
 ): Promise<{ orders: OrderListItem[]; more: boolean; nextCursor: string }> {
   const params: Record<string, string | number> = {
-    time_range_field: 'update_time',
+    time_range_field: timeRangeField, // BẮT BUỘC dùng create_time
     time_from: timeFrom,
     time_to: timeTo,
     page_size: PAGE_SIZE,
@@ -417,6 +562,178 @@ async function fetchOrderDetails(
 }
 
 /**
+ * Fetch escrow detail for a single order from Shopee API
+ */
+async function fetchEscrowDetail(
+  supabase: ReturnType<typeof createClient>,
+  credentials: PartnerCredentials,
+  shopId: number,
+  token: { access_token: string; refresh_token: string },
+  orderSn: string
+): Promise<EscrowData | null> {
+  try {
+    const result = await callShopeeAPI(
+      supabase, credentials, '/api/v2/payment/get_escrow_detail', shopId, token,
+      { order_sn: orderSn }
+    ) as EscrowDetailResponse;
+
+    if (result.error) {
+      console.log(`[ORDERS-SYNC] get_escrow_detail error for ${orderSn}:`, result.message);
+      return null;
+    }
+
+    return result.response || null;
+  } catch (err) {
+    console.log(`[ORDERS-SYNC] get_escrow_detail failed for ${orderSn}:`, (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Upsert escrow data vào database
+ */
+async function upsertEscrowData(
+  supabase: ReturnType<typeof createClient>,
+  shopId: number,
+  escrowDataList: EscrowData[]
+): Promise<number> {
+  if (escrowDataList.length === 0) return 0;
+
+  const records = escrowDataList.map(e => {
+    const income = e.order_income;
+    const buyerInfo = e.buyer_payment_info;
+
+    return {
+      shop_id: shopId,
+      order_sn: e.order_sn,
+      buyer_user_name: e.buyer_user_name,
+      return_order_sn_list: e.return_order_sn_list || [],
+
+      // Order Income fields
+      escrow_amount: income.escrow_amount,
+      escrow_amount_after_adjustment: income.escrow_amount_after_adjustment,
+      buyer_total_amount: income.buyer_total_amount,
+      original_price: income.original_price,
+      order_original_price: income.order_original_price,
+      order_discounted_price: income.order_discounted_price,
+      order_selling_price: income.order_selling_price,
+      order_seller_discount: income.order_seller_discount,
+      seller_discount: income.seller_discount,
+      shopee_discount: income.shopee_discount,
+      original_shopee_discount: income.original_shopee_discount,
+      voucher_from_seller: income.voucher_from_seller,
+      voucher_from_shopee: income.voucher_from_shopee,
+      coins: income.coins,
+
+      // Shipping fees
+      buyer_paid_shipping_fee: income.buyer_paid_shipping_fee,
+      buyer_transaction_fee: income.buyer_transaction_fee,
+      estimated_shipping_fee: income.estimated_shipping_fee,
+      final_shipping_fee: income.final_shipping_fee,
+      actual_shipping_fee: income.actual_shipping_fee,
+      shopee_shipping_rebate: income.shopee_shipping_rebate,
+      shipping_fee_discount_from_3pl: income.shipping_fee_discount_from_3pl,
+      seller_shipping_discount: income.seller_shipping_discount,
+      reverse_shipping_fee: income.reverse_shipping_fee,
+      shipping_fee_sst: income.shipping_fee_sst,
+      reverse_shipping_fee_sst: income.reverse_shipping_fee_sst,
+
+      // Service fees & commissions
+      commission_fee: income.commission_fee,
+      service_fee: income.service_fee,
+      seller_transaction_fee: income.seller_transaction_fee,
+      campaign_fee: income.campaign_fee,
+      order_ams_commission_fee: income.order_ams_commission_fee,
+      credit_card_promotion: income.credit_card_promotion,
+      credit_card_transaction_fee: income.credit_card_transaction_fee,
+      payment_promotion: income.payment_promotion,
+      net_commission_fee: income.net_commission_fee,
+      net_service_fee: income.net_service_fee,
+      seller_order_processing_fee: income.seller_order_processing_fee,
+      fbs_fee: income.fbs_fee,
+
+      // Taxes
+      escrow_tax: income.escrow_tax,
+      final_product_vat_tax: income.final_product_vat_tax,
+      final_shipping_vat_tax: income.final_shipping_vat_tax,
+      final_escrow_product_gst: income.final_escrow_product_gst,
+      final_escrow_shipping_gst: income.final_escrow_shipping_gst,
+      withholding_tax: income.withholding_tax,
+      withholding_vat_tax: income.withholding_vat_tax,
+      withholding_pit_tax: income.withholding_pit_tax,
+      cross_border_tax: income.cross_border_tax,
+      sales_tax_on_lvg: income.sales_tax_on_lvg,
+      vat_on_imported_goods: income.vat_on_imported_goods,
+
+      // Compensation & refunds
+      seller_lost_compensation: income.seller_lost_compensation,
+      seller_coin_cash_back: income.seller_coin_cash_back,
+      seller_return_refund: income.seller_return_refund,
+      drc_adjustable_refund: income.drc_adjustable_refund,
+      cost_of_goods_sold: income.cost_of_goods_sold,
+      original_cost_of_goods_sold: income.original_cost_of_goods_sold,
+      final_product_protection: income.final_product_protection,
+
+      // Insurance & additional fees
+      rsf_seller_protection_fee_claim_amount: income.rsf_seller_protection_fee_claim_amount,
+      shipping_seller_protection_fee_amount: income.shipping_seller_protection_fee_amount,
+      delivery_seller_protection_fee_premium_amount: income.delivery_seller_protection_fee_premium_amount,
+      overseas_return_service_fee: income.overseas_return_service_fee,
+
+      // Adjustments
+      total_adjustment_amount: income.total_adjustment_amount,
+      order_adjustment: income.order_adjustment || [],
+
+      // Payment info from order_income
+      buyer_payment_method: income.buyer_payment_method,
+      instalment_plan: income.instalment_plan,
+      seller_voucher_code: income.seller_voucher_code || [],
+
+      // Items
+      items: income.items || [],
+
+      // Buyer payment info
+      buyer_payment_info_method: buyerInfo?.buyer_payment_method,
+      buyer_payment_info_total_amount: buyerInfo?.buyer_total_amount,
+      merchant_subtotal: buyerInfo?.merchant_subtotal,
+      buyer_shipping_fee: buyerInfo?.shipping_fee,
+      buyer_seller_voucher: buyerInfo?.seller_voucher,
+      buyer_shopee_voucher: buyerInfo?.shopee_voucher,
+      shopee_coins_redeemed: buyerInfo?.shopee_coins_redeemed,
+      buyer_credit_card_promotion: buyerInfo?.credit_card_promotion,
+      insurance_premium: buyerInfo?.insurance_premium,
+      buyer_service_fee: buyerInfo?.buyer_service_fee,
+      buyer_tax_amount: buyerInfo?.buyer_tax_amount,
+      is_paid_by_credit_card: buyerInfo?.is_paid_by_credit_card || false,
+
+      // Raw response for debugging
+      raw_response: e,
+
+      synced_at: new Date().toISOString(),
+    };
+  });
+
+  // Upsert in batches of 50
+  const BATCH_SIZE = 50;
+  let totalUpserted = 0;
+
+  for (let i = 0; i < records.length; i += BATCH_SIZE) {
+    const batch = records.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase
+      .from('apishopee_order_escrow')
+      .upsert(batch, { onConflict: 'shop_id,order_sn' });
+
+    if (error) {
+      console.error('[ORDERS-SYNC] Escrow upsert error:', error);
+    } else {
+      totalUpserted += batch.length;
+    }
+  }
+
+  return totalUpserted;
+}
+
+/**
  * Upsert orders vào database
  */
 async function upsertOrders(
@@ -426,78 +743,97 @@ async function upsertOrders(
 ): Promise<{ inserted: number; updated: number }> {
   if (orders.length === 0) return { inserted: 0, updated: 0 };
 
-  // Check existing orders
+  // Check existing orders (including current status for escrow flag logic)
   const orderSns = orders.map(o => o.order_sn);
   const { data: existingOrders } = await supabase
     .from('apishopee_orders')
-    .select('order_sn, update_time')
+    .select('order_sn, update_time, order_status')
     .eq('shop_id', shopId)
     .in('order_sn', orderSns);
 
   const existingMap = new Map(
-    existingOrders?.map(o => [o.order_sn, o.update_time]) || []
+    existingOrders?.map(o => [o.order_sn, { update_time: o.update_time, order_status: o.order_status }]) || []
   );
 
-  // Prepare records
-  const records = orders.map(o => ({
-    shop_id: shopId,
-    order_sn: o.order_sn,
-    booking_sn: o.booking_sn,
-    order_status: o.order_status,
-    pending_terms: o.pending_terms || [],
-    pending_description: o.pending_description || [],
-    currency: o.currency,
-    cod: o.cod,
-    total_amount: o.total_amount,
-    estimated_shipping_fee: o.estimated_shipping_fee,
-    actual_shipping_fee: o.actual_shipping_fee,
-    actual_shipping_fee_confirmed: o.actual_shipping_fee_confirmed,
-    reverse_shipping_fee: o.reverse_shipping_fee,
-    order_chargeable_weight_gram: o.order_chargeable_weight_gram,
-    create_time: o.create_time,
-    update_time: o.update_time,
-    pay_time: o.pay_time,
-    ship_by_date: o.ship_by_date,
-    pickup_done_time: o.pickup_done_time,
-    buyer_user_id: o.buyer_user_id,
-    buyer_username: o.buyer_username,
-    buyer_cpf_id: o.buyer_cpf_id,
-    region: o.region,
-    recipient_address: o.recipient_address,
-    shipping_carrier: o.shipping_carrier,
-    checkout_shipping_carrier: o.checkout_shipping_carrier,
-    days_to_ship: o.days_to_ship,
-    fulfillment_flag: o.fulfillment_flag,
-    goods_to_declare: o.goods_to_declare,
-    split_up: o.split_up,
-    payment_method: o.payment_method,
-    payment_info: o.payment_info || [],
-    item_list: o.item_list || [],
-    package_list: o.package_list || [],
-    cancel_by: o.cancel_by,
-    cancel_reason: o.cancel_reason,
-    buyer_cancel_reason: o.buyer_cancel_reason,
-    message_to_seller: o.message_to_seller,
-    note: o.note,
-    note_update_time: o.note_update_time,
-    invoice_data: o.invoice_data,
-    dropshipper: o.dropshipper,
-    dropshipper_phone: o.dropshipper_phone,
-    return_request_due_date: o.return_request_due_date,
-    edt_from: o.edt_from,
-    edt_to: o.edt_to,
-    advance_package: o.advance_package,
-    is_buyer_shop_collection: o.is_buyer_shop_collection,
-    buyer_proof_of_collection: o.buyer_proof_of_collection || [],
-    hot_listing_order: o.hot_listing_order,
-    prescription_images: o.prescription_images || [],
-    prescription_check_status: o.prescription_check_status,
-    pharmacist_name: o.pharmacist_name,
-    prescription_approval_time: o.prescription_approval_time,
-    prescription_rejection_time: o.prescription_rejection_time,
-    raw_response: o,
-    synced_at: new Date().toISOString(),
-  }));
+  // Prepare records with is_escrow_fetched flag logic:
+  // - New orders: is_escrow_fetched = false
+  // - Status changed to COMPLETED: is_escrow_fetched = false (reset to re-fetch)
+  // - Other updates: keep existing is_escrow_fetched value (don't include in record)
+  const records = orders.map(o => {
+    const existing = existingMap.get(o.order_sn) as { update_time: number; order_status: string } | undefined;
+    const isNewOrder = !existing;
+    const statusChangedToCompleted = existing && existing.order_status !== 'COMPLETED' && o.order_status === 'COMPLETED';
+
+    // Only set is_escrow_fetched = false for new orders or when status changes to COMPLETED
+    const shouldResetEscrowFlag = isNewOrder || statusChangedToCompleted;
+
+    const record: Record<string, unknown> = {
+      shop_id: shopId,
+      order_sn: o.order_sn,
+      booking_sn: o.booking_sn,
+      order_status: o.order_status,
+      pending_terms: o.pending_terms || [],
+      pending_description: o.pending_description || [],
+      currency: o.currency,
+      cod: o.cod,
+      total_amount: o.total_amount,
+      estimated_shipping_fee: o.estimated_shipping_fee,
+      actual_shipping_fee: o.actual_shipping_fee,
+      actual_shipping_fee_confirmed: o.actual_shipping_fee_confirmed,
+      reverse_shipping_fee: o.reverse_shipping_fee,
+      order_chargeable_weight_gram: o.order_chargeable_weight_gram,
+      create_time: o.create_time,
+      update_time: o.update_time,
+      pay_time: o.pay_time,
+      ship_by_date: o.ship_by_date,
+      pickup_done_time: o.pickup_done_time,
+      buyer_user_id: o.buyer_user_id,
+      buyer_username: o.buyer_username,
+      buyer_cpf_id: o.buyer_cpf_id,
+      region: o.region,
+      recipient_address: o.recipient_address,
+      shipping_carrier: o.shipping_carrier,
+      checkout_shipping_carrier: o.checkout_shipping_carrier,
+      days_to_ship: o.days_to_ship,
+      fulfillment_flag: o.fulfillment_flag,
+      goods_to_declare: o.goods_to_declare,
+      split_up: o.split_up,
+      payment_method: o.payment_method,
+      payment_info: o.payment_info || [],
+      item_list: o.item_list || [],
+      package_list: o.package_list || [],
+      cancel_by: o.cancel_by,
+      cancel_reason: o.cancel_reason,
+      buyer_cancel_reason: o.buyer_cancel_reason,
+      message_to_seller: o.message_to_seller,
+      note: o.note,
+      note_update_time: o.note_update_time,
+      invoice_data: o.invoice_data,
+      dropshipper: o.dropshipper,
+      dropshipper_phone: o.dropshipper_phone,
+      return_request_due_date: o.return_request_due_date,
+      edt_from: o.edt_from,
+      edt_to: o.edt_to,
+      advance_package: o.advance_package,
+      is_buyer_shop_collection: o.is_buyer_shop_collection,
+      buyer_proof_of_collection: o.buyer_proof_of_collection || [],
+      hot_listing_order: o.hot_listing_order,
+      prescription_images: o.prescription_images || [],
+      prescription_check_status: o.prescription_check_status,
+      pharmacist_name: o.pharmacist_name,
+      prescription_approval_time: o.prescription_approval_time,
+      prescription_rejection_time: o.prescription_rejection_time,
+      raw_response: o,
+      synced_at: new Date().toISOString(),
+    };
+
+    // Only set is_escrow_fetched when needed (new order or status changed to COMPLETED)
+    if (shouldResetEscrowFlag) {
+      record.is_escrow_fetched = false;
+    }
+
+    return record;
+  });
 
   // Upsert in batches of 100 to avoid payload size limits
   const BATCH_SIZE = 100;
@@ -580,42 +916,48 @@ async function syncMonthChunk(
       last_error: null,
     });
 
-    // Fetch orders in this chunk (with pagination)
+    // Fetch ALL orders in this chunk using pagination (while response.more == true)
     let cursor = '';
     let more = true;
     const allOrders: ShopeeOrder[] = [];
     let pageCount = 0;
 
-    while (more && allOrders.length < MAX_ORDERS_PER_CHUNK) {
+    // Pagination loop - lấy TẤT CẢ đơn hàng, không giới hạn số lượng
+    while (more) {
       pageCount++;
       const { orders: orderList, more: hasMore, nextCursor } = await fetchOrderList(
-        supabase, credentials, shopId, token, currentChunkStart, currentChunkEnd, cursor
+        supabase, credentials, shopId, token, currentChunkStart, currentChunkEnd, cursor,
+        TIME_RANGE_FIELD // BẮT BUỘC dùng create_time
       );
 
-      console.log(`[ORDERS-SYNC] Page ${pageCount}: ${orderList.length} orders`);
+      console.log(`[ORDERS-SYNC] Page ${pageCount}: ${orderList.length} orders (cursor: ${cursor ? 'yes' : 'start'})`);
 
       if (orderList.length === 0) break;
 
       // Fetch order details in batches of 50
-      for (let i = 0; i < orderList.length && allOrders.length < MAX_ORDERS_PER_CHUNK; i += 50) {
+      for (let i = 0; i < orderList.length; i += 50) {
         const batch = orderList.slice(i, Math.min(i + 50, orderList.length));
         const sns = batch.map(o => o.order_sn);
         const details = await fetchOrderDetails(supabase, credentials, shopId, token, sns);
         allOrders.push(...details);
 
-        // Rate limiting
+        // Rate limiting between detail batches
         if (i + 50 < orderList.length) {
           await new Promise(resolve => setTimeout(resolve, 200));
         }
       }
 
+      // Lấy next_cursor để gọi trang tiếp theo
       cursor = nextCursor;
-      more = hasMore && allOrders.length < MAX_ORDERS_PER_CHUNK;
+      more = hasMore; // Tiếp tục nếu response.more == true
 
+      // Rate limiting between pages
       if (more) {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
+
+    console.log(`[ORDERS-SYNC] Month chunk total: ${allOrders.length} orders in ${pageCount} pages`);
 
     // Upsert to database
     let inserted = 0;
@@ -624,6 +966,8 @@ async function syncMonthChunk(
       const result = await upsertOrders(supabase, shopId, allOrders);
       inserted = result.inserted;
       updated = result.updated;
+      // NOTE: Escrow sync is handled by separate Finance Sync job (runs every hour)
+      // Orders with status COMPLETED will have is_escrow_fetched = false
     }
 
     console.log(`[ORDERS-SYNC] Chunk completed: ${inserted} new, ${updated} updated`);
@@ -706,7 +1050,8 @@ async function quickSync(
 
     while (more) {
       const { orders: orderList, more: hasMore, nextCursor } = await fetchOrderList(
-        supabase, credentials, shopId, token, timeFrom, now, cursor
+        supabase, credentials, shopId, token, timeFrom, now, cursor,
+        'update_time' // Quick sync dùng update_time để bắt cả đơn mới và thay đổi trạng thái
       );
 
       if (orderList.length === 0) break;
@@ -736,6 +1081,7 @@ async function quickSync(
     if (allOrders.length > 0) {
       const { inserted, updated } = await upsertOrders(supabase, shopId, allOrders);
       syncedCount = inserted + updated;
+      // NOTE: Escrow sync is handled by separate Finance Sync job (runs every hour)
     }
 
     // Find latest update_time
@@ -802,10 +1148,11 @@ async function periodicSync(
 
     while (more) {
       const { orders: orderList, more: hasMore, nextCursor } = await fetchOrderList(
-        supabase, credentials, shopId, token, timeFrom, now, cursor
+        supabase, credentials, shopId, token, timeFrom, now, cursor,
+        'update_time' // Periodic sync dùng update_time để bắt thay đổi trạng thái
       );
 
-      console.log(`[ORDERS-SYNC] Fetched ${orderList.length} orders`);
+      console.log(`[ORDERS-SYNC] Fetched ${orderList.length} orders (by update_time)`);
 
       if (orderList.length === 0) break;
 
@@ -827,6 +1174,7 @@ async function periodicSync(
         const { inserted, updated } = await upsertOrders(supabase, shopId, allDetails);
         newOrders += inserted;
         updatedOrders += updated;
+        // NOTE: Escrow sync is handled by separate Finance Sync job (runs every hour)
 
         // Track latest update_time
         const maxUpdateTime = Math.max(...allDetails.map(o => o.update_time));
@@ -883,6 +1231,190 @@ function getAvailableMonths(): string[] {
   }
 
   return months;
+}
+
+/**
+ * Parse date string (DD/MM/YYYY or YYYY-MM-DD) to Unix timestamp
+ */
+function parseDateToTimestamp(dateStr: string, isEndOfDay: boolean = false): number {
+  let date: Date;
+
+  // Handle DD/MM/YYYY format
+  if (dateStr.includes('/')) {
+    const [day, month, year] = dateStr.split('/').map(Number);
+    date = new Date(Date.UTC(year, month - 1, day, isEndOfDay ? 23 : 0, isEndOfDay ? 59 : 0, isEndOfDay ? 59 : 0));
+  }
+  // Handle YYYY-MM-DD format
+  else if (dateStr.includes('-')) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    date = new Date(Date.UTC(year, month - 1, day, isEndOfDay ? 23 : 0, isEndOfDay ? 59 : 0, isEndOfDay ? 59 : 0));
+  }
+  else {
+    throw new Error('Invalid date format. Use DD/MM/YYYY or YYYY-MM-DD');
+  }
+
+  return Math.floor(date.getTime() / 1000);
+}
+
+/**
+ * Generate 15-day chunks from a date range
+ * Shopee API có giới hạn cứng 15 ngày cho mỗi request
+ */
+function generateDateRangeChunks(startTimestamp: number, endTimestamp: number): Array<{ start: number; end: number }> {
+  const chunks: Array<{ start: number; end: number }> = [];
+  let currentStart = startTimestamp;
+
+  while (currentStart < endTimestamp) {
+    const currentEnd = Math.min(currentStart + CHUNK_SIZE_SECONDS, endTimestamp);
+    chunks.push({ start: currentStart, end: currentEnd });
+    currentStart = currentEnd + 1; // Bắt đầu chunk tiếp theo sau 1 giây
+  }
+
+  return chunks;
+}
+
+interface DateRangeSyncResult {
+  success: boolean;
+  total_orders_synced: number;
+  chunks_processed: number;
+  total_chunks: number;
+  has_more: boolean;
+  current_chunk_index?: number;
+  error?: string;
+}
+
+/**
+ * Sync orders for a specific date range with automatic 15-day chunking
+ * Input: start_date và end_date (DD/MM/YYYY hoặc YYYY-MM-DD)
+ */
+async function syncDateRange(
+  supabase: ReturnType<typeof createClient>,
+  credentials: PartnerCredentials,
+  shopId: number,
+  token: { access_token: string; refresh_token: string },
+  startDate: string,
+  endDate: string,
+  chunkIndex: number = 0
+): Promise<DateRangeSyncResult> {
+  console.log(`[ORDERS-SYNC] Syncing date range: ${startDate} -> ${endDate} for shop ${shopId}`);
+
+  try {
+    const startTimestamp = parseDateToTimestamp(startDate, false);
+    const endTimestamp = parseDateToTimestamp(endDate, true);
+
+    // Validate date range
+    if (startTimestamp >= endTimestamp) {
+      return { success: false, total_orders_synced: 0, chunks_processed: 0, total_chunks: 0, has_more: false, error: 'start_date must be before end_date' };
+    }
+
+    // Generate chunks (15 ngày mỗi chunk)
+    const chunks = generateDateRangeChunks(startTimestamp, endTimestamp);
+    console.log(`[ORDERS-SYNC] Generated ${chunks.length} chunks (15-day each)`);
+
+    // Process current chunk
+    if (chunkIndex >= chunks.length) {
+      return { success: true, total_orders_synced: 0, chunks_processed: chunks.length, total_chunks: chunks.length, has_more: false };
+    }
+
+    const currentChunk = chunks[chunkIndex];
+    console.log(`[ORDERS-SYNC] Processing chunk ${chunkIndex + 1}/${chunks.length}: ${new Date(currentChunk.start * 1000).toISOString()} -> ${new Date(currentChunk.end * 1000).toISOString()}`);
+
+    await updateSyncStatus(supabase, shopId, {
+      is_syncing: true,
+      last_error: null,
+    });
+
+    // Fetch ALL orders in this chunk using pagination (while response.more == true)
+    let cursor = '';
+    let more = true;
+    const allOrders: ShopeeOrder[] = [];
+    let pageCount = 0;
+
+    // Pagination loop - lấy TẤT CẢ đơn hàng, không giới hạn số lượng
+    while (more) {
+      pageCount++;
+      const { orders: orderList, more: hasMore, nextCursor } = await fetchOrderList(
+        supabase, credentials, shopId, token,
+        currentChunk.start, currentChunk.end,
+        cursor,
+        TIME_RANGE_FIELD // BẮT BUỘC dùng create_time
+      );
+
+      console.log(`[ORDERS-SYNC] Page ${pageCount}: ${orderList.length} orders (cursor: ${cursor ? 'yes' : 'start'})`);
+
+      if (orderList.length === 0) break;
+
+      // Fetch order details in batches of 50
+      for (let i = 0; i < orderList.length; i += 50) {
+        const batch = orderList.slice(i, Math.min(i + 50, orderList.length));
+        const sns = batch.map(o => o.order_sn);
+        const details = await fetchOrderDetails(supabase, credentials, shopId, token, sns);
+        allOrders.push(...details);
+
+        // Rate limiting between detail batches
+        if (i + 50 < orderList.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+
+      // Lấy next_cursor để gọi trang tiếp theo
+      cursor = nextCursor;
+      more = hasMore; // Tiếp tục nếu response.more == true
+
+      // Rate limiting between pages
+      if (more) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    console.log(`[ORDERS-SYNC] Total fetched: ${allOrders.length} orders in ${pageCount} pages`);
+
+    // Upsert to database
+    let totalSynced = 0;
+    if (allOrders.length > 0) {
+      const { inserted, updated } = await upsertOrders(supabase, shopId, allOrders);
+      totalSynced = inserted + updated;
+      console.log(`[ORDERS-SYNC] Chunk ${chunkIndex + 1}: ${inserted} new, ${updated} updated`);
+      // NOTE: Escrow sync is handled by separate Finance Sync job (runs every hour)
+    }
+
+    // Update sync status
+    const hasMoreChunks = chunkIndex + 1 < chunks.length;
+
+    await updateSyncStatus(supabase, shopId, {
+      is_syncing: false,
+      is_initial_sync_done: true,
+      last_sync_at: new Date().toISOString(),
+      last_error: null,
+    });
+
+    return {
+      success: true,
+      total_orders_synced: totalSynced,
+      chunks_processed: chunkIndex + 1,
+      total_chunks: chunks.length,
+      has_more: hasMoreChunks,
+      current_chunk_index: chunkIndex,
+    };
+
+  } catch (error) {
+    const errorMessage = (error as Error).message;
+    console.error('[ORDERS-SYNC] Date range sync failed:', errorMessage);
+
+    await updateSyncStatus(supabase, shopId, {
+      is_syncing: false,
+      last_error: errorMessage,
+    });
+
+    return {
+      success: false,
+      total_orders_synced: 0,
+      chunks_processed: 0,
+      total_chunks: 0,
+      has_more: false,
+      error: errorMessage,
+    };
+  }
 }
 
 // ==================== MAIN HANDLER ====================
@@ -1004,6 +1536,41 @@ serve(async (req) => {
         break;
       }
 
+      case 'sync-date-range': {
+        // Sync orders by date range with automatic 15-day chunking
+        // Input: start_date và end_date (DD/MM/YYYY hoặc YYYY-MM-DD)
+        // Ví dụ: { "start_date": "01/10/2025", "end_date": "31/10/2025" }
+        const { start_date, end_date, chunk_index = 0 } = body;
+
+        if (!start_date || !end_date) {
+          result = {
+            success: false,
+            error: 'start_date and end_date are required (format: DD/MM/YYYY or YYYY-MM-DD)',
+          };
+          break;
+        }
+
+        const syncStatus = await getSyncStatus(supabase, shop_id);
+
+        // Check if already syncing
+        if (syncStatus?.is_syncing) {
+          result = {
+            success: false,
+            error: 'Sync is already in progress',
+          };
+          break;
+        }
+
+        const credentials = await getPartnerCredentials(supabase, shop_id);
+        const token = await getTokenWithAutoRefresh(supabase, shop_id);
+
+        result = await syncDateRange(
+          supabase, credentials, shop_id, token,
+          start_date, end_date, chunk_index
+        );
+        break;
+      }
+
       case 'status': {
         const status = await getSyncStatus(supabase, shop_id);
         const availableMonths = getAvailableMonths();
@@ -1079,9 +1646,437 @@ serve(async (req) => {
         break;
       }
 
+      case 'sync-escrow': {
+        // Sync escrow data for orders that don't have it yet
+        // Optional params: order_sns (array of specific order_sn to sync), limit (default 50)
+        const { order_sns, limit = 50, force = false } = body;
+
+        const credentials = await getPartnerCredentials(supabase, shop_id);
+        const token = await getTokenWithAutoRefresh(supabase, shop_id);
+
+        let ordersToSync: { order_sn: string }[] = [];
+
+        if (order_sns && Array.isArray(order_sns) && order_sns.length > 0) {
+          // Sync specific orders
+          ordersToSync = order_sns.map((sn: string) => ({ order_sn: sn }));
+        } else {
+          // Find orders without escrow data (only COMPLETED, SHIPPED, TO_CONFIRM_RECEIVE status)
+          let query = supabase
+            .from('apishopee_orders')
+            .select('order_sn')
+            .eq('shop_id', shop_id)
+            .in('order_status', ['COMPLETED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'READY_TO_SHIP'])
+            .order('update_time', { ascending: false })
+            .limit(limit);
+
+          if (!force) {
+            // Only orders without escrow data
+            const { data: existingEscrow } = await supabase
+              .from('apishopee_order_escrow')
+              .select('order_sn')
+              .eq('shop_id', shop_id);
+
+            const existingEscrowSns = new Set(existingEscrow?.map(e => e.order_sn) || []);
+
+            const { data: allOrders } = await query;
+
+            ordersToSync = (allOrders || []).filter(o => !existingEscrowSns.has(o.order_sn));
+          } else {
+            const { data } = await query;
+            ordersToSync = data || [];
+          }
+        }
+
+        console.log(`[ORDERS-SYNC] Syncing escrow for ${ordersToSync.length} orders`);
+
+        const escrowDataList: EscrowData[] = [];
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const order of ordersToSync) {
+          const escrowData = await fetchEscrowDetail(
+            supabase, credentials, shop_id, token, order.order_sn
+          );
+
+          if (escrowData) {
+            escrowDataList.push(escrowData);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+
+          // Rate limiting - 200ms between requests
+          if (ordersToSync.indexOf(order) < ordersToSync.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
+
+        // Upsert escrow data
+        let upsertedCount = 0;
+        if (escrowDataList.length > 0) {
+          upsertedCount = await upsertEscrowData(supabase, shop_id, escrowDataList);
+        }
+
+        result = {
+          success: true,
+          total_orders: ordersToSync.length,
+          fetched: successCount,
+          failed: errorCount,
+          upserted: upsertedCount,
+        };
+        break;
+      }
+
+      case 'get-escrow': {
+        // Get escrow data from database for a specific order
+        const { order_sn } = body;
+
+        if (!order_sn) {
+          result = { success: false, error: 'order_sn is required' };
+          break;
+        }
+
+        const { data, error } = await supabase
+          .from('apishopee_order_escrow')
+          .select('*')
+          .eq('shop_id', shop_id)
+          .eq('order_sn', order_sn)
+          .single();
+
+        if (error && error.code !== 'PGRST116') {
+          throw error;
+        }
+
+        result = { success: true, escrow: data || null };
+        break;
+      }
+
+      case 'sync-all-escrow': {
+        // Batch sync escrow data for ALL orders in database
+        // This action will sync escrow in batches to avoid timeout
+        // Returns progress info so client can continue calling until done
+        const { batch_size = 100, offset = 0, force = false } = body;
+
+        const credentials = await getPartnerCredentials(supabase, shop_id);
+        const token = await getTokenWithAutoRefresh(supabase, shop_id);
+
+        // Get count of orders that need escrow sync
+        let countQuery = supabase
+          .from('apishopee_orders')
+          .select('order_sn', { count: 'exact', head: true })
+          .eq('shop_id', shop_id)
+          .in('order_status', ['COMPLETED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'READY_TO_SHIP']);
+
+        const { count: totalOrders } = await countQuery;
+
+        // Get orders to sync (with or without existing escrow)
+        let ordersQuery = supabase
+          .from('apishopee_orders')
+          .select('order_sn')
+          .eq('shop_id', shop_id)
+          .in('order_status', ['COMPLETED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'READY_TO_SHIP'])
+          .order('update_time', { ascending: false })
+          .range(offset, offset + batch_size - 1);
+
+        const { data: ordersData } = await ordersQuery;
+        const ordersFromDb = ordersData || [];
+
+        let ordersToSync: { order_sn: string }[];
+
+        if (!force) {
+          // Filter out orders that already have escrow data
+          const orderSns = ordersFromDb.map(o => o.order_sn);
+          const { data: existingEscrow } = await supabase
+            .from('apishopee_order_escrow')
+            .select('order_sn')
+            .eq('shop_id', shop_id)
+            .in('order_sn', orderSns);
+
+          const existingEscrowSns = new Set(existingEscrow?.map(e => e.order_sn) || []);
+          ordersToSync = ordersFromDb.filter(o => !existingEscrowSns.has(o.order_sn));
+        } else {
+          ordersToSync = ordersFromDb;
+        }
+
+        console.log(`[ORDERS-SYNC] Batch sync escrow: offset=${offset}, batch_size=${batch_size}, orders_to_sync=${ordersToSync.length}`);
+
+        const escrowDataList: EscrowData[] = [];
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const order of ordersToSync) {
+          const escrowData = await fetchEscrowDetail(
+            supabase, credentials, shop_id, token, order.order_sn
+          );
+
+          if (escrowData) {
+            escrowDataList.push(escrowData);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+
+          // Rate limiting - 150ms between requests
+          if (ordersToSync.indexOf(order) < ordersToSync.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+          }
+        }
+
+        // Upsert escrow data
+        let upsertedCount = 0;
+        if (escrowDataList.length > 0) {
+          upsertedCount = await upsertEscrowData(supabase, shop_id, escrowDataList);
+        }
+
+        // Calculate progress
+        const nextOffset = offset + batch_size;
+        const hasMore = nextOffset < (totalOrders || 0);
+        const progress = totalOrders ? Math.round((Math.min(nextOffset, totalOrders) / totalOrders) * 100) : 100;
+
+        result = {
+          success: true,
+          total_orders: totalOrders || 0,
+          processed_in_batch: ordersFromDb.length,
+          synced: successCount,
+          failed: errorCount,
+          upserted: upsertedCount,
+          offset: offset,
+          next_offset: hasMore ? nextOffset : null,
+          has_more: hasMore,
+          progress: progress,
+        };
+        break;
+      }
+
+      case 'escrow-stats': {
+        // Get stats about escrow data sync status
+        const { count: totalOrders } = await supabase
+          .from('apishopee_orders')
+          .select('order_sn', { count: 'exact', head: true })
+          .eq('shop_id', shop_id)
+          .in('order_status', ['COMPLETED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'READY_TO_SHIP']);
+
+        const { count: ordersWithEscrow } = await supabase
+          .from('apishopee_order_escrow')
+          .select('order_sn', { count: 'exact', head: true })
+          .eq('shop_id', shop_id);
+
+        const missingEscrow = (totalOrders || 0) - (ordersWithEscrow || 0);
+
+        result = {
+          success: true,
+          total_eligible_orders: totalOrders || 0,
+          orders_with_escrow: ordersWithEscrow || 0,
+          missing_escrow: missingEscrow > 0 ? missingEscrow : 0,
+          sync_percentage: totalOrders ? Math.round(((ordersWithEscrow || 0) / totalOrders) * 100) : 100,
+        };
+        break;
+      }
+
+      case 'sync-finance-month': {
+        // MODULE DÒNG TIỀN (FINANCE SYNC) - "Tiền thực nhận"
+        // Sync escrow data for ALL orders in a specific month (kể cả ước tính)
+        // Đây là dữ liệu quan trọng hơn doanh số ảo (GMV)
+        // Input: month (YYYY-MM), batch_size, offset
+        const { month, batch_size = 100, offset = 0 } = body;
+
+        if (!month) {
+          result = { success: false, error: 'month is required (format: YYYY-MM)' };
+          break;
+        }
+
+        // Validate month format
+        if (!/^\d{4}-\d{2}$/.test(month)) {
+          result = { success: false, error: 'Invalid month format. Use YYYY-MM' };
+          break;
+        }
+
+        const credentials = await getPartnerCredentials(supabase, shop_id);
+        const token = await getTokenWithAutoRefresh(supabase, shop_id);
+
+        // Get month boundaries
+        const { start: monthStart, end: monthEnd } = getMonthBoundaries(month);
+
+        // Get ALL orders in this month (không filter theo status)
+        const { count: totalOrdersInMonth } = await supabase
+          .from('apishopee_orders')
+          .select('order_sn', { count: 'exact', head: true })
+          .eq('shop_id', shop_id)
+          .gte('create_time', monthStart)
+          .lte('create_time', monthEnd);
+
+        // Get orders to sync with pagination
+        const { data: ordersData } = await supabase
+          .from('apishopee_orders')
+          .select('order_sn, order_status, create_time')
+          .eq('shop_id', shop_id)
+          .gte('create_time', monthStart)
+          .lte('create_time', monthEnd)
+          .order('create_time', { ascending: false })
+          .range(offset, offset + batch_size - 1);
+
+        const ordersFromDb = ordersData || [];
+
+        // Check which orders already have escrow data
+        const orderSns = ordersFromDb.map(o => o.order_sn);
+        const { data: existingEscrow } = await supabase
+          .from('apishopee_order_escrow')
+          .select('order_sn')
+          .eq('shop_id', shop_id)
+          .in('order_sn', orderSns);
+
+        const existingEscrowSns = new Set(existingEscrow?.map(e => e.order_sn) || []);
+        const ordersToSync = ordersFromDb.filter(o => !existingEscrowSns.has(o.order_sn));
+
+        console.log(`[FINANCE-SYNC] Month ${month}: offset=${offset}, batch_size=${batch_size}, orders_to_sync=${ordersToSync.length}/${ordersFromDb.length}`);
+
+        const escrowDataList: EscrowData[] = [];
+        let successCount = 0;
+        let errorCount = 0;
+        const errors: Array<{ order_sn: string; error: string }> = [];
+
+        for (const order of ordersToSync) {
+          const escrowData = await fetchEscrowDetail(
+            supabase, credentials, shop_id, token, order.order_sn
+          );
+
+          if (escrowData) {
+            escrowDataList.push(escrowData);
+            successCount++;
+          } else {
+            // Vẫn ghi nhận lỗi nhưng tiếp tục sync (có thể là ước tính chưa sẵn sàng)
+            errorCount++;
+            errors.push({ order_sn: order.order_sn, error: 'Escrow data not available yet' });
+          }
+
+          // Rate limiting - 150ms between requests
+          if (ordersToSync.indexOf(order) < ordersToSync.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+          }
+        }
+
+        // Upsert escrow data
+        let upsertedCount = 0;
+        if (escrowDataList.length > 0) {
+          upsertedCount = await upsertEscrowData(supabase, shop_id, escrowDataList);
+        }
+
+        // Calculate progress
+        const nextOffset = offset + batch_size;
+        const hasMore = nextOffset < (totalOrdersInMonth || 0);
+        const progress = totalOrdersInMonth ? Math.round((Math.min(nextOffset, totalOrdersInMonth) / totalOrdersInMonth) * 100) : 100;
+
+        // Get total escrow synced for this month
+        const { count: monthEscrowCount } = await supabase
+          .from('apishopee_order_escrow')
+          .select('order_sn', { count: 'exact', head: true })
+          .eq('shop_id', shop_id)
+          .in('order_sn', (await supabase
+            .from('apishopee_orders')
+            .select('order_sn')
+            .eq('shop_id', shop_id)
+            .gte('create_time', monthStart)
+            .lte('create_time', monthEnd)
+          ).data?.map(o => o.order_sn) || []);
+
+        result = {
+          success: true,
+          month: month,
+          total_orders_in_month: totalOrdersInMonth || 0,
+          processed_in_batch: ordersFromDb.length,
+          already_synced_in_batch: ordersFromDb.length - ordersToSync.length,
+          synced: successCount,
+          failed: errorCount,
+          upserted: upsertedCount,
+          offset: offset,
+          next_offset: hasMore ? nextOffset : null,
+          has_more: hasMore,
+          progress: progress,
+          total_escrow_synced_for_month: monthEscrowCount || 0,
+          errors: errors.length > 0 ? errors.slice(0, 10) : undefined, // Chỉ trả về 10 lỗi đầu tiên
+        };
+        break;
+      }
+
+      case 'finance-stats': {
+        // Get finance/escrow statistics by month
+        // Input: month (optional, default current month)
+        const { month } = body;
+
+        let monthStart: number;
+        let monthEnd: number;
+        let targetMonth: string;
+
+        if (month && /^\d{4}-\d{2}$/.test(month)) {
+          const boundaries = getMonthBoundaries(month);
+          monthStart = boundaries.start;
+          monthEnd = boundaries.end;
+          targetMonth = month;
+        } else {
+          // Default to current month
+          targetMonth = getCurrentMonth();
+          const boundaries = getMonthBoundaries(targetMonth);
+          monthStart = boundaries.start;
+          monthEnd = boundaries.end;
+        }
+
+        // Get all orders in month
+        const { count: totalOrders } = await supabase
+          .from('apishopee_orders')
+          .select('order_sn', { count: 'exact', head: true })
+          .eq('shop_id', shop_id)
+          .gte('create_time', monthStart)
+          .lte('create_time', monthEnd);
+
+        // Get order status breakdown
+        const { data: ordersInMonth } = await supabase
+          .from('apishopee_orders')
+          .select('order_sn, order_status, total_amount')
+          .eq('shop_id', shop_id)
+          .gte('create_time', monthStart)
+          .lte('create_time', monthEnd);
+
+        const statusCounts: Record<string, number> = {};
+        let gmvTotal = 0; // Gross Merchandise Value (Doanh số ảo)
+        (ordersInMonth || []).forEach(o => {
+          statusCounts[o.order_status] = (statusCounts[o.order_status] || 0) + 1;
+          gmvTotal += o.total_amount || 0;
+        });
+
+        // Get escrow data for this month
+        const orderSns = (ordersInMonth || []).map(o => o.order_sn);
+        const { data: escrowData } = await supabase
+          .from('apishopee_order_escrow')
+          .select('order_sn, escrow_amount, escrow_amount_after_adjustment, buyer_total_amount')
+          .eq('shop_id', shop_id)
+          .in('order_sn', orderSns.length > 0 ? orderSns : ['']);
+
+        // Calculate actual income (Tiền thực nhận)
+        let escrowTotal = 0; // Tiền thực về ví
+        let escrowAfterAdjustment = 0;
+        (escrowData || []).forEach(e => {
+          escrowTotal += e.escrow_amount || 0;
+          escrowAfterAdjustment += e.escrow_amount_after_adjustment || e.escrow_amount || 0;
+        });
+
+        result = {
+          success: true,
+          month: targetMonth,
+          total_orders: totalOrders || 0,
+          status_breakdown: statusCounts,
+          gmv_total: gmvTotal, // Doanh số ảo (GMV)
+          escrow_total: escrowTotal, // Tiền escrow
+          escrow_after_adjustment: escrowAfterAdjustment, // Tiền thực nhận sau điều chỉnh
+          orders_with_escrow: escrowData?.length || 0,
+          orders_missing_escrow: (totalOrders || 0) - (escrowData?.length || 0),
+          escrow_sync_percentage: totalOrders ? Math.round(((escrowData?.length || 0) / totalOrders) * 100) : 100,
+        };
+        break;
+      }
+
       default:
         return new Response(JSON.stringify({
-          error: 'Invalid action. Use: sync, sync-month, continue-month-sync, status, get-orders, get-stats'
+          error: 'Invalid action. Use: sync, sync-month, sync-date-range, continue-month-sync, status, get-orders, get-stats, sync-escrow, sync-all-escrow, escrow-stats, get-escrow, sync-finance-month, finance-stats'
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

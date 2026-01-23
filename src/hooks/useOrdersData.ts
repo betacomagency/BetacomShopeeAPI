@@ -199,6 +199,8 @@ export interface MonthSyncResult {
 export interface OrderStats {
   total: number;
   totalRevenue: number;
+  escrowSyncedCount: number;
+  escrowPendingCount: number;
   statusCounts: Record<string, number>;
 }
 
@@ -240,6 +242,8 @@ const LOAD_MORE_LIMIT = 50;
 const DEFAULT_STATS: OrderStats = {
   total: 0,
   totalRevenue: 0,
+  escrowSyncedCount: 0,
+  escrowPendingCount: 0,
   statusCounts: {},
 };
 
@@ -291,17 +295,6 @@ export function useOrdersData(
   // Get month time range for filtering
   const monthTimeRange = useMemo(() => getMonthTimeRange(monthFilter), [monthFilter]);
 
-  // Reset stats when filter changes to prevent showing stale data
-  useEffect(() => {
-    if (prevMonthFilterRef.current !== monthFilter || prevStatusFilterRef.current !== statusFilter) {
-      console.log(`[useOrdersData] Filter changed, resetting stats`);
-      setStats(DEFAULT_STATS);
-      setTotalCount(0);
-      prevMonthFilterRef.current = monthFilter;
-      prevStatusFilterRef.current = statusFilter;
-    }
-  }, [monthFilter, statusFilter]);
-
   // Fetch stats for orders using database function (handles large datasets correctly)
   const fetchStats = useCallback(async (): Promise<OrderStats> => {
     if (!shopId) return DEFAULT_STATS;
@@ -325,9 +318,26 @@ export function useOrdersData(
     return {
       total: data.total || 0,
       totalRevenue: Number(data.totalRevenue) || 0,
+      escrowSyncedCount: data.escrowSyncedCount || 0,
+      escrowPendingCount: data.escrowPendingCount || 0,
       statusCounts: data.statusCounts || {},
     };
   }, [shopId, monthTimeRange]);
+
+  // When filter changes, always refresh stats (even if orders are cached)
+  useEffect(() => {
+    if (prevMonthFilterRef.current !== monthFilter || prevStatusFilterRef.current !== statusFilter) {
+      console.log(`[useOrdersData] Filter changed from ${prevMonthFilterRef.current}/${prevStatusFilterRef.current} to ${monthFilter}/${statusFilter}`);
+      prevMonthFilterRef.current = monthFilter;
+      prevStatusFilterRef.current = statusFilter;
+      // Always fetch fresh stats when filter changes
+      fetchStats().then(newStats => {
+        setStats(newStats);
+        setTotalCount(newStats.total);
+        prevStatsRef.current = newStats;
+      });
+    }
+  }, [monthFilter, statusFilter, fetchStats]);
 
   // Fetch orders with pagination - initial load
   const fetchOrders = async (): Promise<Order[]> => {

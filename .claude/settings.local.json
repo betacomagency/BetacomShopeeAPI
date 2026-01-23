@@ -41,7 +41,11 @@
       "Bash(npx tsc:*)",
       "Bash(timeout:*)",
       "Bash(ping:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "mcp__supabase__generate_typescript_types",
+      "Bash(find:*)",
+      "Bash(git -C /d/Betacom/BetacomShopeeAPI log --oneline -20)",
+      "Bash(powershell:*)"
     ]
   }
 }

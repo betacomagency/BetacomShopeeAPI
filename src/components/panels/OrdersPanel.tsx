@@ -47,6 +47,7 @@ const STATUS_TABS = [
   { key: 'ALL', label: 'Tất cả' },
   { key: 'UNPAID', label: 'Chờ thanh toán' },
   { key: 'READY_TO_SHIP', label: 'Chờ lấy hàng' },
+  { key: 'PROCESSED', label: 'Đang xử lý' },
   { key: 'SHIPPED', label: 'Đang giao' },
   { key: 'TO_CONFIRM_RECEIVE', label: 'Chờ xác nhận' },
   { key: 'COMPLETED', label: 'Hoàn thành' },
@@ -116,6 +117,7 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [monthFilter, setMonthFilter] = useState('ALL');
+  const [allOrdersCount, setAllOrdersCount] = useState<number>(0);
 
   // Use the hook with status filter and month filter - each combination has its own cache
   const {
@@ -135,6 +137,13 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
     totalCount,
     stats,
   } = useOrdersData(shopId, userId, statusFilter, monthFilter);
+
+  // Track total orders count when viewing "ALL" months
+  useEffect(() => {
+    if (monthFilter === 'ALL' && totalCount > 0) {
+      setAllOrdersCount(totalCount);
+    }
+  }, [monthFilter, totalCount]);
 
   // Show toast when error occurs
   useEffect(() => {
@@ -233,7 +242,9 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
   }, [orders, searchTerm]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { ALL: totalCount };
+    // Use stats.total for ALL count (sum of all status counts)
+    const allCount = stats.total || totalCount;
+    const counts: Record<string, number> = { ALL: allCount };
     // Use stats from database for accurate counts
     if (stats.statusCounts) {
       Object.entries(stats.statusCounts).forEach(([status, count]) => {
@@ -270,13 +281,18 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
               )}
             </div>
             <div className="flex items-center gap-2 text-slate-500">
-              <span>Tổng: {totalCount} đơn hàng</span>
-              {stats.totalRevenue > 0 && (
+              <span>Tổng: {allOrdersCount || totalCount} đơn hàng</span>
+              {(stats.totalRevenue > 0 || stats.escrowSyncedCount > 0) && (
                 <>
                   <span className="text-slate-300">|</span>
                   <span className="text-green-600">
-                    Doanh thu: {formatPrice(stats.totalRevenue)}
+                    Thực nhận: {formatPrice(stats.totalRevenue)}
                   </span>
+                  {stats.escrowPendingCount > 0 && (
+                    <span className="text-orange-500 text-xs">
+                      ({stats.escrowPendingCount} đơn chưa sync)
+                    </span>
+                  )}
                 </>
               )}
             </div>
@@ -322,7 +338,10 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
               <Button
                 variant={monthFilter !== 'ALL' ? 'default' : 'outline'}
                 size="sm"
-                className={monthFilter !== 'ALL' ? 'bg-orange-500 hover:bg-orange-600' : ''}
+                className={cn(
+                  'focus-visible:ring-0 focus-visible:ring-offset-0',
+                  monthFilter !== 'ALL' && 'bg-orange-500 hover:bg-orange-600'
+                )}
               >
                 <Calendar className="h-4 w-4 mr-1" />
                 {monthFilter === 'ALL' ? 'Tất cả tháng' : formatMonth(monthFilter)}
