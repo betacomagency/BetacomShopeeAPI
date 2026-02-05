@@ -313,7 +313,7 @@ async function getTemplateItems(
   const enabledItems = itemsWithModels.filter((item: FlashSaleItem) => item.status === 1);
 
   // Convert sang format để add vào FS mới
-  return enabledItems.map((item: FlashSaleItem) => {
+  const items = enabledItems.map((item: FlashSaleItem) => {
     const enabledModels = item.models?.filter(m => m.status === 1) || [];
     const isNonVariantWithModel = enabledModels.length === 1 && enabledModels[0].model_id === 0;
 
@@ -358,6 +358,46 @@ async function getTemplateItems(
     }
     return false;
   });
+
+  // Fallback: Nếu không lấy được items từ API, thử lấy từ history thành công
+  if (items.length === 0) {
+    console.log('[SCHEDULER] No items from API, trying fallback from successful history');
+    const historyItems = await getItemsFromSuccessfulHistory(supabase, shopId);
+    if (historyItems.length > 0) {
+      return historyItems;
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Lấy items từ lần tạo FS thành công gần nhất trong history
+ * Fallback khi không thể lấy items từ Shopee API
+ */
+async function getItemsFromSuccessfulHistory(
+  supabase: ReturnType<typeof createClient>,
+  shopId: number
+): Promise<Array<Record<string, unknown>>> {
+  console.log(`[SCHEDULER] Trying to get items from successful history for shop ${shopId}`);
+
+  const { data: successHistory } = await supabase
+    .from('apishopee_flash_sale_auto_history')
+    .select('id, flash_sale_id, items_data, items_count, executed_at')
+    .eq('shop_id', shopId)
+    .eq('status', 'success')
+    .not('items_data', 'is', null)
+    .order('executed_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (successHistory?.items_data && Array.isArray(successHistory.items_data) && successHistory.items_data.length > 0) {
+    console.log(`[SCHEDULER] Found ${successHistory.items_data.length} items from history (FS #${successHistory.flash_sale_id}, executed ${successHistory.executed_at})`);
+    return successHistory.items_data as Array<Record<string, unknown>>;
+  }
+
+  console.log('[SCHEDULER] No items found in successful history');
+  return [];
 }
 
 /**
@@ -489,13 +529,14 @@ async function processJob(
       message += ` với ${itemsToAdd.length} sản phẩm`;
     }
 
-    // 5. Update success
+    // 5. Update success (lưu items_data để dùng cho lần tạo FS tiếp theo nếu cần)
     await supabase
       .from('apishopee_flash_sale_auto_history')
       .update({
         status: 'success',
         flash_sale_id: newFlashSaleId,
         items_count: itemsToAdd.length,
+        items_data: itemsToAdd, // Lưu items để fallback cho lần sau
         executed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

@@ -24,6 +24,14 @@ const corsHeaders = {
 
 const SHOPEE_HOST = 'https://partner.shopeemobile.com';
 
+// Delay utility to avoid rate limit
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Config for rate limiting
+const API_DELAY_MS = 800; // 800ms delay between API calls
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000; // Base retry delay (will use exponential backoff)
+
 // HMAC-SHA256 using Web Crypto API
 async function hmacSha256(key: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -59,14 +67,15 @@ async function getShopCredentials(supabase: ReturnType<typeof createClient>, sho
   return shop;
 }
 
-// Gọi Shopee API để thay đổi ngân sách
+// Gọi Shopee API để thay đổi ngân sách (với retry logic)
 async function editCampaignBudget(
   supabase: ReturnType<typeof createClient>,
   shopId: number,
   campaignId: number,
   adType: 'auto' | 'manual',
-  budget: number
-): Promise<{ success: boolean; error?: string }> {
+  budget: number,
+  retryCount = 0
+): Promise<{ success: boolean; error?: string; retried?: number }> {
   try {
     const shop = await getShopCredentials(supabase, shopId);
     const { access_token, partner_id, partner_key } = shop;
@@ -99,7 +108,7 @@ async function editCampaignBudget(
       budget: budget,
     };
 
-    console.log(`[ads-scheduler] Editing campaign ${campaignId} (${adType}) budget to ${budget}`);
+    console.log(`[ads-scheduler] Editing campaign ${campaignId} (${adType}) budget to ${budget}${retryCount > 0 ? ` (retry ${retryCount})` : ''}`);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -115,7 +124,17 @@ async function editCampaignBudget(
     if (result.error && result.error !== '' && result.error !== '-') {
       const errorCode = result.error;
       const errorMsg = result.message || result.error;
-      
+
+      // Kiểm tra nếu là rate limit hoặc server error -> retry
+      const isRetryableError = errorCode === 'error_rate_limit' || errorCode === 'error_server';
+
+      if (isRetryableError && retryCount < MAX_RETRIES) {
+        const retryDelay = RETRY_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff
+        console.log(`[ads-scheduler] Rate limit/server error for campaign ${campaignId}, retrying in ${retryDelay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        await delay(retryDelay);
+        return editCampaignBudget(supabase, shopId, campaignId, adType, budget, retryCount + 1);
+      }
+
       // Map các error code phổ biến sang tiếng Việt
       const errorMessages: Record<string, string> = {
         'error_auth': 'Lỗi xác thực - Token hết hạn hoặc không hợp lệ',
@@ -123,6 +142,7 @@ async function editCampaignBudget(
         'error_permission': 'Không có quyền thực hiện thao tác này',
         'error_server': 'Lỗi server Shopee',
         'error_not_found': 'Không tìm thấy chiến dịch',
+        'error_rate_limit': 'Quá nhiều request - Đã retry tối đa',
         'ads.error_budget_too_low': 'Ngân sách quá thấp (tối thiểu 100.000đ)',
         'ads.error_budget_too_high': 'Ngân sách vượt quá giới hạn cho phép',
         'ads.error_campaign_not_found': 'Không tìm thấy chiến dịch quảng cáo',
@@ -130,19 +150,19 @@ async function editCampaignBudget(
       };
 
       const friendlyError = errorMessages[errorCode] || `${errorMsg} (code: ${errorCode})`;
-      return { success: false, error: friendlyError };
+      return { success: false, error: friendlyError, retried: retryCount };
     }
 
     // Kiểm tra response có data không
     if (!result.response) {
-      return { success: false, error: 'Shopee API không trả về dữ liệu response' };
+      return { success: false, error: 'Shopee API không trả về dữ liệu response', retried: retryCount };
     }
 
-    return { success: true };
+    return { success: true, retried: retryCount };
   } catch (err) {
     const errorMessage = (err as Error).message;
     console.error(`[ads-scheduler] Error editing campaign ${campaignId}:`, errorMessage);
-    return { success: false, error: `Lỗi hệ thống: ${errorMessage}` };
+    return { success: false, error: `Lỗi hệ thống: ${errorMessage}`, retried: retryCount };
   }
 }
 
@@ -367,9 +387,17 @@ serve(async (req) => {
 
         console.log(`[ads-scheduler] Found ${applicableSchedules.length} applicable schedules`);
 
-        const results: Array<{schedule_id: string; campaign_id: number; budget: number; success: boolean; error?: string}> = [];
+        const results: Array<{schedule_id: string; campaign_id: number; budget: number; success: boolean; error?: string; retried?: number}> = [];
 
-        for (const schedule of applicableSchedules) {
+        for (let i = 0; i < applicableSchedules.length; i++) {
+          const schedule = applicableSchedules[i];
+
+          // Add delay between API calls to avoid rate limit (except for first call)
+          if (i > 0) {
+            console.log(`[ads-scheduler] Waiting ${API_DELAY_MS}ms before next API call...`);
+            await delay(API_DELAY_MS);
+          }
+
           const startTime = Date.now();
           const shopInfo = await getShopInfo(supabase, schedule.shop_id);
 
@@ -425,6 +453,7 @@ serve(async (req) => {
             budget: schedule.budget,
             success: result.success,
             error: result.error,
+            retried: result.retried,
           });
         }
 

@@ -49,7 +49,10 @@
       "Bash(git -C /d/Betacom/BetacomShopeeAPI log --oneline -20)",
       "Bash(powershell:*)",
       "Bash(xargs:*)",
-      "Bash(node -e \"const {execSync} = require\\(''child_process''\\); const result = execSync\\(''npx supabase functions deploy apishopee-order-reports --no-verify-jwt'', {encoding: ''utf-8'', stdio: ''pipe''}\\); console.log\\(result\\);\")"
+      "Bash(node -e \"const {execSync} = require\\(''child_process''\\); const result = execSync\\(''npx supabase functions deploy apishopee-order-reports --no-verify-jwt'', {encoding: ''utf-8'', stdio: ''pipe''}\\); console.log\\(result\\);\")",
+      "Bash(pnpm tsc:*)",
+      "Bash(pnpm run build:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

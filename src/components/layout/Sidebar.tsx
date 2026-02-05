@@ -46,39 +46,42 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
   // Kiểm tra user hiện tại có phải admin không
   const isSystemAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
-  // Fetch user permissions
+  // Fetch global permissions (áp dụng cho tất cả user)
   useEffect(() => {
-    const fetchPermissions = async () => {
+    const fetchGlobalPermissions = async () => {
       if (!user?.id) return;
 
       try {
         const { data, error } = await supabase
-          .from('sys_profiles')
-          .select('permissions, system_role')
-          .eq('id', user.id)
+          .from('sys_settings')
+          .select('value')
+          .eq('key', 'global_permissions')
           .single();
 
-        if (error) {
-          console.error('Error fetching permissions:', error);
+        if (error && error.code !== 'PGRST116') {
+          console.error('Error fetching global permissions:', error);
           return;
         }
 
-        // Lưu permissions từ database (có thể là null hoặc mảng)
-        setUserPermissions(data?.permissions || []);
+        // Lưu global permissions từ database
+        if (data?.value) {
+          setUserPermissions(data.value as string[]);
+        }
       } catch (error) {
-        console.error('Error fetching permissions:', error);
+        console.error('Error fetching global permissions:', error);
       }
     };
 
-    fetchPermissions();
+    fetchGlobalPermissions();
   }, [user?.id]);
 
   // Check if user has permission for a feature
+  // Admin có full quyền, user thường check global permissions
   const hasPermission = (permissionKey?: string) => {
     if (!permissionKey) return true;
     if (isSystemAdmin) return true; // Admin email có full quyền
     if (profile?.system_role === 'admin') return true; // Admin role có full quyền
-    // User thường: check trong danh sách permissions
+    // User thường: check trong global permissions
     return userPermissions.includes(permissionKey);
   };
 
