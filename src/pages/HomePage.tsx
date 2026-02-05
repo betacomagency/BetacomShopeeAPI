@@ -52,6 +52,13 @@ import {
 } from '@/hooks/useMultiChannelStats';
 import { cn } from '@/lib/utils';
 import { ADMIN_EMAIL } from '@/config/menu-config';
+import { useDashboardData, type DateRangeOption } from '@/hooks/useDashboardData';
+import { useBestSellingProducts, type TopLimitOption } from '@/hooks/useBestSellingProducts';
+import { useInventorySummary } from '@/hooks/useInventorySummary';
+import { DashboardOverview } from '@/components/dashboard/DashboardOverview';
+import { RevenueChart } from '@/components/dashboard/RevenueChart';
+import { BestSellingProducts } from '@/components/dashboard/BestSellingProducts';
+import { InventorySummary } from '@/components/dashboard/InventorySummary';
 
 // Platform icons
 const ShopeeIcon = () => (
@@ -551,8 +558,41 @@ function TokenAlerts() {
 
 export default function HomePage() {
   const { user } = useAuth();
-  const { shops: shopeeShops, isLoading: isShopeeLoading } = useShopeeAuth();
+  const { shops: shopeeShops, selectedShopId, isLoading: isShopeeLoading } = useShopeeAuth();
   const { shops: lazadaShops, isLoading: isLazadaLoading } = useLazadaAuth();
+
+  const [overviewDateRange, setOverviewDateRange] = useState<DateRangeOption>('today');
+  const [chartDateRange, setChartDateRange] = useState<DateRangeOption>('14days');
+  const [bestSellingDateRange, setBestSellingDateRange] = useState<DateRangeOption>('7days');
+  const [bestSellingTopLimit, setBestSellingTopLimit] = useState<TopLimitOption>(10);
+
+  // Dashboard data - uses overview date range for stats
+  const { stats: overviewStats, loading: overviewLoading } = useDashboardData(
+    selectedShopId || 0,
+    user?.id || '',
+    overviewDateRange
+  );
+
+  // Chart data - uses chart date range
+  const { stats: chartStats, loading: chartLoading } = useDashboardData(
+    selectedShopId || 0,
+    user?.id || '',
+    chartDateRange
+  );
+
+  // Best selling products
+  const { products: bestSellingProducts, loading: bestSellingLoading } = useBestSellingProducts(
+    selectedShopId || 0,
+    user?.id || '',
+    bestSellingDateRange,
+    bestSellingTopLimit
+  );
+
+  // Inventory summary
+  const { summary: inventorySummary, loading: inventoryLoading } = useInventorySummary(
+    selectedShopId || 0,
+    user?.id || ''
+  );
 
   const isLoading = isShopeeLoading || isLazadaLoading;
   const hasShops = shopeeShops.length > 0 || lazadaShops.length > 0;
@@ -569,35 +609,31 @@ export default function HomePage() {
     return <LandingContent />;
   }
 
-  return (
-    <div className="p-4 md:p-6 space-y-6">
-      {/* Token Alerts for Admin */}
-      <TokenAlerts />
-
-      {/* Multi-Channel Overview */}
-      <MultiChannelOverview />
-
-      {/* Quick Actions when no shops */}
-      {!hasShops && (
+  // Nếu chưa có shop nào
+  if (!hasShops) {
+    return (
+      <div className="p-6">
         <Card>
-          <CardContent className="py-8">
+          <CardContent className="py-16">
             <div className="text-center">
-              <Store className="w-12 h-12 mx-auto mb-4 text-slate-400" />
-              <h3 className="text-lg font-semibold text-slate-800 mb-2">
+              <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-6">
+                <Store className="w-10 h-10 text-slate-400" />
+              </div>
+              <h2 className="text-xl font-semibold text-slate-800 mb-2">
                 Bắt đầu kết nối shop của bạn
-              </h3>
-              <p className="text-slate-500 mb-6">
+              </h2>
+              <p className="text-slate-500 mb-6 max-w-md mx-auto">
                 Kết nối shop để bắt đầu quản lý đơn hàng, sản phẩm và xem thống kê
               </p>
               <div className="flex justify-center gap-3">
                 <Link to="/settings/shops">
-                  <Button className="bg-orange-500 hover:bg-orange-600">
+                  <Button className="bg-orange-500 hover:bg-orange-600 cursor-pointer">
                     <ShopeeIcon />
                     <span className="ml-2">Kết nối Shopee</span>
                   </Button>
                 </Link>
                 <Link to="/lazada/shops">
-                  <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Button className="bg-blue-600 hover:bg-blue-700 cursor-pointer">
                     <LazadaIcon />
                     <span className="ml-2">Kết nối Lazada</span>
                   </Button>
@@ -606,7 +642,49 @@ export default function HomePage() {
             </div>
           </CardContent>
         </Card>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      {/* Token Alerts for Admin */}
+      <TokenAlerts />
+
+      {/* Multi-Channel Overview */}
+      <MultiChannelOverview />
+
+      {/* Dashboard Overview */}
+      <DashboardOverview
+        stats={overviewStats}
+        loading={overviewLoading}
+        dateRange={overviewDateRange}
+        onDateRangeChange={setOverviewDateRange}
+      />
+
+      {/* Revenue Chart */}
+      <RevenueChart
+        data={chartStats?.dailyStats || []}
+        loading={chartLoading}
+        dateRange={chartDateRange}
+        onDateRangeChange={setChartDateRange}
+      />
+
+      {/* Best Selling Products */}
+      <BestSellingProducts
+        products={bestSellingProducts}
+        loading={bestSellingLoading}
+        dateRange={bestSellingDateRange}
+        onDateRangeChange={setBestSellingDateRange}
+        topLimit={bestSellingTopLimit}
+        onTopLimitChange={setBestSellingTopLimit}
+      />
+
+      {/* Inventory Summary */}
+      <InventorySummary
+        summary={inventorySummary}
+        loading={inventoryLoading}
+      />
     </div>
   );
 }
@@ -676,10 +754,7 @@ function LandingContent() {
 
       <div className="text-center">
         <Link to="/auth">
-          <Button
-            size="lg"
-            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8"
-          >
+          <Button size="lg" className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8 cursor-pointer">
             Đăng nhập để bắt đầu
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>

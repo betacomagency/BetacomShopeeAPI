@@ -1,7 +1,7 @@
 import * as React from "react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { vi } from "date-fns/locale";
-import { Calendar as CalendarIcon, ChevronRight, ChevronLeft } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, ChevronDown } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
 import { Calendar } from "./calendar";
@@ -607,3 +607,382 @@ export function SimpleDateRangePicker({
     </Popover.Root>
   );
 }
+
+// ==================== ANALYTICS DATE RANGE PICKER ====================
+
+export interface AnalyticsDateRange {
+  from: Date;
+  to: Date;
+}
+
+export type AnalyticsPreset = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom';
+
+interface AnalyticsDateRangePickerProps {
+  value: AnalyticsDateRange;
+  onChange: (range: AnalyticsDateRange) => void;
+  className?: string;
+}
+
+const ANALYTICS_PRESETS: { value: AnalyticsPreset; label: string }[] = [
+  { value: 'today', label: 'Hôm nay' },
+  { value: 'yesterday', label: 'Hôm qua' },
+  { value: 'this_week', label: 'Tuần này' },
+  { value: 'last_week', label: 'Tuần trước' },
+  { value: 'this_month', label: 'Tháng này' },
+  { value: 'last_month', label: 'Tháng trước' },
+];
+
+const ANALYTICS_MONTH_NAMES = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
+const ANALYTICS_DAY_NAMES = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+function getAnalyticsPresetRange(preset: AnalyticsPreset): AnalyticsDateRange {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (preset) {
+    case 'today':
+      return { from: new Date(today), to: new Date(today) };
+    case 'yesterday': {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return { from: yesterday, to: new Date(yesterday) };
+    }
+    case 'this_week': {
+      const dayOfWeek = today.getDay();
+      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const monday = new Date(today);
+      monday.setDate(monday.getDate() - diffToMonday);
+      return { from: monday, to: new Date(today) };
+    }
+    case 'last_week': {
+      const dayOfWeek = today.getDay();
+      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const thisMonday = new Date(today);
+      thisMonday.setDate(thisMonday.getDate() - diffToMonday);
+      const lastSunday = new Date(thisMonday);
+      lastSunday.setDate(lastSunday.getDate() - 1);
+      const lastMonday = new Date(lastSunday);
+      lastMonday.setDate(lastMonday.getDate() - 6);
+      return { from: lastMonday, to: lastSunday };
+    }
+    case 'this_month': {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from: firstDay, to: lastDay };
+    }
+    case 'last_month': {
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { from: firstDay, to: lastDay };
+    }
+    default:
+      return { from: new Date(today), to: new Date(today) };
+  }
+}
+
+function formatAnalyticsDate(date: Date): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function isSameDayAnalytics(d1: Date, d2: Date): boolean {
+  return d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate();
+}
+
+function isInRangeAnalytics(date: Date, from: Date, to: Date): boolean {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const f = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+  const t = new Date(to.getFullYear(), to.getMonth(), to.getDate()).getTime();
+  return d >= f && d <= t;
+}
+
+interface AnalyticsCalendarProps {
+  rangeFrom: Date;
+  rangeTo: Date;
+  onDateClick: (date: Date) => void;
+  month: number;
+  year: number;
+  onMonthChange: (month: number) => void;
+  onYearChange: (year: number) => void;
+}
+
+function AnalyticsCalendarGrid({ rangeFrom, rangeTo, onDateClick, month, year, onMonthChange, onYearChange }: AnalyticsCalendarProps) {
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0);
+  const daysInMonth = lastDayOfMonth.getDate();
+
+  let startDay = firstDayOfMonth.getDay() - 1;
+  if (startDay < 0) startDay = 6;
+
+  const days: (Date | null)[] = [];
+
+  for (let i = 0; i < startDay; i++) {
+    const prevDate = new Date(year, month, -startDay + i + 1);
+    days.push(prevDate);
+  }
+
+  for (let i = 1; i <= daysInMonth; i++) {
+    days.push(new Date(year, month, i));
+  }
+
+  const remaining = 42 - days.length;
+  for (let i = 1; i <= remaining; i++) {
+    days.push(new Date(year, month + 1, i));
+  }
+
+  const years = [];
+  const currentYear = new Date().getFullYear();
+  for (let y = currentYear - 5; y <= currentYear + 1; y++) {
+    years.push(y);
+  }
+
+  return (
+    <div className="w-[240px]">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          onClick={() => {
+            if (month === 0) {
+              onMonthChange(11);
+              onYearChange(year - 1);
+            } else {
+              onMonthChange(month - 1);
+            }
+          }}
+          className="p-1 hover:bg-slate-100 rounded cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4 text-slate-500" />
+        </button>
+
+        <div className="flex items-center gap-1">
+          <select
+            value={month}
+            onChange={(e) => onMonthChange(Number(e.target.value))}
+            className="text-xs border border-slate-200 rounded px-1.5 py-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {ANALYTICS_MONTH_NAMES.map((name, i) => (
+              <option key={i} value={i}>{name}</option>
+            ))}
+          </select>
+          <select
+            value={year}
+            onChange={(e) => onYearChange(Number(e.target.value))}
+            className="text-xs border border-slate-200 rounded px-1.5 py-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {years.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={() => {
+            if (month === 11) {
+              onMonthChange(0);
+              onYearChange(year + 1);
+            } else {
+              onMonthChange(month + 1);
+            }
+          }}
+          className="p-1 hover:bg-slate-100 rounded cursor-pointer"
+        >
+          <ChevronRight className="w-4 h-4 text-slate-500" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0 mb-1">
+        {ANALYTICS_DAY_NAMES.map((day) => (
+          <div key={day} className="text-center text-xs text-slate-500 font-medium py-1">
+            {day}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-0">
+        {days.map((date, i) => {
+          if (!date) return <div key={i} />;
+
+          const isCurrentMonth = date.getMonth() === month;
+          const isRangeStart = isSameDayAnalytics(date, rangeFrom);
+          const isRangeEnd = isSameDayAnalytics(date, rangeTo);
+          const inRange = isInRangeAnalytics(date, rangeFrom, rangeTo);
+          const isToday = isSameDayAnalytics(date, new Date());
+
+          return (
+            <button
+              key={i}
+              onClick={() => onDateClick(date)}
+              className={cn(
+                'w-8 h-7 text-xs cursor-pointer transition-colors',
+                !isCurrentMonth && 'text-slate-300',
+                isCurrentMonth && !inRange && 'text-slate-700 hover:bg-slate-100',
+                inRange && !isRangeStart && !isRangeEnd && 'bg-blue-50 text-blue-700',
+                (isRangeStart || isRangeEnd) && 'bg-blue-500 text-white rounded',
+                isToday && !isRangeStart && !isRangeEnd && 'font-bold border border-blue-300 rounded'
+              )}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function AnalyticsDateRangePicker({ value, onChange, className }: AnalyticsDateRangePickerProps) {
+  const [open, setOpen] = React.useState(false);
+  const [tempFrom, setTempFrom] = React.useState(value.from);
+  const [tempTo, setTempTo] = React.useState(value.to);
+  const [selectingStart, setSelectingStart] = React.useState(true);
+  const [leftMonth, setLeftMonth] = React.useState(value.from.getMonth());
+  const [leftYear, setLeftYear] = React.useState(value.from.getFullYear());
+  const [rightMonth, setRightMonth] = React.useState(value.to.getMonth());
+  const [rightYear, setRightYear] = React.useState(value.to.getFullYear());
+
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  React.useEffect(() => {
+    setTempFrom(value.from);
+    setTempTo(value.to);
+    setLeftMonth(value.from.getMonth());
+    setLeftYear(value.from.getFullYear());
+    setRightMonth(value.to.getMonth());
+    setRightYear(value.to.getFullYear());
+  }, [value]);
+
+  const handlePresetClick = React.useCallback((preset: AnalyticsPreset) => {
+    const range = getAnalyticsPresetRange(preset);
+    setTempFrom(range.from);
+    setTempTo(range.to);
+    setLeftMonth(range.from.getMonth());
+    setLeftYear(range.from.getFullYear());
+    setRightMonth(range.to.getMonth());
+    setRightYear(range.to.getFullYear());
+  }, []);
+
+  const handleDateClick = React.useCallback((date: Date) => {
+    if (selectingStart) {
+      setTempFrom(date);
+      setTempTo(date);
+      setSelectingStart(false);
+    } else {
+      if (date < tempFrom) {
+        setTempFrom(date);
+        setTempTo(tempFrom);
+      } else {
+        setTempTo(date);
+      }
+      setSelectingStart(true);
+    }
+  }, [selectingStart, tempFrom]);
+
+  const handleApply = React.useCallback(() => {
+    onChange({ from: tempFrom, to: tempTo });
+    setOpen(false);
+  }, [onChange, tempFrom, tempTo]);
+
+  const displayText = `${formatAnalyticsDate(value.from)} - ${formatAnalyticsDate(value.to)}`;
+
+  return (
+    <div ref={containerRef} className={cn('relative', className)}>
+      <div className="text-xs text-slate-500 mb-1">Thời gian</div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer bg-white min-w-[180px]"
+      >
+        <span className="text-slate-700">{displayText}</span>
+        <ChevronDown className="w-4 h-4 text-slate-400 ml-auto" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 flex">
+          {/* Preset options */}
+          <div className="border-r border-slate-200 py-2 min-w-[100px]">
+            {ANALYTICS_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                onClick={() => handlePresetClick(preset.value)}
+                className="w-full px-3 py-2 text-sm text-left hover:bg-slate-50 transition-colors cursor-pointer text-slate-700"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Calendars */}
+          <div className="p-3">
+            {/* Date inputs */}
+            <div className="flex gap-3 mb-3">
+              <div>
+                <div className="text-xs text-slate-500 mb-1">Từ ngày</div>
+                <input
+                  type="text"
+                  value={formatAnalyticsDate(tempFrom)}
+                  readOnly
+                  className="w-[110px] px-2 py-1.5 text-sm border border-slate-200 rounded bg-slate-50"
+                />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 mb-1">Đến ngày</div>
+                <input
+                  type="text"
+                  value={formatAnalyticsDate(tempTo)}
+                  readOnly
+                  className="w-[110px] px-2 py-1.5 text-sm border border-slate-200 rounded bg-slate-50"
+                />
+              </div>
+            </div>
+
+            {/* Two calendars */}
+            <div className="flex gap-3">
+              <AnalyticsCalendarGrid
+                rangeFrom={tempFrom}
+                rangeTo={tempTo}
+                onDateClick={handleDateClick}
+                month={leftMonth}
+                year={leftYear}
+                onMonthChange={setLeftMonth}
+                onYearChange={setLeftYear}
+              />
+              <AnalyticsCalendarGrid
+                rangeFrom={tempFrom}
+                rangeTo={tempTo}
+                onDateClick={handleDateClick}
+                month={rightMonth}
+                year={rightYear}
+                onMonthChange={setRightMonth}
+                onYearChange={setRightYear}
+              />
+            </div>
+
+            {/* Apply button */}
+            <div className="flex justify-end mt-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={handleApply}
+                className="px-4 py-1.5 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 transition-colors cursor-pointer"
+              >
+                Áp dụng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export { getAnalyticsPresetRange };

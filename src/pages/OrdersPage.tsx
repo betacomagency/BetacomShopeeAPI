@@ -37,16 +37,18 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div>
       {selectedShopId && user?.id ? (
         <OrdersPanel key={selectedShopId} shopId={selectedShopId} userId={user.id} />
       ) : (
-        <Alert>
-          <Store className="h-4 w-4" />
-          <AlertDescription>
-            Vui lòng chọn shop để xem đơn hàng.
-          </AlertDescription>
-        </Alert>
+        <div className="p-6">
+          <Alert>
+            <Store className="h-4 w-4" />
+            <AlertDescription>
+              Vui lòng chọn shop để xem đơn hàng.
+            </AlertDescription>
+          </Alert>
+        </div>
       )}
     </div>
   );

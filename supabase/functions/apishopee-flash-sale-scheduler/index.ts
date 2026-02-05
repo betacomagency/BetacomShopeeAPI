@@ -257,8 +257,8 @@ async function getTemplateItems(
   shopId: number,
   token: { access_token: string; refresh_token: string }
 ): Promise<Array<Record<string, unknown>>> {
-  // Lấy Flash Sale gần nhất từ DB
-  const { data: fsData } = await supabase
+  // Lấy Flash Sale gần nhất từ DB - ưu tiên đang chạy hoặc sắp tới
+  let { data: fsData } = await supabase
     .from('apishopee_flash_sale_data')
     .select('flash_sale_id, type')
     .eq('shop_id', shopId)
@@ -267,10 +267,26 @@ async function getTemplateItems(
     .limit(1)
     .single();
 
+  // Nếu không có FS đang chạy/sắp tới, lấy FS mới nhất bất kỳ (bao gồm đã kết thúc)
   if (!fsData?.flash_sale_id) {
-    console.log('[SCHEDULER] No template flash sale found');
+    console.log('[SCHEDULER] No running/upcoming flash sale found, trying to get latest ended flash sale');
+    const { data: latestFs } = await supabase
+      .from('apishopee_flash_sale_data')
+      .select('flash_sale_id, type')
+      .eq('shop_id', shopId)
+      .order('start_time', { ascending: false })
+      .limit(1)
+      .single();
+
+    fsData = latestFs;
+  }
+
+  if (!fsData?.flash_sale_id) {
+    console.log('[SCHEDULER] No template flash sale found at all');
     return [];
   }
+
+  console.log(`[SCHEDULER] Using flash sale ${fsData.flash_sale_id} (type ${fsData.type}) as template`);
 
   // Lấy items từ Flash Sale template
   const result = await callShopeeAPI(

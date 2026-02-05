@@ -6,7 +6,7 @@
  * - Nếu flash_sale_id chưa có -> INSERT
  * - Nếu flash_sale_id đã có -> UPDATE (không xóa để giữ foreign key)
  * 
- * Trigger: Chạy định kỳ 60 phút/lần qua cron job hoặc external scheduler
+ * Trigger: Chạy định kỳ 30 phút/lần qua cron job hoặc external scheduler
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';

@@ -6,7 +6,7 @@ export default function AnalyticsReviewsPage() {
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold tracking-tight">Phân tích Đánh giá</h1>
+                <h1 className="text-2xl font-bold tracking-tight">Báo cáo Đánh giá</h1>
             </div>
             <Card>
                 <CardHeader>

@@ -23,7 +23,8 @@ const routeNames: Record<string, string> = {
   'profile': 'Hồ sơ',
   'shops': 'Quản lý Shop',
   'users': 'Quản lý người dùng',
-  'analytics': 'Phân tích',
+  'advanced': 'Quản lý nâng cao',
+  'analytics': 'Báo cáo',
 };
 
 // Parent route names for nested routes
@@ -34,7 +35,7 @@ const parentRouteNames: Record<string, string> = {
   'flash-sale': 'Flash Sale',
   'settings': 'Cài đặt',
   'ads': 'Quảng cáo',
-  'analytics': 'Phân tích',
+  'analytics': 'Báo cáo',
 };
 
 // Child route display names (when showing as last item)
@@ -59,9 +60,9 @@ const childRouteNames: Record<string, Record<string, string>> = {
     'history': 'Lịch sử',
   },
   'analytics': {
-    'orders': 'Phân tích đơn hàng',
-    'reviews': 'Phân tích đánh giá',
-    'campaigns': 'Phân tích chiến dịch',
+    'orders': 'Báo cáo đơn hàng',
+    'reviews': 'Báo cáo đánh giá',
+    'campaigns': 'Báo cáo chiến dịch',
   },
 };
 
@@ -147,23 +148,24 @@ export default function Breadcrumb({ onMobileMenuClick }: BreadcrumbProps) {
   }
 
   return (
-    <div className="bg-white border-b border-slate-200 px-6 h-[73px] flex items-center">
+    <div className="bg-white border-b border-slate-200 px-6 h-[73px] flex items-center sticky top-0 z-30">
       <div className="flex items-center justify-between w-full">
-        {/* Breadcrumb Navigation */}
-        <nav className="flex items-center gap-2 text-sm flex-1 min-w-0 mr-4 overflow-hidden">
-          {/* Mobile Menu Toggle */}
-          <button
-            onClick={onMobileMenuClick}
-            className="md:hidden p-1 -ml-2 text-slate-500 hover:text-orange-500 flex-shrink-0"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+        {/* Mobile Menu Toggle */}
+        <button
+          onClick={onMobileMenuClick}
+          className="md:hidden p-1 -ml-2 text-slate-500 hover:text-orange-500 flex-shrink-0"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
+        {/* Breadcrumb Navigation - Hidden on mobile */}
+        <nav className="hidden md:flex items-center gap-2 text-sm flex-1 min-w-0 mr-4 overflow-hidden">
           <Link
             to="/"
             className="flex items-center gap-1 text-slate-500 hover:text-orange-500 transition-colors flex-shrink-0"
           >
             <Home className="h-4 w-4" />
-            <span className="hidden md:inline">Trang chủ</span>
+            <span>Trang chủ</span>
           </Link>
 
           {breadcrumbItems.map((item, index) => (
@@ -174,7 +176,7 @@ export default function Breadcrumb({ onMobileMenuClick }: BreadcrumbProps) {
               ) : (
                 <Link
                   to={item.path}
-                  className="text-slate-500 hover:text-orange-500 transition-colors whitespace-nowrap hidden md:block"
+                  className="text-slate-500 hover:text-orange-500 transition-colors whitespace-nowrap"
                 >
                   {item.name}
                 </Link>

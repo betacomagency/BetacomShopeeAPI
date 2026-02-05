@@ -95,14 +95,16 @@ interface CellTextProps {
   children: React.ReactNode;
   mono?: boolean;
   muted?: boolean;
+  className?: string;
 }
 
-export function CellText({ children, mono, muted }: CellTextProps) {
+export function CellText({ children, mono, muted, className }: CellTextProps) {
   return (
     <span className={cn(
       "text-sm",
       mono && "font-mono",
-      muted ? "text-slate-500" : "text-slate-700"
+      muted ? "text-slate-500" : "text-slate-700",
+      className
     )}>
       {children}
     </span>

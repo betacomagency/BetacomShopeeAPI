@@ -7,6 +7,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase, forceRefreshSession, isJwtExpiredError } from '@/lib/supabase';
 import { User, Session } from '@supabase/supabase-js';
+import { logCompletedActivity } from '@/lib/activity-logger';
 
 interface Profile {
   id: string;
@@ -237,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     setError(null);
+    const startTime = new Date();
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -248,10 +250,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(data.user);
       setSession(data.session);
-      
+
       // Load profile ngay sau khi login thành công (không await để không block)
       if (data.user) {
         loadProfile(data.user.id);
+
+        // Log successful login
+        logCompletedActivity({
+          userId: data.user.id,
+          userEmail: email,
+          actionType: 'user_login',
+          actionCategory: 'auth',
+          actionDescription: `Đăng nhập hệ thống`,
+          status: 'success',
+          source: 'manual',
+          startedAt: startTime,
+          completedAt: new Date(),
+          durationMs: Date.now() - startTime.getTime(),
+        });
       }
 
       return { success: true };
@@ -259,6 +275,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('[Auth] signIn error:', err);
       const message = err instanceof Error ? err.message : 'Đăng nhập thất bại';
       setError(message);
+
+      // Log failed login
+      logCompletedActivity({
+        userEmail: email,
+        actionType: 'user_login',
+        actionCategory: 'auth',
+        actionDescription: `Đăng nhập thất bại`,
+        status: 'failed',
+        source: 'manual',
+        startedAt: startTime,
+        completedAt: new Date(),
+        durationMs: Date.now() - startTime.getTime(),
+        errorMessage: message,
+      });
+
       return { success: false, error: message };
     }
   };

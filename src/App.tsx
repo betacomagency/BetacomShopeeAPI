@@ -22,6 +22,7 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
 import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
+import AdvancedSettingsPage from '@/pages/settings/AdvancedSettingsPage';
 
 // Feature Pages
 import FlashSalePage from '@/pages/FlashSalePage';
@@ -41,7 +42,7 @@ import AdsSchedulesPage from '@/pages/AdsSchedulesPage';
 import AdsHistoryPage from '@/pages/AdsHistoryPage';
 
 // Analytics Pages
-import AnalyticsOrdersPage from '@/pages/analytics/AnalyticsOrdersPage';
+import AnalyticsOrdersPage from '@/pages/analytics/AnalyticsOrdersPageOptimized';
 import AnalyticsReviewsPage from '@/pages/analytics/AnalyticsReviewsPage';
 import AnalyticsCampaignsPage from '@/pages/analytics/AnalyticsCampaignsPage';
 
@@ -112,6 +113,7 @@ function App() {
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />
                   <Route path="/settings/shops" element={<ShopsSettingsPage />} />
                   <Route path="/settings/users" element={<UsersSettingsPage />} />
+                  <Route path="/settings/advanced" element={<AdvancedSettingsPage />} />
 
                   {/* Lazada Routes */}
                   <Route path="/lazada" element={<LazadaDashboardPage />} />

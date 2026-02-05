@@ -234,17 +234,33 @@ export default function FlashSaleAutoSetupPage() {
       
       // If no specific flash sale ID, get the latest one
       if (!flashSaleId) {
-        const { data: fsData, error: fsError } = await supabase
+        // Ưu tiên lấy FS đang chạy hoặc sắp tới
+        let { data: fsData, error: fsError } = await supabase
           .from('apishopee_flash_sale_data')
           .select('*')
           .eq('shop_id', selectedShopId)
+          .in('type', [1, 2]) // Sắp tới hoặc đang chạy
           .order('start_time', { ascending: false })
           .limit(1)
           .single();
 
         if (fsError && fsError.code !== 'PGRST116') throw fsError;
 
-        if (!fsData || (fsData.type !== 1 && fsData.type !== 2)) {
+        // Nếu không có FS đang chạy/sắp tới, lấy FS mới nhất bất kỳ (bao gồm đã kết thúc)
+        if (!fsData) {
+          const { data: latestFs, error: latestError } = await supabase
+            .from('apishopee_flash_sale_data')
+            .select('*')
+            .eq('shop_id', selectedShopId)
+            .order('start_time', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (latestError && latestError.code !== 'PGRST116') throw latestError;
+          fsData = latestFs;
+        }
+
+        if (!fsData) {
           setTemplateItems([]);
           setLatestFlashSaleId(null);
           setLoadingTemplate(false);
@@ -769,114 +785,119 @@ export default function FlashSaleAutoSetupPage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <Card className="border-0 shadow-sm h-full flex flex-col">
-        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-          {/* Header with Filter and Actions */}
-          <div className="border-b">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
-              {/* Filter Tabs */}
-              <div className="flex w-full md:w-auto overflow-x-auto no-scrollbar pl-4 md:pl-0">
-                {[
-                  { value: 'all', label: 'Tất cả', count: stats.total },
-                  { value: 'success', label: 'Thành công', count: stats.success },
-                  { value: 'error', label: 'Lỗi', count: stats.error },
-                  { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
-                ].map((tab) => (
-                  <button
-                    key={tab.value}
-                    onClick={() => setStatusFilter(tab.value)}
-                    className={cn(
-                      "px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                      statusFilter === tab.value
-                        ? "border-orange-500 text-orange-600"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
-                    )}
-                  >
-                    {tab.label}
-                    {tab.count > 0 && (
-                      <span className="ml-1 text-xs text-slate-400">({tab.count})</span>
-                    )}
-                  </button>
-                ))}
-              </div>
+    <div>
+      <Card className="border-0 shadow-sm flex flex-col h-[calc(100vh-73px)]">
+        <CardContent className="p-0 flex flex-col h-full overflow-hidden">
+          {/* Sticky Header Section */}
+          <div className="flex-shrink-0">
+            {/* Header with Filter and Actions */}
+            <div className="border-b">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
+                {/* Filter Tabs */}
+                <div className="flex w-full md:w-auto overflow-x-auto no-scrollbar pl-4 md:pl-0">
+                  {[
+                    { value: 'all', label: 'Tất cả', count: stats.total },
+                    { value: 'success', label: 'Thành công', count: stats.success },
+                    { value: 'error', label: 'Lỗi', count: stats.error },
+                    { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
+                  ].map((tab) => (
+                    <button
+                      key={tab.value}
+                      onClick={() => setStatusFilter(tab.value)}
+                      className={cn(
+                        "px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                        statusFilter === tab.value
+                          ? "border-orange-500 text-orange-600"
+                          : "border-transparent text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      {tab.label}
+                      {tab.count > 0 && (
+                        <span className="ml-1 text-xs text-slate-400">({tab.count})</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end px-4 md:px-0 md:pr-4 pb-3 md:pb-0">
-                <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory} className="h-8 md:h-9">
-                  <RefreshCw className={cn("h-4 w-4 mr-2", loadingHistory && "animate-spin")} />
-                  Làm mới
-                </Button>
-                <Button variant="outline" size="sm" onClick={clearAllHistory} disabled={history.length === 0} className="h-8 md:h-9 text-red-600 hover:text-red-700 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Xóa hết
-                </Button>
-                {isRunning ? (
-                  <Button variant="destructive" size="sm" onClick={stopAutoSetup} className="h-8 md:h-9">
-                    <Square className="h-4 w-4 mr-2" />
-                    Dừng
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 w-full md:w-auto justify-end px-4 md:px-0 md:pr-4 pb-3 md:pb-0">
+                  <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory} className="h-8 md:h-9">
+                    <RefreshCw className={cn("h-4 w-4 mr-2", loadingHistory && "animate-spin")} />
+                    Làm mới
                   </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={handleStartClick}
-                    className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 h-8 md:h-9"
-                  >
-                    <Play className="h-4 w-4 mr-2" />
-                    Tạo mới
+                  <Button variant="outline" size="sm" onClick={clearAllHistory} disabled={history.length === 0} className="h-8 md:h-9 text-red-600 hover:text-red-700 hover:bg-red-50">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Xóa hết
                   </Button>
-                )}
+                  {isRunning ? (
+                    <Button variant="destructive" size="sm" onClick={stopAutoSetup} className="h-8 md:h-9">
+                      <Square className="h-4 w-4 mr-2" />
+                      Dừng
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={handleStartClick}
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 h-8 md:h-9"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Tạo mới
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
+
+            {/* Progress */}
+            {isRunning && (
+              <div className="px-4 py-3 border-b bg-green-50">
+                <div className="flex items-center gap-4">
+                  <RefreshCw className="h-5 w-5 animate-spin text-green-500" />
+                  <div className="flex-1">
+                    <Progress value={progress} className="h-2" />
+                  </div>
+                  <span className="text-sm font-medium text-slate-600">{progress}%</span>
+                </div>
+              </div>
+            )}
+
+            {/* Process Logs - only show for immediate setup */}
+            {processLogs.length > 0 && isImmediateSetup && (
+              <div className="border-b">
+                <div className="px-4 py-2 bg-slate-50 text-sm font-medium text-slate-600">Kết quả xử lý</div>
+                <div className="max-h-[200px] overflow-y-auto divide-y">
+                  {processLogs.map((log) => {
+                    const slot = timeSlots.find(s => s.timeslot_id === log.timeslot_id);
+                    return (
+                      <div key={log.timeslot_id} className="px-4 py-3 flex items-center gap-3">
+                        {log.status === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                        {log.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
+                        {log.status === 'processing' && <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />}
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-slate-700">
+                            {slot ? `${formatDate(slot.start_time)} ${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}` : `Slot #${log.timeslot_id}`}
+                          </p>
+                          <p className={cn(
+                            "text-xs mt-0.5",
+                            log.status === 'success' && "text-green-600",
+                            log.status === 'error' && "text-red-600",
+                            log.status === 'processing' && "text-blue-600"
+                          )}>
+                            {log.message}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Progress */}
-          {isRunning && (
-            <div className="px-4 py-3 border-b bg-green-50">
-              <div className="flex items-center gap-4">
-                <RefreshCw className="h-5 w-5 animate-spin text-green-500" />
-                <div className="flex-1">
-                  <Progress value={progress} className="h-2" />
-                </div>
-                <span className="text-sm font-medium text-slate-600">{progress}%</span>
-              </div>
-            </div>
-          )}
-
-          {/* Process Logs - only show for immediate setup */}
-          {processLogs.length > 0 && isImmediateSetup && (
-            <div className="border-b">
-              <div className="px-4 py-2 bg-slate-50 text-sm font-medium text-slate-600">Kết quả xử lý</div>
-              <div className="max-h-[200px] overflow-y-auto divide-y">
-                {processLogs.map((log) => {
-                  const slot = timeSlots.find(s => s.timeslot_id === log.timeslot_id);
-                  return (
-                    <div key={log.timeslot_id} className="px-4 py-3 flex items-center gap-3">
-                      {log.status === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
-                      {log.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
-                      {log.status === 'processing' && <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />}
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-700">
-                          {slot ? `${formatDate(slot.start_time)} ${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}` : `Slot #${log.timeslot_id}`}
-                        </p>
-                        <p className={cn(
-                          "text-xs mt-0.5",
-                          log.status === 'success' && "text-green-600",
-                          log.status === 'error' && "text-red-600",
-                          log.status === 'processing' && "text-blue-600"
-                        )}>
-                          {log.message}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Mobile List View */}
-          <div className="md:hidden flex-1 overflow-y-auto">
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto">
+            {/* Mobile List View */}
+            <div className="md:hidden">
             {loadingHistory ? (
               <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
             ) : history.length === 0 ? (
@@ -962,91 +983,92 @@ export default function FlashSaleAutoSetupPage() {
             )}
           </div>
 
-          {/* Desktop Table */}
-          <div className="hidden md:block flex-1 overflow-auto">
-            {loadingHistory ? (
-              <div className="flex items-center justify-center py-12">
-                <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
-              </div>
-            ) : history.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                <AlertCircle className="h-12 w-12 mb-3" />
-                <p>Chưa có lịch sử nào</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 sticky top-0 z-10">
-                  <tr className="border-b">
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Trạng thái</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Chi tiết</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Khung giờ</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo trước</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Số SP</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo lúc</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Thực hiện</th>
-                    <th className="text-center px-4 py-3 font-medium text-slate-600 w-12"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {history.map((record) => {
-                    const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
-                    return (
-                      <tr key={record.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <Badge className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
-                            {statusConfig.icon}
-                            {statusConfig.label}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          {record.status === 'success' && record.flash_sale_id ? (
-                            <span className="text-green-600 text-xs">FS #{record.flash_sale_id}</span>
-                          ) : record.status === 'error' && record.error_message ? (
-                            <p className="text-xs text-red-500 max-w-[250px]" title={record.error_message}>
-                              {record.error_message}
-                            </p>
-                          ) : record.status === 'scheduled' ? (
-                            <span className="text-xs text-blue-500">Chờ đến {record.scheduled_at ? formatDateTime(record.scheduled_at) : '-'}</span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="text-slate-700">
-                            {formatDate(record.slot_start_time)}
-                          </div>
-                          <div className="text-slate-500 text-xs">
-                            {formatTime(record.slot_start_time)} - {formatTime(record.slot_end_time)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {record.lead_time_minutes > 0 ? (
-                            <span className="text-blue-600">{record.lead_time_minutes} phút</span>
-                          ) : (
-                            <span className="text-slate-400">Ngay</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{record.items_count}</td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">{formatDateTime(record.created_at)}</td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">
-                          {record.executed_at ? formatDateTime(record.executed_at) : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteRecord(record.id)}
-                            className="text-slate-400 hover:text-red-500 h-8 w-8 p-0"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+            {/* Desktop Table */}
+            <div className="hidden md:block">
+              {loadingHistory ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
+                </div>
+              ) : history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                  <AlertCircle className="h-12 w-12 mb-3" />
+                  <p>Chưa có lịch sử nào</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 sticky top-0 z-10">
+                    <tr className="border-b">
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Trạng thái</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Chi tiết</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Khung giờ</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo trước</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Số SP</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo lúc</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-600">Thực hiện</th>
+                      <th className="text-center px-4 py-3 font-medium text-slate-600 w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {history.map((record) => {
+                      const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
+                      return (
+                        <tr key={record.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <Badge className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
+                              {statusConfig.icon}
+                              {statusConfig.label}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            {record.status === 'success' && record.flash_sale_id ? (
+                              <span className="text-green-600 text-xs">FS #{record.flash_sale_id}</span>
+                            ) : record.status === 'error' && record.error_message ? (
+                              <p className="text-xs text-red-500 max-w-[250px]" title={record.error_message}>
+                                {record.error_message}
+                              </p>
+                            ) : record.status === 'scheduled' ? (
+                              <span className="text-xs text-blue-500">Chờ đến {record.scheduled_at ? formatDateTime(record.scheduled_at) : '-'}</span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-slate-700">
+                              {formatDate(record.slot_start_time)}
+                            </div>
+                            <div className="text-slate-500 text-xs">
+                              {formatTime(record.slot_start_time)} - {formatTime(record.slot_end_time)}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {record.lead_time_minutes > 0 ? (
+                              <span className="text-blue-600">{record.lead_time_minutes} phút</span>
+                            ) : (
+                              <span className="text-slate-400">Ngay</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{record.items_count}</td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">{formatDateTime(record.created_at)}</td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">
+                            {record.executed_at ? formatDateTime(record.executed_at) : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteRecord(record.id)}
+                              className="text-slate-400 hover:text-red-500 h-8 w-8 p-0"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1158,37 +1180,10 @@ export default function FlashSaleAutoSetupPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="0">Tạo ngay lập tức</SelectItem>
-                  <SelectItem value="5">5 phút trước khung giờ</SelectItem>
                   <SelectItem value="10">10 phút trước khung giờ</SelectItem>
-                  <SelectItem value="15">15 phút trước khung giờ</SelectItem>
                   <SelectItem value="30">30 phút trước khung giờ</SelectItem>
-                  <SelectItem value="60">1 giờ trước khung giờ</SelectItem>
-                  <SelectItem value="120">2 giờ trước khung giờ</SelectItem>
-                  <SelectItem value="custom">Tùy chỉnh...</SelectItem>
                 </SelectContent>
               </Select>
-
-              {/* Custom input */}
-              {isCustomLeadTime && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    placeholder="Nhập số phút"
-                    value={customLeadTimeInput}
-                    onChange={(e) => {
-                      setCustomLeadTimeInput(e.target.value);
-                      const val = parseInt(e.target.value);
-                      if (!isNaN(val) && val > 0) {
-                        setLeadTimeMinutes(val);
-                      }
-                    }}
-                    className="w-24 h-8"
-                  />
-                  <span className="text-sm text-slate-500">phút trước khung giờ</span>
-                </div>
-              )}
               <p className="text-xs text-slate-500">
                 {leadTimeMinutes === 0
                   ? 'Tất cả Flash Sale sẽ được tạo ngay lập tức'

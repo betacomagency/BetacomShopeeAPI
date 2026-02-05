@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { logCompletedActivity } from '@/lib/activity-logger';
 
 export interface AutoReplyConfig {
   id?: string;
@@ -86,7 +87,7 @@ export const DEFAULT_REPLY_TEMPLATES = {
   ],
 };
 
-export function useAutoReply(shopId: number | null) {
+export function useAutoReply(shopId: number | null, userId?: string) {
   const { toast } = useToast();
   const [config, setConfig] = useState<AutoReplyConfig | null>(null);
   const [jobStatus, setJobStatus] = useState<AutoReplyJobStatus | null>(null);
@@ -168,6 +169,7 @@ export function useAutoReply(shopId: number | null) {
   const saveConfig = async (newConfig: Partial<AutoReplyConfig>) => {
     if (!shopId) return false;
 
+    const startTime = new Date();
     try {
       setSaving(true);
 
@@ -187,6 +189,24 @@ export function useAutoReply(shopId: number | null) {
         description: 'Đã lưu cấu hình auto-reply',
       });
 
+      // Log activity
+      if (userId) {
+        logCompletedActivity({
+          userId,
+          shopId,
+          actionType: 'auto_reply_config_update',
+          actionCategory: 'reviews',
+          actionDescription: newConfig.enabled !== undefined
+            ? `${newConfig.enabled ? 'Bật' : 'Tắt'} Auto-reply`
+            : 'Cập nhật cấu hình Auto-reply',
+          status: 'success',
+          source: 'manual',
+          startedAt: startTime,
+          completedAt: new Date(),
+          durationMs: Date.now() - startTime.getTime(),
+        });
+      }
+
       // Refresh config
       await fetchConfig();
       return true;
@@ -197,6 +217,23 @@ export function useAutoReply(shopId: number | null) {
         description: error.message || 'Không thể lưu cấu hình',
         variant: 'destructive',
       });
+
+      // Log failed activity
+      if (userId) {
+        logCompletedActivity({
+          userId,
+          shopId,
+          actionType: 'auto_reply_config_update',
+          actionCategory: 'reviews',
+          actionDescription: 'Cập nhật cấu hình Auto-reply thất bại',
+          status: 'failed',
+          source: 'manual',
+          startedAt: startTime,
+          completedAt: new Date(),
+          durationMs: Date.now() - startTime.getTime(),
+          errorMessage: error.message,
+        });
+      }
       return false;
     } finally {
       setSaving(false);
@@ -212,6 +249,7 @@ export function useAutoReply(shopId: number | null) {
   const triggerProcess = async () => {
     if (!shopId) return false;
 
+    const startTime = new Date();
     try {
       setSaving(true);
 
@@ -230,6 +268,27 @@ export function useAutoReply(shopId: number | null) {
           description: `Đã reply ${data.replied} đánh giá, ${data.failed} lỗi, ${data.skipped} bỏ qua`,
         });
 
+        // Log activity
+        if (userId) {
+          logCompletedActivity({
+            userId,
+            shopId,
+            actionType: 'auto_reply_process',
+            actionCategory: 'reviews',
+            actionDescription: `Chạy Auto-reply: ${data.replied} thành công, ${data.failed} lỗi`,
+            status: 'success',
+            source: 'manual',
+            startedAt: startTime,
+            completedAt: new Date(),
+            durationMs: Date.now() - startTime.getTime(),
+            responseData: {
+              replied: data.replied,
+              failed: data.failed,
+              skipped: data.skipped,
+            },
+          });
+        }
+
         // Refresh status and logs
         await fetchJobStatus();
         await fetchLogs();
@@ -244,6 +303,23 @@ export function useAutoReply(shopId: number | null) {
         description: error.message || 'Không thể chạy auto-reply',
         variant: 'destructive',
       });
+
+      // Log failed activity
+      if (userId) {
+        logCompletedActivity({
+          userId,
+          shopId,
+          actionType: 'auto_reply_process',
+          actionCategory: 'reviews',
+          actionDescription: 'Chạy Auto-reply thất bại',
+          status: 'failed',
+          source: 'manual',
+          startedAt: startTime,
+          completedAt: new Date(),
+          durationMs: Date.now() - startTime.getTime(),
+          errorMessage: error.message,
+        });
+      }
       return false;
     } finally {
       setSaving(false);

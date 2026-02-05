@@ -20,6 +20,7 @@ import {
   BarChart3,
   ShoppingBag,
   Layers,
+  FileText,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -116,10 +117,10 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: 'Phân tích',
+    title: 'Báo cáo',
     icon: BarChart3,
     permissionKey: 'analytics',
-    description: 'Phân tích dữ liệu',
+    description: 'Báo cáo dữ liệu',
     children: [
       { title: 'Đơn hàng', icon: ShoppingCart, path: '/analytics/orders', permissionKey: 'analytics' },
       { title: 'Đánh giá', icon: Star, path: '/analytics/reviews', permissionKey: 'analytics' },
@@ -160,6 +161,13 @@ export const menuItems: MenuItem[] = [
         icon: Users,
         path: '/settings/users',
         permissionKey: 'settings/users',
+        adminOnly: true
+      },
+      {
+        title: 'Quản lý nâng cao',
+        icon: FileText,
+        path: '/settings/advanced',
+        permissionKey: 'settings/advanced',
         adminOnly: true
       },
     ],

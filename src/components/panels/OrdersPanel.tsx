@@ -47,6 +47,7 @@ const STATUS_TABS = [
   { key: 'ALL', label: 'Tất cả' },
   { key: 'UNPAID', label: 'Chờ thanh toán' },
   { key: 'READY_TO_SHIP', label: 'Chờ lấy hàng' },
+  { key: 'PROCESSED', label: 'Đang xử lý' },
   { key: 'SHIPPED', label: 'Đang giao' },
   { key: 'TO_CONFIRM_RECEIVE', label: 'Chờ xác nhận' },
   { key: 'COMPLETED', label: 'Hoàn thành' },
@@ -116,6 +117,7 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [monthFilter, setMonthFilter] = useState('ALL');
+  const [allOrdersCount, setAllOrdersCount] = useState<number>(0);
 
   // Use the hook with status filter and month filter - each combination has its own cache
   const {
@@ -135,6 +137,13 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
     totalCount,
     stats,
   } = useOrdersData(shopId, userId, statusFilter, monthFilter);
+
+  // Track total orders count when viewing "ALL" months
+  useEffect(() => {
+    if (monthFilter === 'ALL' && totalCount > 0) {
+      setAllOrdersCount(totalCount);
+    }
+  }, [monthFilter, totalCount]);
 
   // Show toast when error occurs
   useEffect(() => {
@@ -233,7 +242,9 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
   }, [orders, searchTerm]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { ALL: totalCount };
+    // Use stats.total for ALL count (sum of all status counts)
+    const allCount = stats.total || totalCount;
+    const counts: Record<string, number> = { ALL: allCount };
     // Use stats from database for accurate counts
     if (stats.statusCounts) {
       Object.entries(stats.statusCounts).forEach(([status, count]) => {
@@ -244,245 +255,259 @@ export function OrdersPanel({ shopId, userId }: OrdersPanelProps) {
   }, [totalCount, stats]);
 
   return (
-    <Card className="border-0 shadow-sm">
-      <CardContent className="p-0">
-        {/* Sync Status Bar */}
-        {syncStatus && (
-          <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b text-sm">
-            <div className="flex items-center gap-2">
-              {syncStatus.is_syncing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                  <span className="text-blue-600">Đang đồng bộ...</span>
-                </>
-              ) : syncStatus.last_error ? (
-                <>
-                  <AlertCircle className="h-4 w-4 text-red-500" />
-                  <span className="text-red-600">Lỗi: {syncStatus.last_error}</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-slate-600">
-                    Đồng bộ: {formatRelativeTime(syncStatus.last_sync_at)}
-                  </span>
-                </>
-              )}
+    <Card className="border-0 shadow-sm flex flex-col h-[calc(100vh-73px)]">
+      <CardContent className="p-0 flex flex-col h-full overflow-hidden">
+        {/* Sticky Header Section */}
+        <div className="flex-shrink-0">
+          {/* Sync Status Bar */}
+          {syncStatus && (
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b text-sm">
+              <div className="flex items-center gap-2">
+                {syncStatus.is_syncing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                    <span className="text-blue-600">Đang đồng bộ...</span>
+                  </>
+                ) : syncStatus.last_error ? (
+                  <>
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-red-600">Lỗi: {syncStatus.last_error}</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-slate-600">
+                      Đồng bộ: {formatRelativeTime(syncStatus.last_sync_at)}
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-slate-500">
+                <span>Tổng: {allOrdersCount || totalCount} đơn hàng</span>
+                {(stats.totalRevenue > 0 || stats.escrowSyncedCount > 0) && (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-green-600">
+                      Thực nhận: {formatPrice(stats.totalRevenue)}
+                    </span>
+                    {stats.escrowPendingCount > 0 && (
+                      <span className="text-orange-500 text-xs">
+                        ({stats.escrowPendingCount} đơn chưa sync)
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-slate-500">
-              <span>Tổng: {totalCount} đơn hàng</span>
-              {stats.totalRevenue > 0 && (
-                <>
-                  <span className="text-slate-300">|</span>
-                  <span className="text-green-600">
-                    Doanh thu: {formatPrice(stats.totalRevenue)}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Status Tabs */}
-        <div className="flex items-center border-b bg-white overflow-x-auto">
-          {STATUS_TABS.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setStatusFilter(tab.key)}
-              className={cn(
-                'px-4 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors',
-                statusFilter === tab.key
-                  ? 'border-orange-500 text-orange-600 font-medium'
-                  : 'border-transparent text-slate-600 hover:text-slate-800'
-              )}
-            >
-              {tab.label}
-              {(statusCounts[tab.key] || 0) > 0 && (
-                <span className="text-slate-400 ml-1">({statusCounts[tab.key]})</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Search and Filters */}
-        <div className="flex items-center gap-3 p-3 border-b bg-slate-50">
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Tìm mã đơn, tên người mua..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9 h-9"
-            />
+          {/* Status Tabs */}
+          <div className="flex items-center border-b bg-white overflow-x-auto">
+            {STATUS_TABS.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={cn(
+                  'px-4 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors',
+                  statusFilter === tab.key
+                    ? 'border-orange-500 text-orange-600 font-medium'
+                    : 'border-transparent text-slate-600 hover:text-slate-800'
+                )}
+              >
+                {tab.label}
+                {(statusCounts[tab.key] || 0) > 0 && (
+                  <span className="text-slate-400 ml-1">({statusCounts[tab.key]})</span>
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Month Filter Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant={monthFilter !== 'ALL' ? 'default' : 'outline'}
-                size="sm"
-                className={monthFilter !== 'ALL' ? 'bg-orange-500 hover:bg-orange-600' : ''}
-              >
-                <Calendar className="h-4 w-4 mr-1" />
-                {monthFilter === 'ALL' ? 'Tất cả tháng' : formatMonth(monthFilter)}
-                <ChevronDown className="h-3 w-3 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel>Lọc theo tháng</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setMonthFilter('ALL')}
-                className={cn("flex items-center justify-between", monthFilter === 'ALL' && "bg-orange-50")}
-              >
-                <span>Tất cả</span>
-                {monthFilter === 'ALL' && <Check className="h-3 w-3 text-orange-500" />}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {availableMonths.map((month) => (
-                <DropdownMenuItem
-                  key={month}
-                  onClick={() => setMonthFilter(month)}
-                  className={cn("flex items-center justify-between", monthFilter === month && "bg-orange-50")}
-                >
-                  <span>{formatMonth(month)}</span>
-                  {monthFilter === month && <Check className="h-3 w-3 text-orange-500" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Search and Filters */}
+          <div className="flex items-center gap-3 p-3 border-b bg-slate-50">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Tìm mã đơn, tên người mua..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="pl-9 h-9"
+              />
+            </div>
 
-          {/* Month Sync Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={loading || syncing}
-              >
-                <Download className="h-4 w-4 mr-1" />
-                Tải dữ liệu
-                <ChevronDown className="h-3 w-3 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel>Chọn tháng để đồng bộ</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {availableMonths.map((month) => (
-                <DropdownMenuItem
-                  key={month}
-                  onClick={() => handleSyncMonth(month)}
-                  className="flex items-center justify-between"
-                >
-                  <span>{formatMonth(month)}</span>
-                  {isMonthSynced(month) && (
-                    <CheckCircle className="h-3 w-3 text-green-500" />
+            {/* Month Filter Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={monthFilter !== 'ALL' ? 'default' : 'outline'}
+                  size="sm"
+                  className={cn(
+                    'focus-visible:ring-0 focus-visible:ring-offset-0',
+                    monthFilter !== 'ALL' && 'bg-orange-500 hover:bg-orange-600'
                   )}
+                >
+                  <Calendar className="h-4 w-4 mr-1" />
+                  {monthFilter === 'ALL' ? 'Tất cả tháng' : formatMonth(monthFilter)}
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Lọc theo tháng</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setMonthFilter('ALL')}
+                  className={cn("flex items-center justify-between", monthFilter === 'ALL' && "bg-orange-50")}
+                >
+                  <span>Tất cả</span>
+                  {monthFilter === 'ALL' && <Check className="h-3 w-3 text-orange-500" />}
                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuSeparator />
+                {availableMonths.map((month) => (
+                  <DropdownMenuItem
+                    key={month}
+                    onClick={() => setMonthFilter(month)}
+                    className={cn("flex items-center justify-between", monthFilter === month && "bg-orange-50")}
+                  >
+                    <span>{formatMonth(month)}</span>
+                    {monthFilter === month && <Check className="h-3 w-3 text-orange-500" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSync}
-            disabled={loading || syncing}
-          >
-            <RefreshCw className={cn('h-4 w-4 mr-1', (syncing || isFetching) && 'animate-spin')} />
-            {syncing ? 'Đang đồng bộ...' : 'Đồng bộ'}
-          </Button>
-        </div>
+            {/* Month Sync Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || syncing}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Tải dữ liệu
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Chọn tháng để đồng bộ</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {availableMonths.map((month) => (
+                  <DropdownMenuItem
+                    key={month}
+                    onClick={() => handleSyncMonth(month)}
+                    className="flex items-center justify-between"
+                  >
+                    <span>{formatMonth(month)}</span>
+                    {isMonthSynced(month) && (
+                      <CheckCircle className="h-3 w-3 text-green-500" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {/* Table Header */}
-        <div className="grid grid-cols-12 gap-px bg-slate-200">
-          <div className="col-span-4 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
-            Thông tin sản phẩm
-          </div>
-          <div className="col-span-2 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
-            Tổng Tiền
-          </div>
-          <div className="col-span-2 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
-            Xử lý
-          </div>
-          <div className="col-span-2 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
-            Vận chuyển
-          </div>
-          <div className="col-span-1 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
-            Người nhận
-          </div>
-          <div className="col-span-1 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
-            Thao tác
-          </div>
-        </div>
-
-        {/* Loading */}
-        {loading && orders.length === 0 && (
-          <div className="flex items-center justify-center py-16">
-            <RefreshCw className="h-6 w-6 animate-spin text-orange-500" />
-            <span className="ml-2 text-slate-500">Đang tải đơn hàng...</span>
-          </div>
-        )}
-
-        {/* Empty */}
-        {!loading && filteredOrders.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <ShoppingCart className="h-12 w-12 mb-3" />
-            <p>Không có đơn hàng nào</p>
-            {!syncStatus?.is_initial_sync_done && (
-              <Button variant="outline" size="sm" className="mt-4" onClick={handleSync}>
-                <RefreshCw className="h-4 w-4 mr-1" />
-                Đồng bộ đơn hàng
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Orders */}
-        {filteredOrders.map(order => (
-          <OrderRow key={order.order_sn} order={order} onViewDetail={handleViewDetail} />
-        ))}
-
-        {/* Load More - now available for all tabs */}
-        {hasMore && !loading && filteredOrders.length > 0 && !searchTerm && (
-          <div className="flex justify-center py-4 border-t">
             <Button
               variant="outline"
               size="sm"
-              onClick={loadMore}
-              disabled={loadingMore}
+              onClick={handleSync}
+              disabled={loading || syncing}
             >
-              {loadingMore ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  Đang tải...
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-4 w-4 mr-1" />
-                  Tải thêm ({orders.length} / {statusFilter === 'ALL' ? totalCount : (stats.statusCounts[statusFilter] || 0)})
-                </>
-              )}
+              <RefreshCw className={cn('h-4 w-4 mr-1', (syncing || isFetching) && 'animate-spin')} />
+              {syncing ? 'Đang đồng bộ...' : 'Đồng bộ'}
             </Button>
           </div>
-        )}
 
-        {/* Footer */}
-        {orders.length > 0 && (
-          <div className="px-4 py-3 border-t bg-slate-50 text-sm text-slate-500">
-            Hiển thị {filteredOrders.length} / {statusFilter === 'ALL' ? totalCount : (stats.statusCounts[statusFilter] || 0)} đơn hàng
-            {statusFilter !== 'ALL' && (
-              <span className="text-slate-400 ml-1">(Tổng: {totalCount})</span>
-            )}
-            {isFetching && !loading && (
-              <span className="ml-2 text-blue-500">
-                <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
-                Đang cập nhật...
-              </span>
-            )}
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-px bg-slate-200">
+            <div className="col-span-4 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+              Thông tin sản phẩm
+            </div>
+            <div className="col-span-2 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
+              Tổng Tiền
+            </div>
+            <div className="col-span-2 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
+              Xử lý
+            </div>
+            <div className="col-span-2 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
+              Vận chuyển
+            </div>
+            <div className="col-span-1 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
+              Người nhận
+            </div>
+            <div className="col-span-1 bg-slate-50 px-2 py-2 text-xs font-medium text-slate-600 text-center">
+              Thao tác
+            </div>
           </div>
-        )}
+        </div>
+
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Loading */}
+          {loading && orders.length === 0 && (
+            <div className="flex items-center justify-center py-16">
+              <RefreshCw className="h-6 w-6 animate-spin text-orange-500" />
+              <span className="ml-2 text-slate-500">Đang tải đơn hàng...</span>
+            </div>
+          )}
+
+          {/* Empty */}
+          {!loading && filteredOrders.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+              <ShoppingCart className="h-12 w-12 mb-3" />
+              <p>Không có đơn hàng nào</p>
+              {!syncStatus?.is_initial_sync_done && (
+                <Button variant="outline" size="sm" className="mt-4" onClick={handleSync}>
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Đồng bộ đơn hàng
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Orders */}
+          {filteredOrders.map(order => (
+            <OrderRow key={order.order_sn} order={order} onViewDetail={handleViewDetail} />
+          ))}
+
+          {/* Load More - now available for all tabs */}
+          {hasMore && !loading && filteredOrders.length > 0 && !searchTerm && (
+            <div className="flex justify-center py-4 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Đang tải...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-1" />
+                    Tải thêm ({orders.length} / {statusFilter === 'ALL' ? totalCount : (stats.statusCounts[statusFilter] || 0)})
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* Footer */}
+          {orders.length > 0 && (
+            <div className="px-4 py-3 border-t bg-slate-50 text-sm text-slate-500">
+              Hiển thị {filteredOrders.length} / {statusFilter === 'ALL' ? totalCount : (stats.statusCounts[statusFilter] || 0)} đơn hàng
+              {statusFilter !== 'ALL' && (
+                <span className="text-slate-400 ml-1">(Tổng: {totalCount})</span>
+              )}
+              {isFetching && !loading && (
+                <span className="ml-2 text-blue-500">
+                  <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+                  Đang cập nhật...
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

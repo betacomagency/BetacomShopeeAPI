@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { SyncStatus, STALE_MINUTES } from '@/lib/shopee/flash-sale';
 import { useToast } from '@/hooks/use-toast';
+import { logCompletedActivity } from '@/lib/activity-logger';
 
 export interface UseSyncDataOptions {
   shopId: number;
@@ -220,6 +221,20 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
         title: 'Đồng bộ thành công',
         description: `Đã đồng bộ ${flashSaleList.length} Flash Sales`,
       });
+
+      // Log activity
+      logCompletedActivity({
+        userId,
+        shopId,
+        actionType: 'flash_sale_sync',
+        actionCategory: 'flash_sale',
+        actionDescription: `Đồng bộ Flash Sale: ${flashSaleList.length} chương trình`,
+        status: 'success',
+        source: 'manual',
+        responseData: {
+          synced_count: flashSaleList.length,
+        },
+      });
     } catch (error) {
       const errorMessage = (error as Error).message;
       setLastError(errorMessage);
@@ -228,6 +243,18 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
         title: 'Lỗi đồng bộ',
         description: errorMessage,
         variant: 'destructive',
+      });
+
+      // Log failed activity
+      logCompletedActivity({
+        userId,
+        shopId,
+        actionType: 'flash_sale_sync',
+        actionCategory: 'flash_sale',
+        actionDescription: 'Đồng bộ Flash Sale thất bại',
+        status: 'failed',
+        source: 'manual',
+        errorMessage,
       });
     } finally {
       setIsSyncing(false);

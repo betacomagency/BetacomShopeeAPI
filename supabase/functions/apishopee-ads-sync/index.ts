@@ -1,15 +1,23 @@
 /**
  * Supabase Edge Function: Shopee Ads Sync Worker
  * Background sync worker để đồng bộ Ads data từ Shopee
- * 
+ *
+ * CHO AUTO ADS PAGE (/ads/auto):
+ * - CHỈ sync campaigns ĐANG CHẠY (status = 'ongoing')
+ * - CHỈ lấy thông tin chiến dịch + ngân sách hiện tại
+ * - KHÔNG sync performance data (daily/hourly) để tối ưu tốc độ
+ * - Campaigns không còn ongoing sẽ được xóa khỏi DB
+ *
  * Mô hình Realtime:
  * 1. Worker gọi Shopee API định kỳ (15 phút/lần)
- * 2. Lưu/Cập nhật dữ liệu vào DB (upsert để tránh trùng lặp)
+ * 2. Lưu/Cập nhật CHỈ campaigns ongoing vào DB (upsert để tránh trùng lặp)
  * 3. Supabase Realtime tự động bắn tín hiệu UPDATE/INSERT xuống Frontend
  * 4. Frontend tự cập nhật giao diện mà không cần F5
- * 
+ *
  * Actions:
- * - sync: Sync toàn bộ campaigns và performance data
+ * - sync: Sync CHỈ campaigns đang chạy + ngân sách (nhanh)
+ * - sync_day: Sync 1 ngày cụ thể (dành cho backfill)
+ * - backfill: Sync 7 ngày để cập nhật GMV attribution
  * - status: Lấy trạng thái sync hiện tại
  */
 
@@ -176,16 +184,17 @@ function formatDateForDB(date: Date): string {
 /**
  * Sync campaigns từ Shopee API
  * Sử dụng UPSERT để tránh trùng lặp
- * 
- * QUAN TRỌNG: Trả về TẤT CẢ campaigns để sync performance data đầy đủ
- * (không chỉ campaigns đang chạy)
+ *
+ * CHỈ LẤY VÀ LƯU CAMPAIGNS ĐANG CHẠY (ongoing) + NGÂN SÁCH HIỆN TẠI
+ * - Bỏ qua campaigns đã dừng/kết thúc/xóa
+ * - Tối ưu performance cho Auto Ads page
  */
 async function syncCampaigns(
   supabase: ReturnType<typeof createClient>,
   credentials: ShopCredentials,
   shopId: number
 ): Promise<{ total: number; ongoing: number; allCampaigns: CampaignInfo[]; ongoingCampaigns: CampaignInfo[] }> {
-  console.log('[ADS-SYNC] Syncing campaigns...');
+  console.log('[ADS-SYNC] Syncing campaigns (only ongoing)...');
 
   // Step 1: Lấy danh sách campaign IDs
   const idListResult = await callShopeeAPI(
@@ -206,7 +215,7 @@ async function syncCampaigns(
     return { total: 0, ongoing: 0, allCampaigns: [], ongoingCampaigns: [] };
   }
 
-  console.log(`[ADS-SYNC] Found ${campaignList.length} campaigns`);
+  console.log(`[ADS-SYNC] Found ${campaignList.length} campaigns from API`);
 
   // Step 2: Lấy chi tiết từng batch 100 campaigns
   const allCampaigns: CampaignInfo[] = [];
@@ -259,51 +268,74 @@ async function syncCampaigns(
 
   console.log(`[ADS-SYNC] Total campaigns collected: ${allCampaigns.length}`);
 
-  // Step 3: UPSERT vào database (tránh trùng lặp)
-  const now = new Date().toISOString();
-  const upsertData = allCampaigns.map(c => ({
-    shop_id: shopId,
-    campaign_id: c.campaign_id,
-    ad_type: c.ad_type,
-    name: c.name || null,
-    status: c.status || null,
-    campaign_placement: c.campaign_placement || null,
-    bidding_method: c.bidding_method || null,
-    campaign_budget: c.campaign_budget || 0,
-    start_time: c.start_time || null,
-    end_time: c.end_time || null,
-    item_count: c.item_count || 0,
-    roas_target: c.roas_target,
-    synced_at: now,
-    cached_at: now,
-  }));
+  // Step 3: Lọc CHỈ campaigns đang chạy (ongoing)
+  const ongoingCampaigns = allCampaigns.filter(c => c.status === 'ongoing');
+  console.log(`[ADS-SYNC] Filtered to ${ongoingCampaigns.length} ongoing campaigns (skipped ${allCampaigns.length - ongoingCampaigns.length} non-ongoing)`);
 
-  const { error: upsertError } = await supabase
+  // Step 4: Xóa campaigns không còn ongoing trong DB (để UI không hiển thị campaigns cũ)
+  const ongoingCampaignIds = ongoingCampaigns.map(c => c.campaign_id);
+
+  // Xóa campaigns của shop này mà không nằm trong danh sách ongoing
+  const { error: deleteError } = await supabase
     .from('apishopee_ads_campaign_data')
-    .upsert(upsertData, { onConflict: 'shop_id,campaign_id' });
+    .delete()
+    .eq('shop_id', shopId)
+    .not('campaign_id', 'in', `(${ongoingCampaignIds.length > 0 ? ongoingCampaignIds.join(',') : '0'})`);
 
-  if (upsertError) {
-    console.error('[ADS-SYNC] Upsert campaigns error:', upsertError);
-    throw new Error(`Failed to save campaigns: ${upsertError.message}`);
+  if (deleteError) {
+    console.warn('[ADS-SYNC] Delete non-ongoing campaigns warning:', deleteError);
+  } else {
+    console.log('[ADS-SYNC] Cleaned up non-ongoing campaigns from database');
   }
 
-  const ongoingCampaigns = allCampaigns.filter(c => c.status === 'ongoing');
-  console.log(`[ADS-SYNC] Synced ${allCampaigns.length} campaigns (${ongoingCampaigns.length} ongoing)`);
+  // Step 5: UPSERT CHỈ campaigns đang chạy vào database
+  if (ongoingCampaigns.length > 0) {
+    const now = new Date().toISOString();
+    const upsertData = ongoingCampaigns.map(c => ({
+      shop_id: shopId,
+      campaign_id: c.campaign_id,
+      ad_type: c.ad_type,
+      name: c.name || null,
+      status: c.status || null,
+      campaign_placement: c.campaign_placement || null,
+      bidding_method: c.bidding_method || null,
+      campaign_budget: c.campaign_budget || 0,
+      start_time: c.start_time || null,
+      end_time: c.end_time || null,
+      item_count: c.item_count || 0,
+      roas_target: c.roas_target,
+      synced_at: now,
+      cached_at: now,
+    }));
+
+    const { error: upsertError } = await supabase
+      .from('apishopee_ads_campaign_data')
+      .upsert(upsertData, { onConflict: 'shop_id,campaign_id' });
+
+    if (upsertError) {
+      console.error('[ADS-SYNC] Upsert campaigns error:', upsertError);
+      throw new Error(`Failed to save campaigns: ${upsertError.message}`);
+    }
+  }
+
+  console.log(`[ADS-SYNC] Synced ${ongoingCampaigns.length} ongoing campaigns with current budget`);
 
   // Trả về CẢ allCampaigns và ongoingCampaigns
   return {
     total: allCampaigns.length,
     ongoing: ongoingCampaigns.length,
-    allCampaigns: allCampaigns,        // TẤT CẢ campaigns để sync performance
-    ongoingCampaigns: ongoingCampaigns, // Chỉ ongoing để hiển thị
+    allCampaigns: allCampaigns,        // TẤT CẢ campaigns (để các action khác dùng nếu cần)
+    ongoingCampaigns: ongoingCampaigns, // Chỉ ongoing - đây là dữ liệu chính
   };
 }
 
 /**
  * Sync daily performance cho CHỈ 1 NGÀY cụ thể
  * Chia campaigns thành batches nhỏ để tránh URL quá dài
- * 
- * QUAN TRỌNG: Chỉ sync 1 ngày mỗi lần để tránh timeout
+ *
+ * QUAN TRỌNG:
+ * - Chỉ sync 1 ngày mỗi lần để tránh timeout
+ * - Tạo bản ghi với giá trị 0 cho campaigns không có data từ API để UI hiển thị đúng
  */
 async function syncDailyPerformanceForDate(
   supabase: ReturnType<typeof createClient>,
@@ -323,6 +355,10 @@ async function syncDailyPerformanceForDate(
   const BATCH_SIZE = campaigns.length > 500 ? 30 : campaigns.length > 200 ? 40 : 50;
   console.log(`[ADS-SYNC] Dynamic batch size for daily perf: ${BATCH_SIZE} (total campaigns: ${campaigns.length})`);
   const now = new Date().toISOString();
+
+  // Track campaign IDs có data từ API
+  const campaignsWithData = new Set<number>();
+
   const allUpsertData: Array<{
     shop_id: number;
     campaign_id: number;
@@ -364,7 +400,9 @@ async function syncDailyPerformanceForDate(
 
     for (const campPerf of campaignPerfList) {
       const metricsList = campPerf.metrics_list || campPerf.performance_list || [];
-      console.log(`[ADS-SYNC] Campaign ${campPerf.campaign_id} - ${metricsList.length} day(s) of metrics`);
+
+      // Mark this campaign as having data
+      campaignsWithData.add(campPerf.campaign_id);
 
       for (const dayMetrics of metricsList) {
         const expense = dayMetrics.expense || 0;
@@ -392,12 +430,6 @@ async function syncDailyPerformanceForDate(
         };
 
         allUpsertData.push(perfData);
-
-        // In ra metrics chi tiết
-        console.log(`[ADS-SYNC] Daily metrics for campaign ${campPerf.campaign_id} on ${dbDate}:`);
-        console.log(`  - Impressions: ${perfData.impression}, Clicks: ${perfData.clicks}, CTR: ${perfData.ctr.toFixed(2)}%`);
-        console.log(`  - Expense: ${perfData.expense}, Broad GMV: ${perfData.broad_gmv}, ROAS: ${perfData.roas.toFixed(2)}`);
-        console.log(`  - Broad Orders: ${perfData.broad_order}, Broad Items Sold: ${perfData.broad_item_sold}`);
       }
     }
 
@@ -405,6 +437,35 @@ async function syncDailyPerformanceForDate(
     if (i + BATCH_SIZE < campaigns.length) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
+  }
+
+  // QUAN TRỌNG: Tạo bản ghi với giá trị 0 cho campaigns ONGOING không có data từ API
+  // Điều này giúp UI hiển thị đúng "₫0" thay vì trống
+  const ongoingCampaignsWithoutData = campaigns.filter(
+    c => c.status === 'ongoing' && !campaignsWithData.has(c.campaign_id)
+  );
+
+  console.log(`[ADS-SYNC] Creating zero-data records for ${ongoingCampaignsWithoutData.length} ongoing campaigns without API data`);
+
+  for (const campaign of ongoingCampaignsWithoutData) {
+    allUpsertData.push({
+      shop_id: shopId,
+      campaign_id: campaign.campaign_id,
+      performance_date: dbDate,
+      impression: 0,
+      clicks: 0,
+      ctr: 0,
+      expense: 0,
+      direct_order: 0,
+      direct_gmv: 0,
+      broad_order: 0,
+      broad_gmv: 0,
+      direct_item_sold: 0,
+      broad_item_sold: 0,
+      roas: 0,
+      acos: 0,
+      synced_at: now,
+    });
   }
 
   if (allUpsertData.length === 0) {
@@ -419,6 +480,8 @@ async function syncDailyPerformanceForDate(
   if (upsertError) {
     console.error(`[ADS-SYNC] Upsert daily error for ${dateStr}:`, upsertError);
   }
+
+  console.log(`[ADS-SYNC] Synced ${campaignsWithData.size} campaigns with data + ${ongoingCampaignsWithoutData.length} with zero data = ${allUpsertData.length} total records`);
 
   return allUpsertData.length;
 }
@@ -446,10 +509,11 @@ async function syncDailyPerformance(
 
 /**
  * Sync hourly performance cho 1 ngày cụ thể - TẤT CẢ campaigns
- * 
- * QUAN TRỌNG: 
+ *
+ * QUAN TRỌNG:
  * - Sync cho tất cả campaigns để dữ liệu tổng hợp khớp với shop-level
  * - Chia nhỏ campaigns thành batches để tránh URL quá dài (Shopee giới hạn ~2000 ký tự)
+ * - Tạo bản ghi với giá trị 0 cho campaigns ongoing không có data từ API
  */
 async function syncHourlyPerformanceForDate(
   supabase: ReturnType<typeof createClient>,
@@ -472,6 +536,10 @@ async function syncHourlyPerformanceForDate(
   const BATCH_SIZE = campaigns.length > 500 ? 30 : campaigns.length > 200 ? 40 : 50;
   console.log(`[ADS-SYNC] Dynamic batch size: ${BATCH_SIZE} (total campaigns: ${campaigns.length})`);
   const now = new Date().toISOString();
+
+  // Track campaign IDs có data từ API
+  const campaignsWithData = new Set<number>();
+
   const allUpsertData: Array<{
     shop_id: number;
     campaign_id: number;
@@ -516,7 +584,9 @@ async function syncHourlyPerformanceForDate(
 
     for (const campPerf of campaignPerfList) {
       const metricsList = campPerf.metrics_list || [];
-      console.log(`[ADS-SYNC] Campaign ${campPerf.campaign_id} - ${metricsList.length} hour(s) of metrics`);
+
+      // Mark this campaign as having data
+      campaignsWithData.add(campPerf.campaign_id);
 
       for (const hourMetrics of metricsList) {
         const expense = hourMetrics.expense || 0;
@@ -545,14 +615,6 @@ async function syncHourlyPerformanceForDate(
         };
 
         allUpsertData.push(hourlyData);
-
-        // In ra metrics chi tiết (chỉ in các giờ có dữ liệu)
-        if (hourlyData.impression > 0 || hourlyData.clicks > 0 || hourlyData.expense > 0) {
-          console.log(`[ADS-SYNC] Hourly metrics for campaign ${campPerf.campaign_id} on ${dbDate} at ${hourlyData.hour}:00:`);
-          console.log(`  - Impressions: ${hourlyData.impression}, Clicks: ${hourlyData.clicks}, CTR: ${hourlyData.ctr.toFixed(2)}%`);
-          console.log(`  - Expense: ${hourlyData.expense}, Broad GMV: ${hourlyData.broad_gmv}, ROAS: ${hourlyData.roas.toFixed(2)}`);
-          console.log(`  - Orders: ${hourlyData.broad_order}, Items Sold: ${hourlyData.broad_item_sold}`);
-        }
       }
     }
 
@@ -560,6 +622,41 @@ async function syncHourlyPerformanceForDate(
     if (i + BATCH_SIZE < campaigns.length) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
+  }
+
+  // QUAN TRỌNG: Tạo bản ghi với giá trị 0 cho campaigns ONGOING không có data từ API
+  // Chỉ tạo record cho giờ hiện tại (không cần tạo 24 giờ vì chưa đến)
+  const ongoingCampaignsWithoutData = campaigns.filter(
+    c => c.status === 'ongoing' && !campaignsWithData.has(c.campaign_id)
+  );
+
+  // Lấy giờ hiện tại theo Vietnam timezone
+  const vnNow = new Date();
+  const currentHour = (vnNow.getUTCHours() + 7) % 24;
+
+  console.log(`[ADS-SYNC] Creating zero-data hourly records for ${ongoingCampaignsWithoutData.length} ongoing campaigns (hour ${currentHour})`);
+
+  for (const campaign of ongoingCampaignsWithoutData) {
+    // Tạo bản ghi cho giờ hiện tại với giá trị 0
+    allUpsertData.push({
+      shop_id: shopId,
+      campaign_id: campaign.campaign_id,
+      performance_date: dbDate,
+      hour: currentHour,
+      impression: 0,
+      clicks: 0,
+      ctr: 0,
+      expense: 0,
+      direct_order: 0,
+      direct_gmv: 0,
+      broad_order: 0,
+      broad_gmv: 0,
+      direct_item_sold: 0,
+      broad_item_sold: 0,
+      roas: 0,
+      acos: 0,
+      synced_at: now,
+    });
   }
 
   if (allUpsertData.length === 0) {
@@ -575,6 +672,8 @@ async function syncHourlyPerformanceForDate(
     console.error(`[ADS-SYNC] Upsert hourly performance error for ${dateStr}:`, upsertError);
     throw new Error(`Failed to save hourly performance: ${upsertError.message}`);
   }
+
+  console.log(`[ADS-SYNC] Synced ${campaignsWithData.size} campaigns with hourly data + ${ongoingCampaignsWithoutData.length} with zero data = ${allUpsertData.length} total records`);
 
   return allUpsertData.length;
 }
@@ -1392,35 +1491,12 @@ async function syncAdsData(
     // Get credentials
     const credentials = await getShopCredentials(supabase, shopId);
 
-    // Step 1: Sync campaigns (lấy danh sách)
+    // CHỈ SYNC CAMPAIGNS ĐANG CHẠY + NGÂN SÁCH HIỆN TẠI
+    // Bỏ qua performance data (daily/hourly) để tối ưu tốc độ cho Auto Ads page
     await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_campaigns', progress: 20 },
+      sync_progress: { step: 'syncing_campaigns', progress: 50 },
     });
-    const { total, ongoing, allCampaigns } = await syncCampaigns(supabase, credentials, shopId);
-
-    // Step 2: Sync daily performance - TẤT CẢ CAMPAIGNS (giống sync thủ công)
-    // QUAN TRỌNG: Phải sync campaign-level TRƯỚC shop-level để có item_sold data
-    await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_daily_performance', progress: 40 },
-    });
-    const dailyRecords = await syncDailyPerformance(supabase, credentials, shopId, allCampaigns);
-
-    // Step 3: Sync hourly performance - TẤT CẢ CAMPAIGNS (giống sync thủ công)
-    // QUAN TRỌNG: Phải sync campaign-level TRƯỚC shop-level để có item_sold data
-    await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_hourly_performance', progress: 60 },
-    });
-    const hourlyRecords = await syncHourlyPerformance(supabase, credentials, shopId, allCampaigns);
-
-    // Step 4: Sync shop-level performance (sau khi có campaign data để tính item_sold)
-    // QUAN TRỌNG: Shop-level phụ thuộc vào campaign-level data cho item_sold field
-    await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_shop_level', progress: 80 },
-    });
-    console.log('[ADS-SYNC] === SHOP-LEVEL PERFORMANCE (after campaign data) ===');
-    await syncShopLevelDailyPerformance(supabase, credentials, shopId);
-    await syncShopLevelHourlyPerformance(supabase, credentials, shopId);
-    console.log('[ADS-SYNC] === END SHOP-LEVEL ===');
+    const { total, ongoing } = await syncCampaigns(supabase, credentials, shopId);
 
     // Update status: completed
     await updateSyncStatus(supabase, shopId, {
@@ -1432,20 +1508,19 @@ async function syncAdsData(
       ongoing_campaigns: ongoing,
     });
 
-    console.log(`[ADS-SYNC] === SYNC COMPLETED SUCCESSFULLY ===`);
+    console.log(`[ADS-SYNC] === SYNC COMPLETED (CAMPAIGNS ONLY) ===`);
     console.log(`[ADS-SYNC] Shop ID: ${shopId}`);
-    console.log(`[ADS-SYNC] Total Campaigns: ${total}`);
-    console.log(`[ADS-SYNC] Ongoing Campaigns: ${ongoing}`);
-    console.log(`[ADS-SYNC] Daily Performance Records: ${dailyRecords}`);
-    console.log(`[ADS-SYNC] Hourly Performance Records: ${hourlyRecords}`);
+    console.log(`[ADS-SYNC] Total Campaigns from API: ${total}`);
+    console.log(`[ADS-SYNC] Ongoing Campaigns Synced: ${ongoing}`);
+    console.log(`[ADS-SYNC] Performance data: SKIPPED (only campaigns + budget)`);
     console.log(`[ADS-SYNC] Sync Time: ${new Date().toISOString()}`);
     console.log(`[ADS-SYNC] === END ===`);
 
     return {
       success: true,
-      campaigns_synced: total,
-      daily_records: dailyRecords,
-      hourly_records: hourlyRecords,
+      campaigns_synced: ongoing,
+      daily_records: 0, // Không sync performance data
+      hourly_records: 0, // Không sync performance data
       total_campaigns: total,
       ongoing_campaigns: ongoing,
       sync_time: new Date().toISOString(),

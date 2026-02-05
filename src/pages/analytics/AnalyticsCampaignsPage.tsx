@@ -6,7 +6,7 @@ export default function AnalyticsCampaignsPage() {
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold tracking-tight">Phân tích Chiến dịch</h1>
+                <h1 className="text-2xl font-bold tracking-tight">Báo cáo Chiến dịch</h1>
             </div>
             <Card>
                 <CardHeader>

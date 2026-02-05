@@ -16,6 +16,7 @@ import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -736,6 +737,494 @@ async function updateSyncStatus(
   }, { onConflict: 'shop_id,user_id' });
 }
 
+/**
+ * Gọi Edge Function để tạo history logs
+ */
+async function createHistoryLogs(
+  supabase: ReturnType<typeof createClient>,
+  diffs: Array<{
+    shop_id: number;
+    user_id: string;
+    item_id: number;
+    item_name: string;
+    old_data: Record<string, unknown>;
+    new_data: Record<string, unknown>;
+    shopee_timestamp?: number;
+    raw_response?: unknown;
+  }>
+): Promise<{ logs_created: number; errors: string[] }> {
+  if (diffs.length === 0) return { logs_created: 0, errors: [] };
+
+  try {
+    const { data, error } = await supabase.functions.invoke('apishopee-product-webhook', {
+      body: { action: 'process-diff', diffs },
+    });
+
+    if (error) {
+      console.error('[HISTORY] Error calling webhook function:', error);
+      return { logs_created: 0, errors: [error.message] };
+    }
+
+    return { logs_created: data?.logs_created || 0, errors: data?.errors || [] };
+  } catch (err) {
+    console.error('[HISTORY] Exception:', err);
+    return { logs_created: 0, errors: [(err as Error).message] };
+  }
+}
+
+/**
+ * Log sản phẩm mới được tạo
+ */
+async function logProductCreated(
+  supabase: ReturnType<typeof createClient>,
+  shopId: number,
+  userId: string,
+  product: { item_id: number; item_name: string; current_price: number; total_available_stock: number; update_time?: number },
+  rawResponse?: unknown
+): Promise<void> {
+  try {
+    await supabase.functions.invoke('apishopee-product-webhook', {
+      body: {
+        action: 'log-product-created',
+        shop_id: shopId,
+        user_id: userId,
+        item_id: product.item_id,
+        item_name: product.item_name,
+        current_price: product.current_price,
+        total_stock: product.total_available_stock,
+        shopee_timestamp: product.update_time,
+        raw_response: rawResponse,
+      },
+    });
+  } catch (err) {
+    console.error('[HISTORY] Error logging product created:', err);
+  }
+}
+
+/**
+ * Log sản phẩm bị xóa
+ */
+async function logProductDeleted(
+  supabase: ReturnType<typeof createClient>,
+  shopId: number,
+  userId: string,
+  itemId: number,
+  itemName?: string
+): Promise<void> {
+  try {
+    await supabase.functions.invoke('apishopee-product-webhook', {
+      body: {
+        action: 'log-product-deleted',
+        shop_id: shopId,
+        user_id: userId,
+        item_id: itemId,
+        item_name: itemName,
+      },
+    });
+  } catch (err) {
+    console.error('[HISTORY] Error logging product deleted:', err);
+  }
+}
+
+/**
+ * Incremental sync - chỉ update những products thay đổi
+ * Không xóa toàn bộ, chỉ UPDATE/INSERT/DELETE theo item_id
+ * Tích hợp History Logging để theo dõi thay đổi
+ */
+async function incrementalSyncProducts(
+  supabase: ReturnType<typeof createClient>,
+  credentials: PartnerCredentials,
+  shopId: number,
+  userId: string,
+  token: { access_token: string; refresh_token: string },
+  changedItemIds: number[]
+): Promise<{ success: boolean; updated_count: number; inserted_count: number; deleted_count: number; history_logs_created?: number; error?: string }> {
+  try {
+    console.log(`[INCREMENTAL] Starting incremental sync for ${changedItemIds.length} changed items`);
+
+    // Biến để track history logs
+    let historyLogsCreated = 0;
+
+    // ========== STEP 1: Lấy tất cả item_ids hiện tại từ Shopee ==========
+    const statuses = ['NORMAL', 'UNLIST', 'BANNED'];
+    const allShopeeItemIds: number[] = [];
+
+    for (const status of statuses) {
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const result = await callShopeeAPI(
+          supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
+          shopId, token, undefined,
+          { offset, page_size: 100, item_status: status }
+        ) as {
+          error?: string;
+          response?: {
+            item?: ShopeeItemBasic[];
+            has_next_page?: boolean;
+            next_offset?: number;
+          }
+        };
+
+        if (result.error) break;
+
+        const items = result?.response?.item || [];
+        allShopeeItemIds.push(...items.map(i => i.item_id));
+
+        hasMore = result?.response?.has_next_page || false;
+        offset = result?.response?.next_offset || offset + 100;
+
+        if (hasMore) await delay(DELAY_BETWEEN_CALLS_MS);
+      }
+    }
+
+    // ========== STEP 2: Lấy item_ids hiện có trong DB (với thông tin để so sánh và log) ==========
+    const { data: dbProducts } = await supabase
+      .from('apishopee_products')
+      .select('item_id, item_name, current_price, original_price, total_available_stock, item_status')
+      .eq('shop_id', shopId)
+      .eq('user_id', userId);
+
+    const dbProductsMap = new Map((dbProducts || []).map(p => [p.item_id, p]));
+    const dbItemIds = new Set((dbProducts || []).map(p => p.item_id));
+    const shopeeItemIds = new Set(allShopeeItemIds);
+
+    // ========== STEP 3: Xác định items cần DELETE (có trong DB nhưng không còn trên Shopee) ==========
+    const itemsToDelete = [...dbItemIds].filter(id => !shopeeItemIds.has(id));
+    let deletedCount = 0;
+
+    if (itemsToDelete.length > 0) {
+      console.log(`[INCREMENTAL] Deleting ${itemsToDelete.length} removed items`);
+
+      // Log sản phẩm bị xóa vào history
+      for (const itemId of itemsToDelete) {
+        const oldProduct = dbProductsMap.get(itemId);
+        await logProductDeleted(supabase, shopId, userId, itemId, oldProduct?.item_name);
+        historyLogsCreated++;
+      }
+
+      // Xóa models và tier variations trước
+      await supabase.from('apishopee_product_models')
+        .delete()
+        .eq('shop_id', shopId)
+        .eq('user_id', userId)
+        .in('item_id', itemsToDelete);
+
+      await supabase.from('apishopee_product_tier_variations')
+        .delete()
+        .eq('shop_id', shopId)
+        .eq('user_id', userId)
+        .in('item_id', itemsToDelete);
+
+      // Xóa products
+      const { count } = await supabase.from('apishopee_products')
+        .delete()
+        .eq('shop_id', shopId)
+        .eq('user_id', userId)
+        .in('item_id', itemsToDelete);
+
+      deletedCount = count || itemsToDelete.length;
+    }
+
+    // ========== STEP 4: Xác định items cần INSERT (mới trên Shopee) ==========
+    const itemsToInsert = [...shopeeItemIds].filter(id => !dbItemIds.has(id));
+
+    // ========== STEP 5: Tổng hợp items cần fetch chi tiết (changed + new) ==========
+    const itemsToFetch = [...new Set([...changedItemIds, ...itemsToInsert])];
+
+    if (itemsToFetch.length === 0) {
+      console.log('[INCREMENTAL] No items to update');
+      await updateSyncStatus(supabase, shopId, userId);
+      return { success: true, updated_count: 0, inserted_count: 0, deleted_count: deletedCount };
+    }
+
+    console.log(`[INCREMENTAL] Fetching details for ${itemsToFetch.length} items (${changedItemIds.length} changed, ${itemsToInsert.length} new)`);
+
+    // ========== STEP 6: Lấy chi tiết products ==========
+    const allProducts: ShopeeProduct[] = [];
+
+    for (let i = 0; i < itemsToFetch.length; i += BATCH_SIZE_ITEM_INFO) {
+      const batchIds = itemsToFetch.slice(i, i + BATCH_SIZE_ITEM_INFO);
+
+      const result = await callShopeeAPI(
+        supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
+        shopId, token, undefined,
+        { item_id_list: batchIds }
+      ) as { error?: string; response?: { item_list?: ShopeeProduct[] } };
+
+      if (!result.error) {
+        allProducts.push(...(result?.response?.item_list || []));
+      }
+
+      if (i + BATCH_SIZE_ITEM_INFO < itemsToFetch.length) {
+        await delay(DELAY_BETWEEN_CALLS_MS);
+      }
+    }
+
+    // ========== STEP 7: Lấy models cho products có has_model = true ==========
+    const productsWithModels = allProducts.filter(p => p.has_model);
+    const productModelsMap: Map<number, {
+      models: ShopeeModel[];
+      tierVariations: TierVariation[];
+      totalStock: number;
+      minPrice: number;
+      maxPrice: number;
+      minOriginalPrice: number;
+      maxOriginalPrice: number;
+    }> = new Map();
+
+    for (const product of productsWithModels) {
+      try {
+        const modelResult = await callShopeeAPI(
+          supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
+          shopId, token, undefined,
+          { item_id: product.item_id }
+        ) as { error?: string; response?: ModelResponse };
+
+        if (!modelResult.error && modelResult?.response?.model) {
+          const modelResponse = modelResult.response;
+          let totalStock = 0;
+          let minPrice = Infinity;
+          let maxPrice = 0;
+          let minOriginalPrice = Infinity;
+          let maxOriginalPrice = 0;
+
+          for (const model of modelResponse.model) {
+            const stock = getModelStock(model);
+            const price = getModelPrice(model);
+
+            totalStock += stock;
+            if (price.current > 0) {
+              minPrice = Math.min(minPrice, price.current);
+              maxPrice = Math.max(maxPrice, price.current);
+            }
+            if (price.original > 0) {
+              minOriginalPrice = Math.min(minOriginalPrice, price.original);
+              maxOriginalPrice = Math.max(maxOriginalPrice, price.original);
+            }
+          }
+
+          productModelsMap.set(product.item_id, {
+            models: modelResponse.model,
+            tierVariations: modelResponse.tier_variation || [],
+            totalStock,
+            minPrice: minPrice === Infinity ? 0 : minPrice,
+            maxPrice,
+            minOriginalPrice: minOriginalPrice === Infinity ? 0 : minOriginalPrice,
+            maxOriginalPrice,
+          });
+        }
+
+        await delay(DELAY_BETWEEN_CALLS_MS);
+      } catch (err) {
+        console.error(`[INCREMENTAL] Error fetching models for item ${product.item_id}:`, err);
+      }
+    }
+
+    // ========== STEP 8: UPSERT products (insert or update) + HISTORY LOGGING ==========
+    let insertedCount = 0;
+    let updatedCount = 0;
+    const diffsToLog: Array<{
+      shop_id: number;
+      user_id: string;
+      item_id: number;
+      item_name: string;
+      old_data: Record<string, unknown>;
+      new_data: Record<string, unknown>;
+      shopee_timestamp?: number;
+      raw_response?: unknown;
+    }> = [];
+
+    for (const p of allProducts) {
+      const modelInfo = productModelsMap.get(p.item_id);
+
+      let currentPrice = p.price_info?.[0]?.current_price || 0;
+      let originalPrice = p.price_info?.[0]?.original_price || 0;
+      let totalAvailableStock = p.stock_info_v2?.summary_info?.total_available_stock || 0;
+      const totalReservedStock = p.stock_info_v2?.summary_info?.total_reserved_stock || 0;
+
+      if (modelInfo && modelInfo.models.length > 0) {
+        currentPrice = modelInfo.minPrice;
+        originalPrice = modelInfo.maxOriginalPrice > 0 ? modelInfo.maxOriginalPrice : modelInfo.maxPrice;
+        totalAvailableStock = modelInfo.totalStock;
+      }
+
+      const productData = {
+        shop_id: shopId,
+        user_id: userId,
+        item_id: p.item_id,
+        item_name: p.item_name,
+        item_sku: p.item_sku || '',
+        item_status: p.item_status,
+        category_id: p.category_id,
+        image_url_list: p.image?.image_url_list || [],
+        image_id_list: p.image?.image_id_list || [],
+        current_price: currentPrice,
+        original_price: originalPrice,
+        currency: p.price_info?.[0]?.currency || 'VND',
+        total_available_stock: totalAvailableStock,
+        total_reserved_stock: totalReservedStock,
+        brand_id: p.brand?.brand_id || null,
+        brand_name: p.brand?.original_brand_name || null,
+        has_model: p.has_model,
+        create_time: p.create_time,
+        update_time: p.update_time,
+        raw_response: p,
+        synced_at: new Date().toISOString(),
+      };
+
+      const isNew = itemsToInsert.includes(p.item_id);
+      const oldProduct = dbProductsMap.get(p.item_id);
+
+      // So sánh và tạo diff cho history logging (chỉ cho sản phẩm cập nhật)
+      if (!isNew && oldProduct) {
+        const hasChanges =
+          oldProduct.current_price !== currentPrice ||
+          oldProduct.total_available_stock !== totalAvailableStock ||
+          oldProduct.item_status !== p.item_status ||
+          oldProduct.item_name !== p.item_name;
+
+        if (hasChanges) {
+          diffsToLog.push({
+            shop_id: shopId,
+            user_id: userId,
+            item_id: p.item_id,
+            item_name: p.item_name,
+            old_data: {
+              current_price: oldProduct.current_price,
+              original_price: oldProduct.original_price,
+              total_available_stock: oldProduct.total_available_stock,
+              item_status: oldProduct.item_status,
+              item_name: oldProduct.item_name,
+            },
+            new_data: {
+              current_price: currentPrice,
+              original_price: originalPrice,
+              total_available_stock: totalAvailableStock,
+              item_status: p.item_status,
+              item_name: p.item_name,
+            },
+            shopee_timestamp: p.update_time,
+            raw_response: p,
+          });
+        }
+      }
+
+      // Upsert product
+      await supabase.from('apishopee_products').upsert(productData, {
+        onConflict: 'shop_id,user_id,item_id',
+      });
+
+      if (isNew) {
+        insertedCount++;
+        // Log sản phẩm mới
+        await logProductCreated(supabase, shopId, userId, {
+          item_id: p.item_id,
+          item_name: p.item_name,
+          current_price: currentPrice,
+          total_available_stock: totalAvailableStock,
+          update_time: p.update_time,
+        }, p);
+        historyLogsCreated++;
+      } else {
+        updatedCount++;
+      }
+
+      // Update models nếu có
+      if (modelInfo) {
+        // Xóa models cũ
+        await supabase.from('apishopee_product_models')
+          .delete()
+          .eq('shop_id', shopId)
+          .eq('user_id', userId)
+          .eq('item_id', p.item_id);
+
+        await supabase.from('apishopee_product_tier_variations')
+          .delete()
+          .eq('shop_id', shopId)
+          .eq('user_id', userId)
+          .eq('item_id', p.item_id);
+
+        // Insert tier variations mới
+        if (modelInfo.tierVariations.length > 0) {
+          await supabase.from('apishopee_product_tier_variations').insert({
+            shop_id: shopId,
+            user_id: userId,
+            item_id: p.item_id,
+            tier_variations: modelInfo.tierVariations,
+            synced_at: new Date().toISOString(),
+          });
+        }
+
+        // Insert models mới
+        if (modelInfo.models.length > 0) {
+          const modelData = modelInfo.models.map(m => {
+            let modelName = m.model_sku || '';
+            if (modelInfo.tierVariations.length > 0 && m.tier_index) {
+              const parts = m.tier_index.map((idx, i) => {
+                const tier = modelInfo.tierVariations[i];
+                return tier?.option_list?.[idx]?.option || '';
+              }).filter(Boolean);
+              if (parts.length > 0) modelName = parts.join(' - ');
+            }
+
+            let imageUrl: string | null = null;
+            if (modelInfo.tierVariations.length > 0 && m.tier_index && m.tier_index.length > 0) {
+              const firstTier = modelInfo.tierVariations[0];
+              const firstIdx = m.tier_index[0];
+              imageUrl = firstTier?.option_list?.[firstIdx]?.image?.image_url || null;
+            }
+
+            const price = getModelPrice(m);
+            const stock = getModelStock(m);
+
+            return {
+              shop_id: shopId,
+              user_id: userId,
+              item_id: p.item_id,
+              model_id: m.model_id,
+              model_sku: m.model_sku || '',
+              model_name: modelName,
+              current_price: price.current,
+              original_price: price.original,
+              total_available_stock: stock,
+              total_reserved_stock: m.stock_info_v2?.summary_info?.total_reserved_stock || 0,
+              tier_index: m.tier_index,
+              image_url: imageUrl,
+              raw_response: m,
+              synced_at: new Date().toISOString(),
+            };
+          });
+
+          await supabase.from('apishopee_product_models').insert(modelData);
+        }
+      }
+    }
+
+    // ========== STEP 9: Tạo history logs cho các thay đổi đã phát hiện ==========
+    if (diffsToLog.length > 0) {
+      console.log(`[INCREMENTAL] Creating history logs for ${diffsToLog.length} changed products`);
+      const historyResult = await createHistoryLogs(supabase, diffsToLog);
+      historyLogsCreated += historyResult.logs_created;
+      if (historyResult.errors.length > 0) {
+        console.warn('[INCREMENTAL] History logging errors:', historyResult.errors);
+      }
+    }
+
+    // ========== STEP 10: Update sync status ==========
+    await updateSyncStatus(supabase, shopId, userId);
+
+    console.log(`[INCREMENTAL] Completed: ${insertedCount} inserted, ${updatedCount} updated, ${deletedCount} deleted, ${historyLogsCreated} history logs`);
+    return { success: true, updated_count: updatedCount, inserted_count: insertedCount, deleted_count: deletedCount, history_logs_created: historyLogsCreated };
+
+  } catch (error) {
+    const errorMessage = (error as Error).message;
+    console.error('[INCREMENTAL] Error:', errorMessage);
+    return { success: false, updated_count: 0, inserted_count: 0, deleted_count: 0, history_logs_created: 0, error: errorMessage };
+  }
+}
+
 
 // ==================== MAIN HANDLER ====================
 
@@ -819,13 +1308,27 @@ serve(async (req) => {
         break;
       }
 
-      // ==================== CHECK FOR UPDATES ====================
+      // ==================== CHECK FOR UPDATES (Incremental Sync) ====================
       case 'check-updates': {
         if (!user_id) {
           return new Response(JSON.stringify({ error: 'user_id is required' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
+        }
+
+        // Kiểm tra xem DB đã có data chưa
+        const { count: existingCount } = await supabase
+          .from('apishopee_products')
+          .select('*', { count: 'exact', head: true })
+          .eq('shop_id', shop_id)
+          .eq('user_id', user_id);
+
+        // Nếu chưa có data -> full sync lần đầu
+        if (!existingCount || existingCount === 0) {
+          console.log('[CHECK] No existing data, running full sync...');
+          result = await syncAllProducts(supabase, credentials, shop_id, user_id, token);
+          break;
         }
 
         // Lấy update_time mới nhất từ database
@@ -840,31 +1343,58 @@ serve(async (req) => {
 
         const lastUpdateTime = latestProduct?.update_time || 0;
 
-        // Lấy danh sách products từ Shopee
-        const statuses = ['NORMAL', 'UNLIST'];
-        let hasChanges = false;
+        // Lấy danh sách products đã thay đổi từ Shopee (có update_time > lastUpdateTime)
+        const statuses = ['NORMAL', 'UNLIST', 'BANNED'];
         const changedItemIds: number[] = [];
 
         for (const status of statuses) {
-          const apiResult = await callShopeeAPI(
-            supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
-            shop_id, token, undefined,
-            { offset: 0, page_size: 100, item_status: status, update_time_from: lastUpdateTime }
-          ) as { response?: { item?: Array<{ item_id: number; update_time: number }> } };
+          let offset = 0;
+          let hasMore = true;
 
-          const items = apiResult?.response?.item || [];
-          if (items.length > 0) {
-            hasChanges = true;
+          while (hasMore) {
+            const apiResult = await callShopeeAPI(
+              supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
+              shop_id, token, undefined,
+              { offset, page_size: 100, item_status: status, update_time_from: lastUpdateTime + 1 }
+            ) as { response?: { item?: Array<{ item_id: number; update_time: number }>; has_next_page?: boolean; next_offset?: number } };
+
+            const items = apiResult?.response?.item || [];
             changedItemIds.push(...items.map(i => i.item_id));
+
+            hasMore = apiResult?.response?.has_next_page || false;
+            offset = apiResult?.response?.next_offset || offset + 100;
+
+            if (hasMore) await delay(DELAY_BETWEEN_CALLS_MS);
           }
         }
 
-        if (hasChanges) {
-          // Có thay đổi -> sync lại
-          console.log(`[CHECK] Found ${changedItemIds.length} changed items, syncing...`);
-          result = await syncAllProducts(supabase, credentials, shop_id, user_id, token);
+        if (changedItemIds.length > 0) {
+          // Có thay đổi -> incremental sync
+          console.log(`[CHECK] Found ${changedItemIds.length} changed items, running incremental sync...`);
+          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, changedItemIds);
+          result = {
+            success: incrementalResult.success,
+            has_changes: true,
+            synced_count: incrementalResult.updated_count + incrementalResult.inserted_count,
+            updated_count: incrementalResult.updated_count,
+            inserted_count: incrementalResult.inserted_count,
+            deleted_count: incrementalResult.deleted_count,
+            error: incrementalResult.error,
+          };
         } else {
-          result = { success: true, has_changes: false, message: 'No changes detected' };
+          // Không có thay đổi từ update_time, nhưng vẫn check xem có products bị xóa không
+          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, []);
+          if (incrementalResult.deleted_count > 0) {
+            result = {
+              success: true,
+              has_changes: true,
+              synced_count: 0,
+              deleted_count: incrementalResult.deleted_count,
+              message: `Đã xóa ${incrementalResult.deleted_count} sản phẩm không còn tồn tại`,
+            };
+          } else {
+            result = { success: true, has_changes: false, message: 'No changes detected' };
+          }
         }
         break;
       }

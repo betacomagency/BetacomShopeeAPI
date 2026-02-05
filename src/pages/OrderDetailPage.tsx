@@ -24,8 +24,10 @@ import type { Order as ShopeeOrder, OrderItem } from '@/hooks/useOrdersData';
 interface EscrowItem {
   item_id: number;
   item_name: string;
+  item_sku?: string;
   model_id: number;
   model_name?: string;
+  model_sku?: string;
   original_price: number;
   selling_price: number;
   discounted_price: number;
@@ -35,43 +37,125 @@ interface EscrowItem {
   discount_from_voucher_shopee: number;
   discount_from_voucher_seller: number;
   quantity_purchased: number;
+  activity_type?: string;
+  activity_id?: number;
+  is_main_item?: boolean;
+  is_b2c_shop_item?: boolean;
+  ams_commission_fee?: number;
+  promotion_list?: { promotion_type: string; promotion_id: number }[];
+}
+
+interface OrderAdjustment {
+  amount: number;
+  date: number;
+  currency: string;
+  adjustment_reason?: string;
 }
 
 interface OrderIncome {
+  // Giá trị chính
   escrow_amount: number;
+  escrow_amount_after_adjustment?: number;
   buyer_total_amount: number;
-  order_original_price: number;
-  order_selling_price: number;
-  buyer_paid_shipping_fee: number;
-  commission_fee: number;
-  service_fee: number;
-  seller_transaction_fee: number;
-  // Tất cả các loại thuế từ Shopee API
-  escrow_tax: number;
-  final_product_vat_tax: number;
-  final_shipping_vat_tax: number;
-  final_escrow_product_gst: number;
-  final_escrow_shipping_gst: number;
+  original_price?: number;
+  order_original_price?: number;
+  order_discounted_price?: number;
+  order_selling_price?: number;
+  order_seller_discount?: number;
+  seller_discount?: number;
+  shopee_discount?: number;
+  original_shopee_discount?: number;
+  voucher_from_seller?: number;
+  voucher_from_shopee?: number;
+  coins?: number;
+
+  // Phí vận chuyển
+  buyer_paid_shipping_fee?: number;
+  buyer_transaction_fee?: number;
+  estimated_shipping_fee?: number;
+  final_shipping_fee?: number;
+  actual_shipping_fee?: number;
+  shopee_shipping_rebate?: number;
+  shipping_fee_discount_from_3pl?: number;
+  seller_shipping_discount?: number;
+  reverse_shipping_fee?: number;
+  shipping_fee_sst?: number;
+  reverse_shipping_fee_sst?: number;
+
+  // Phí dịch vụ & hoa hồng
+  commission_fee?: number;
+  service_fee?: number;
+  seller_transaction_fee?: number;
+  campaign_fee?: number;
+  order_ams_commission_fee?: number;
+  credit_card_promotion?: number;
+  credit_card_transaction_fee?: number;
+  payment_promotion?: number;
+  net_commission_fee?: number;
+  net_service_fee?: number;
+  seller_order_processing_fee?: number;
+  fbs_fee?: number;
+
+  // Thuế
+  escrow_tax?: number;
+  final_product_vat_tax?: number;
+  final_shipping_vat_tax?: number;
+  final_escrow_product_gst?: number;
+  final_escrow_shipping_gst?: number;
   withholding_tax?: number;
   withholding_vat_tax?: number;
   withholding_pit_tax?: number;
   cross_border_tax?: number;
   sales_tax_on_lvg?: number;
   vat_on_imported_goods?: number;
-  items: EscrowItem[];
+
+  // Bồi thường & hoàn trả
+  seller_lost_compensation?: number;
+  seller_coin_cash_back?: number;
+  seller_return_refund?: number;
+  drc_adjustable_refund?: number;
+  cost_of_goods_sold?: number;
+  original_cost_of_goods_sold?: number;
+  final_product_protection?: number;
+
+  // Bảo hiểm & phí bổ sung
+  rsf_seller_protection_fee_claim_amount?: number;
+  shipping_seller_protection_fee_amount?: number;
+  delivery_seller_protection_fee_premium_amount?: number;
+  overseas_return_service_fee?: number;
+
+  // Điều chỉnh
+  total_adjustment_amount?: number;
+  order_adjustment?: OrderAdjustment[];
+
+  // Thông tin thanh toán
+  buyer_payment_method?: string;
+  instalment_plan?: string;
+  seller_voucher_code?: string[];
+
+  // Items
+  items?: EscrowItem[];
 }
 
 interface BuyerPaymentInfo {
+  buyer_payment_method?: string;
   buyer_total_amount?: number;
   merchant_subtotal?: number;
   shipping_fee?: number;
   seller_voucher?: number;
   shopee_voucher?: number;
   shopee_coins_redeemed?: number;
+  credit_card_promotion?: number;
+  insurance_premium?: number;
+  buyer_service_fee?: number;
+  buyer_tax_amount?: number;
+  is_paid_by_credit_card?: boolean;
 }
 
 interface EscrowData {
   order_sn: string;
+  buyer_user_name?: string;
+  return_order_sn_list?: string[];
   order_income: OrderIncome;
   buyer_payment_info?: BuyerPaymentInfo;
 }
@@ -157,6 +241,308 @@ function SectionCard({ icon: Icon, title, children, iconColor = "text-orange-500
   );
 }
 
+// Helper component cho Financial Row
+function FinanceRow({
+  label,
+  value,
+  currency,
+  isHeader = false,
+  isNegative = false,
+  isTotal = false,
+}: {
+  label: string;
+  value: number | undefined | null;
+  currency?: string;
+  isHeader?: boolean;
+  isNegative?: boolean;
+  isTotal?: boolean;
+}) {
+  // Không hiển thị nếu value = 0 hoặc undefined (trừ header)
+  if (!isHeader && (value === undefined || value === null || value === 0)) return null;
+
+  const displayValue = value || 0;
+  const formattedValue = formatPrice(Math.abs(displayValue), currency);
+
+  return (
+    <div className={cn(
+      "flex justify-end gap-6",
+      isHeader ? "py-1.5" : "py-1",
+      isTotal && "py-3 mt-3 border-t border-slate-200"
+    )}>
+      <span className={cn(
+        "text-right",
+        isHeader || isTotal ? "text-slate-700 font-medium" : "text-slate-500"
+      )}>
+        {label}
+      </span>
+      <span className={cn(
+        "w-24 text-right",
+        isTotal ? "text-lg font-bold text-orange-500" :
+        isNegative && displayValue !== 0 ? "text-red-600" :
+        isHeader ? "text-slate-700" : "text-slate-500"
+      )}>
+        {isNegative && displayValue !== 0 ? `-${formattedValue}` : formattedValue}
+      </span>
+    </div>
+  );
+}
+
+// Component render động Financial Summary từ Escrow Data
+function EscrowFinancialSummary({
+  escrowData,
+  order,
+  items,
+  currency,
+}: {
+  escrowData: EscrowData | null;
+  order: ShopeeOrder;
+  items: OrderItem[];
+  currency?: string;
+}) {
+  const income = escrowData?.order_income;
+  const isCancelled = order.order_status === 'CANCELLED' || order.order_status === 'IN_CANCEL';
+
+  // Tính tổng giá sản phẩm
+  const productTotal = income?.order_selling_price
+    || income?.order_discounted_price
+    || items.reduce((sum, item) => sum + (item.model_discounted_price * item.model_quantity_purchased), 0)
+    || order.total_amount;
+
+  // Tính các nhóm phí
+  const shippingFees = [
+    { key: 'buyer_paid_shipping_fee', label: 'Phí vận chuyển Người mua trả', value: income?.buyer_paid_shipping_fee },
+    { key: 'estimated_shipping_fee', label: 'Phí vận chuyển ước tính', value: income?.estimated_shipping_fee },
+    { key: 'final_shipping_fee', label: 'Phí vận chuyển cuối cùng', value: income?.final_shipping_fee },
+    { key: 'actual_shipping_fee', label: 'Phí vận chuyển thực tế', value: income?.actual_shipping_fee, isNegative: true },
+    { key: 'shopee_shipping_rebate', label: 'Hỗ trợ vận chuyển Shopee', value: income?.shopee_shipping_rebate },
+    { key: 'shipping_fee_discount_from_3pl', label: 'Giảm giá từ 3PL', value: income?.shipping_fee_discount_from_3pl },
+    { key: 'seller_shipping_discount', label: 'Giảm giá vận chuyển từ Seller', value: income?.seller_shipping_discount },
+    { key: 'reverse_shipping_fee', label: 'Phí vận chuyển hoàn', value: income?.reverse_shipping_fee, isNegative: true },
+    { key: 'shipping_fee_sst', label: 'SST vận chuyển', value: income?.shipping_fee_sst },
+    { key: 'reverse_shipping_fee_sst', label: 'SST vận chuyển hoàn', value: income?.reverse_shipping_fee_sst },
+  ].filter(f => f.value !== undefined && f.value !== null && f.value !== 0);
+
+  const shippingTotal = (income?.buyer_paid_shipping_fee || 0) -
+    (income?.actual_shipping_fee || 0) -
+    (income?.reverse_shipping_fee || 0) +
+    (income?.shopee_shipping_rebate || 0) +
+    (income?.shipping_fee_discount_from_3pl || 0);
+
+  // Phụ phí (fees)
+  const serviceFees = [
+    { key: 'commission_fee', label: 'Phí cố định (hoa hồng)', value: income?.commission_fee },
+    { key: 'service_fee', label: 'Phí Dịch vụ', value: income?.service_fee },
+    { key: 'seller_transaction_fee', label: 'Phí thanh toán', value: income?.seller_transaction_fee },
+    { key: 'campaign_fee', label: 'Phí chiến dịch', value: income?.campaign_fee },
+    { key: 'order_ams_commission_fee', label: 'Phí affiliate (AMS)', value: income?.order_ams_commission_fee },
+    { key: 'credit_card_transaction_fee', label: 'Phí giao dịch thẻ tín dụng', value: income?.credit_card_transaction_fee },
+    { key: 'seller_order_processing_fee', label: 'Phí xử lý đơn hàng', value: income?.seller_order_processing_fee },
+    { key: 'fbs_fee', label: 'Phí FBS', value: income?.fbs_fee },
+    { key: 'net_commission_fee', label: 'Phí hoa hồng ròng', value: income?.net_commission_fee },
+    { key: 'net_service_fee', label: 'Phí dịch vụ ròng', value: income?.net_service_fee },
+    { key: 'overseas_return_service_fee', label: 'Phí hoàn hàng quốc tế', value: income?.overseas_return_service_fee },
+  ].filter(f => f.value !== undefined && f.value !== null && f.value !== 0);
+
+  const feeTotal = serviceFees.reduce((sum, f) => sum + (f.value || 0), 0);
+
+  // Thuế
+  const taxes = [
+    { key: 'withholding_vat_tax', label: 'Thuế GTGT khấu trừ', value: income?.withholding_vat_tax },
+    { key: 'withholding_pit_tax', label: 'Thuế TNCN', value: income?.withholding_pit_tax },
+    { key: 'withholding_tax', label: 'Thuế khấu trừ', value: income?.withholding_tax },
+    { key: 'escrow_tax', label: 'Thuế Escrow', value: income?.escrow_tax },
+    { key: 'final_product_vat_tax', label: 'Thuế GTGT (sản phẩm)', value: income?.final_product_vat_tax },
+    { key: 'final_shipping_vat_tax', label: 'Thuế GTGT (vận chuyển)', value: income?.final_shipping_vat_tax },
+    { key: 'final_escrow_product_gst', label: 'GST (sản phẩm)', value: income?.final_escrow_product_gst },
+    { key: 'final_escrow_shipping_gst', label: 'GST (vận chuyển)', value: income?.final_escrow_shipping_gst },
+    { key: 'cross_border_tax', label: 'Thuế xuyên biên giới', value: income?.cross_border_tax },
+    { key: 'sales_tax_on_lvg', label: 'Thuế bán hàng LVG', value: income?.sales_tax_on_lvg },
+    { key: 'vat_on_imported_goods', label: 'VAT hàng nhập khẩu', value: income?.vat_on_imported_goods },
+  ].filter(f => f.value !== undefined && f.value !== null && f.value !== 0);
+
+  const taxTotal = taxes.reduce((sum, f) => sum + (f.value || 0), 0);
+
+  // Khuyến mãi & Voucher
+  const discounts = [
+    { key: 'seller_discount', label: 'Giảm giá từ Seller', value: income?.seller_discount },
+    { key: 'shopee_discount', label: 'Giảm giá từ Shopee', value: income?.shopee_discount },
+    { key: 'voucher_from_seller', label: 'Voucher Seller', value: income?.voucher_from_seller },
+    { key: 'voucher_from_shopee', label: 'Voucher Shopee', value: income?.voucher_from_shopee },
+    { key: 'coins', label: 'Shopee Coins', value: income?.coins },
+    { key: 'credit_card_promotion', label: 'Khuyến mãi thẻ tín dụng', value: income?.credit_card_promotion },
+    { key: 'payment_promotion', label: 'Khuyến mãi thanh toán', value: income?.payment_promotion },
+    { key: 'seller_coin_cash_back', label: 'Coin cashback từ Seller', value: income?.seller_coin_cash_back },
+  ].filter(f => f.value !== undefined && f.value !== null && f.value !== 0);
+
+  const discountTotal = discounts.reduce((sum, f) => sum + (f.value || 0), 0);
+
+  // Bồi thường & Hoàn trả
+  const refunds = [
+    { key: 'seller_lost_compensation', label: 'Bồi thường mất hàng', value: income?.seller_lost_compensation, isPositive: true },
+    { key: 'seller_return_refund', label: 'Hoàn trả cho Seller', value: income?.seller_return_refund, isPositive: true },
+    { key: 'drc_adjustable_refund', label: 'Hoàn tiền DRC', value: income?.drc_adjustable_refund },
+    { key: 'final_product_protection', label: 'Bảo vệ sản phẩm', value: income?.final_product_protection },
+    { key: 'rsf_seller_protection_fee_claim_amount', label: 'Bồi thường phí bảo vệ', value: income?.rsf_seller_protection_fee_claim_amount },
+  ].filter(f => f.value !== undefined && f.value !== null && f.value !== 0);
+
+  // Dịch vụ giá trị gia tăng cho người mua
+  const buyerVAS = escrowData?.buyer_payment_info ? [
+    { key: 'insurance_premium', label: 'Phí bảo hiểm', value: escrowData.buyer_payment_info.insurance_premium },
+    { key: 'buyer_service_fee', label: 'Phí dịch vụ người mua', value: escrowData.buyer_payment_info.buyer_service_fee },
+    { key: 'buyer_tax_amount', label: 'Thuế người mua', value: escrowData.buyer_payment_info.buyer_tax_amount },
+  ].filter(f => f.value !== undefined && f.value !== null && f.value !== 0) : [];
+
+  const vasTotal = buyerVAS.reduce((sum, f) => sum + (f.value || 0), 0);
+
+  // Final escrow amount - nếu đơn hủy thì = 0
+  const escrowAmount = isCancelled ? 0 : (income?.escrow_amount_after_adjustment || income?.escrow_amount || order.total_amount);
+
+  return (
+    <div className="text-sm">
+      {/* Tổng tiền sản phẩm */}
+      <FinanceRow label="Tổng tiền sản phẩm" value={isCancelled ? 0 : productTotal} currency={currency} isHeader />
+      {income?.order_original_price && income.order_original_price !== productTotal && (
+        <FinanceRow label="Giá gốc sản phẩm" value={income.order_original_price} currency={currency} />
+      )}
+      <FinanceRow label="Giá sản phẩm" value={productTotal} currency={currency} />
+      {/* Số tiền đã hủy - chỉ hiển thị khi đơn bị hủy */}
+      {isCancelled && productTotal > 0 && (
+        <FinanceRow label="Số tiền đã hủy" value={productTotal} currency={currency} isNegative />
+      )}
+
+      {/* Tổng phí vận chuyển */}
+      {shippingFees.length > 0 && (
+        <div className="mt-2">
+          <FinanceRow label="Tổng phí vận chuyển ước tính" value={shippingTotal} currency={currency} isHeader />
+          {shippingFees.map(f => (
+            <FinanceRow key={f.key} label={f.label} value={f.value} currency={currency} isNegative={f.isNegative} />
+          ))}
+        </div>
+      )}
+
+      {/* Phụ phí */}
+      {serviceFees.length > 0 && (
+        <div className="mt-2">
+          <FinanceRow label="Phụ phí" value={feeTotal} currency={currency} isHeader isNegative />
+          {serviceFees.map(f => (
+            <FinanceRow key={f.key} label={f.label} value={f.value} currency={currency} isNegative />
+          ))}
+        </div>
+      )}
+
+      {/* Thuế */}
+      {taxes.length > 0 && (
+        <div className="mt-2">
+          <FinanceRow label="Thuế" value={taxTotal} currency={currency} isHeader isNegative />
+          {taxes.map(f => (
+            <FinanceRow key={f.key} label={f.label} value={f.value} currency={currency} isNegative />
+          ))}
+        </div>
+      )}
+
+      {/* Khuyến mãi & Giảm giá (nếu có) */}
+      {discounts.length > 0 && (
+        <div className="mt-2">
+          <FinanceRow label="Khuyến mãi & Voucher" value={discountTotal} currency={currency} isHeader isNegative />
+          {discounts.map(f => (
+            <FinanceRow key={f.key} label={f.label} value={f.value} currency={currency} isNegative />
+          ))}
+        </div>
+      )}
+
+      {/* Bồi thường & Hoàn trả (nếu có) */}
+      {refunds.length > 0 && (
+        <div className="mt-2">
+          <FinanceRow label="Bồi thường & Hoàn trả" value={null} currency={currency} isHeader />
+          {refunds.map(f => (
+            <FinanceRow key={f.key} label={f.label} value={f.value} currency={currency} isNegative={!f.isPositive} />
+          ))}
+        </div>
+      )}
+
+      {/* Dịch vụ giá trị gia tăng cho người mua */}
+      <div className="mt-2">
+        <FinanceRow label="Tổng phụ dịch vụ giá trị gia tăng cho người mua" value={vasTotal} currency={currency} isHeader />
+        {buyerVAS.map(f => (
+          <FinanceRow key={f.key} label={f.label} value={f.value} currency={currency} />
+        ))}
+      </div>
+
+      {/* Điều chỉnh (nếu có) */}
+      {income?.order_adjustment && income.order_adjustment.length > 0 && (
+        <div className="mt-2">
+          <FinanceRow label="Điều chỉnh" value={income.total_adjustment_amount} currency={currency} isHeader />
+          {income.order_adjustment.map((adj, idx) => (
+            <FinanceRow
+              key={idx}
+              label={adj.adjustment_reason || `Điều chỉnh ${idx + 1}`}
+              value={adj.amount}
+              currency={adj.currency || currency}
+              isNegative={adj.amount < 0}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Doanh thu đơn hàng ước tính */}
+      <FinanceRow label="Doanh thu đơn hàng ước tính" value={escrowAmount} currency={currency} isTotal />
+    </div>
+  );
+}
+
+// Component render động Buyer Payment Summary
+function BuyerPaymentSummary({
+  buyerPaymentInfo,
+  orderIncome,
+  order,
+  currency,
+}: {
+  buyerPaymentInfo?: BuyerPaymentInfo;
+  orderIncome?: OrderIncome;
+  order: ShopeeOrder;
+  currency?: string;
+}) {
+  // Build danh sách các dòng cần hiển thị
+  const paymentRows = [
+    { key: 'merchant_subtotal', label: 'Tổng tiền sản phẩm', value: buyerPaymentInfo?.merchant_subtotal || orderIncome?.order_selling_price || order.total_amount },
+    { key: 'shipping_fee', label: 'Phí vận chuyển', value: buyerPaymentInfo?.shipping_fee || orderIncome?.buyer_paid_shipping_fee },
+    { key: 'shopee_voucher', label: 'Shopee Voucher', value: buyerPaymentInfo?.shopee_voucher || orderIncome?.voucher_from_shopee, isNegative: true },
+    { key: 'seller_voucher', label: 'Mã giảm giá của Shop', value: buyerPaymentInfo?.seller_voucher || orderIncome?.voucher_from_seller, isNegative: true },
+    { key: 'shopee_coins', label: 'Shopee Coins', value: buyerPaymentInfo?.shopee_coins_redeemed || orderIncome?.coins, isNegative: true },
+    { key: 'credit_card_promotion', label: 'Khuyến mãi thẻ tín dụng', value: buyerPaymentInfo?.credit_card_promotion, isNegative: true },
+    { key: 'insurance_premium', label: 'Phí bảo hiểm', value: buyerPaymentInfo?.insurance_premium },
+    { key: 'buyer_service_fee', label: 'Phí dịch vụ', value: buyerPaymentInfo?.buyer_service_fee },
+    { key: 'buyer_tax_amount', label: 'Thuế', value: buyerPaymentInfo?.buyer_tax_amount },
+  ];
+
+  // Lọc ra những dòng có giá trị
+  const visibleRows = paymentRows.filter(r => r.value !== undefined && r.value !== null && r.value !== 0);
+
+  const totalPayment = buyerPaymentInfo?.buyer_total_amount || orderIncome?.buyer_total_amount || order.total_amount;
+
+  return (
+    <>
+      {visibleRows.map(row => (
+        <div key={row.key} className="flex justify-end gap-6 py-1.5">
+          <span className="text-slate-500 text-right">{row.label}</span>
+          <span className={cn("w-24 text-right", row.isNegative && row.value ? "text-slate-500" : "text-slate-500")}>
+            {row.isNegative && row.value ? `-${formatPrice(Math.abs(row.value), currency)}` : formatPrice(row.value, currency)}
+          </span>
+        </div>
+      ))}
+      <div className="flex justify-end gap-6 py-2 mt-2 border-t border-slate-200">
+        <span className="text-slate-700 font-medium text-right">Tổng tiền Thanh toán</span>
+        <span className="text-orange-500 font-bold w-24 text-right">{formatPrice(totalPayment, currency)}</span>
+      </div>
+      {buyerPaymentInfo?.buyer_payment_method && (
+        <div className="flex justify-end gap-6 py-1 text-xs">
+          <span className="text-slate-400">Phương thức: {buyerPaymentInfo.buyer_payment_method}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ==================== MAIN COMPONENT ====================
 
 export default function OrderDetailPage() {
@@ -210,12 +596,115 @@ export default function OrderDetailPage() {
     }
   }, [selectedShopId, orderSn, toast]);
 
-  // Fetch escrow data
+  // Fetch escrow data - First try from database, then API
   const fetchEscrowData = useCallback(async () => {
     if (!selectedShopId || !orderSn) return;
 
     setLoadingEscrow(true);
     try {
+      // Step 1: Try to get escrow from database first
+      const dbRes = await supabase.functions.invoke('apishopee-orders-sync', {
+        body: {
+          action: 'get-escrow',
+          shop_id: selectedShopId,
+          order_sn: orderSn,
+        },
+      });
+
+      if (dbRes.data?.success && dbRes.data?.escrow) {
+        // Found in database - convert DB format to EscrowData format
+        const dbEscrow = dbRes.data.escrow;
+        const escrowFromDb: EscrowData = {
+          order_sn: dbEscrow.order_sn,
+          buyer_user_name: dbEscrow.buyer_user_name,
+          return_order_sn_list: dbEscrow.return_order_sn_list || [],
+          order_income: {
+            escrow_amount: dbEscrow.escrow_amount,
+            escrow_amount_after_adjustment: dbEscrow.escrow_amount_after_adjustment,
+            buyer_total_amount: dbEscrow.buyer_total_amount,
+            original_price: dbEscrow.original_price,
+            order_original_price: dbEscrow.order_original_price,
+            order_discounted_price: dbEscrow.order_discounted_price,
+            order_selling_price: dbEscrow.order_selling_price,
+            order_seller_discount: dbEscrow.order_seller_discount,
+            seller_discount: dbEscrow.seller_discount,
+            shopee_discount: dbEscrow.shopee_discount,
+            original_shopee_discount: dbEscrow.original_shopee_discount,
+            voucher_from_seller: dbEscrow.voucher_from_seller,
+            voucher_from_shopee: dbEscrow.voucher_from_shopee,
+            coins: dbEscrow.coins,
+            buyer_paid_shipping_fee: dbEscrow.buyer_paid_shipping_fee,
+            buyer_transaction_fee: dbEscrow.buyer_transaction_fee,
+            estimated_shipping_fee: dbEscrow.estimated_shipping_fee,
+            final_shipping_fee: dbEscrow.final_shipping_fee,
+            actual_shipping_fee: dbEscrow.actual_shipping_fee,
+            shopee_shipping_rebate: dbEscrow.shopee_shipping_rebate,
+            shipping_fee_discount_from_3pl: dbEscrow.shipping_fee_discount_from_3pl,
+            seller_shipping_discount: dbEscrow.seller_shipping_discount,
+            reverse_shipping_fee: dbEscrow.reverse_shipping_fee,
+            shipping_fee_sst: dbEscrow.shipping_fee_sst,
+            reverse_shipping_fee_sst: dbEscrow.reverse_shipping_fee_sst,
+            commission_fee: dbEscrow.commission_fee,
+            service_fee: dbEscrow.service_fee,
+            seller_transaction_fee: dbEscrow.seller_transaction_fee,
+            campaign_fee: dbEscrow.campaign_fee,
+            order_ams_commission_fee: dbEscrow.order_ams_commission_fee,
+            credit_card_promotion: dbEscrow.credit_card_promotion,
+            credit_card_transaction_fee: dbEscrow.credit_card_transaction_fee,
+            payment_promotion: dbEscrow.payment_promotion,
+            net_commission_fee: dbEscrow.net_commission_fee,
+            net_service_fee: dbEscrow.net_service_fee,
+            seller_order_processing_fee: dbEscrow.seller_order_processing_fee,
+            fbs_fee: dbEscrow.fbs_fee,
+            escrow_tax: dbEscrow.escrow_tax,
+            final_product_vat_tax: dbEscrow.final_product_vat_tax,
+            final_shipping_vat_tax: dbEscrow.final_shipping_vat_tax,
+            final_escrow_product_gst: dbEscrow.final_escrow_product_gst,
+            final_escrow_shipping_gst: dbEscrow.final_escrow_shipping_gst,
+            withholding_tax: dbEscrow.withholding_tax,
+            withholding_vat_tax: dbEscrow.withholding_vat_tax,
+            withholding_pit_tax: dbEscrow.withholding_pit_tax,
+            cross_border_tax: dbEscrow.cross_border_tax,
+            sales_tax_on_lvg: dbEscrow.sales_tax_on_lvg,
+            vat_on_imported_goods: dbEscrow.vat_on_imported_goods,
+            seller_lost_compensation: dbEscrow.seller_lost_compensation,
+            seller_coin_cash_back: dbEscrow.seller_coin_cash_back,
+            seller_return_refund: dbEscrow.seller_return_refund,
+            drc_adjustable_refund: dbEscrow.drc_adjustable_refund,
+            cost_of_goods_sold: dbEscrow.cost_of_goods_sold,
+            original_cost_of_goods_sold: dbEscrow.original_cost_of_goods_sold,
+            final_product_protection: dbEscrow.final_product_protection,
+            rsf_seller_protection_fee_claim_amount: dbEscrow.rsf_seller_protection_fee_claim_amount,
+            shipping_seller_protection_fee_amount: dbEscrow.shipping_seller_protection_fee_amount,
+            delivery_seller_protection_fee_premium_amount: dbEscrow.delivery_seller_protection_fee_premium_amount,
+            overseas_return_service_fee: dbEscrow.overseas_return_service_fee,
+            total_adjustment_amount: dbEscrow.total_adjustment_amount,
+            order_adjustment: dbEscrow.order_adjustment || [],
+            buyer_payment_method: dbEscrow.buyer_payment_method,
+            instalment_plan: dbEscrow.instalment_plan,
+            seller_voucher_code: dbEscrow.seller_voucher_code || [],
+            items: dbEscrow.items || [],
+          },
+          buyer_payment_info: {
+            buyer_payment_method: dbEscrow.buyer_payment_info_method,
+            buyer_total_amount: dbEscrow.buyer_payment_info_total_amount,
+            merchant_subtotal: dbEscrow.merchant_subtotal,
+            shipping_fee: dbEscrow.buyer_shipping_fee,
+            seller_voucher: dbEscrow.buyer_seller_voucher,
+            shopee_voucher: dbEscrow.buyer_shopee_voucher,
+            shopee_coins_redeemed: dbEscrow.shopee_coins_redeemed,
+            credit_card_promotion: dbEscrow.buyer_credit_card_promotion,
+            insurance_premium: dbEscrow.insurance_premium,
+            buyer_service_fee: dbEscrow.buyer_service_fee,
+            buyer_tax_amount: dbEscrow.buyer_tax_amount,
+            is_paid_by_credit_card: dbEscrow.is_paid_by_credit_card,
+          },
+        };
+        setEscrowData(escrowFromDb);
+        return;
+      }
+
+      // Step 2: Not in database, fetch from API
       const res = await supabase.functions.invoke('apishopee-proxy', {
         body: {
           api_path: '/api/v2/payment/get_escrow_detail',
@@ -227,7 +716,20 @@ export default function OrderDetailPage() {
 
       if (res.error) throw res.error;
       const data = res.data?.response?.data?.response;
-      if (data) setEscrowData(data);
+      if (data) {
+        setEscrowData(data);
+
+        // Step 3: Save to database for future use (fire and forget)
+        supabase.functions.invoke('apishopee-orders-sync', {
+          body: {
+            action: 'sync-escrow',
+            shop_id: selectedShopId,
+            order_sns: [orderSn],
+          },
+        }).catch(() => {
+          // Silently fail - not critical
+        });
+      }
     } catch {
       // Silently fail
     } finally {
@@ -490,7 +992,7 @@ export default function OrderDetailPage() {
                 </table>
               </div>
 
-              {/* Financial Summary */}
+              {/* Financial Summary - Dynamic rendering */}
               <div className="border-t px-4 py-4">
                 <details className="group" open>
                   <summary className="flex items-center justify-end gap-1 cursor-pointer text-sm text-blue-600 hover:underline mb-4">
@@ -498,180 +1000,12 @@ export default function OrderDetailPage() {
                     <span className="group-open:rotate-180 transition-transform text-xs">▲</span>
                   </summary>
 
-                  <div className="text-sm">
-                    {/* Tổng tiền sản phẩm - dùng order_selling_price (giá thực tế người mua thấy) */}
-                    {(() => {
-                      // Tính tổng giá sản phẩm từ item list nếu không có escrow data
-                      const productTotal = escrowData?.order_income.order_selling_price
-                        || items.reduce((sum: number, item: OrderItem) => sum + (item.model_discounted_price * item.model_quantity_purchased), 0)
-                        || order.total_amount;
-
-                      return (
-                        <>
-                          <div className="flex justify-end gap-6 py-1.5">
-                            <span className="text-slate-700 font-medium text-right">Tổng tiền sản phẩm</span>
-                            <span className="text-slate-700 w-24 text-right">{formatPrice(productTotal, order.currency)}</span>
-                          </div>
-                          <div className="flex justify-end gap-6 py-1">
-                            <span className="text-slate-500 text-right">Giá sản phẩm</span>
-                            <span className="text-slate-500 w-24 text-right">{formatPrice(productTotal, order.currency)}</span>
-                          </div>
-                        </>
-                      );
-                    })()}
-
-                    {/* Tổng phí vận chuyển ước tính */}
-                    <div className="flex justify-end gap-6 py-1.5 mt-2">
-                      <span className="text-slate-700 font-medium text-right">Tổng phí vận chuyển ước tính</span>
-                      <span className="text-slate-700 w-24 text-right">{formatPrice(escrowData?.order_income.buyer_paid_shipping_fee || 0, order.currency)}</span>
-                    </div>
-                    <div className="flex justify-end gap-6 py-1">
-                      <span className="text-slate-500 text-right">Phí vận chuyển Người mua trả</span>
-                      <span className="text-slate-500 w-24 text-right">{formatPrice(escrowData?.order_income.buyer_paid_shipping_fee || 0, order.currency)}</span>
-                    </div>
-                    <div className="flex justify-end gap-6 py-1">
-                      <span className="text-slate-500 text-right">Phí vận chuyển ước tính</span>
-                      <span className="text-slate-500 w-24 text-right">{formatPrice(0, order.currency)}</span>
-                    </div>
-
-                    {/* Phụ phí */}
-                    <div className="flex justify-end gap-6 py-1.5 mt-2">
-                      <span className="text-slate-700 font-medium text-right">Phụ phí</span>
-                      <span className="text-red-600 w-24 text-right">
-                        -{formatPrice(
-                          (escrowData?.order_income.commission_fee || 0) +
-                          (escrowData?.order_income.service_fee || 0) +
-                          (escrowData?.order_income.seller_transaction_fee || 0),
-                          order.currency
-                        )}
-                      </span>
-                    </div>
-                    {escrowData?.order_income.commission_fee ? (
-                      <div className="flex justify-end gap-6 py-1">
-                        <span className="text-slate-500 text-right">Phí cố định</span>
-                        <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.commission_fee, order.currency)}</span>
-                      </div>
-                    ) : null}
-                    {escrowData?.order_income.service_fee ? (
-                      <div className="flex justify-end gap-6 py-1">
-                        <span className="text-slate-500 text-right">Phí Dịch Vụ</span>
-                        <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.service_fee, order.currency)}</span>
-                      </div>
-                    ) : null}
-                    {escrowData?.order_income.seller_transaction_fee ? (
-                      <div className="flex justify-end gap-6 py-1">
-                        <span className="text-slate-500 text-right">Phí thanh toán</span>
-                        <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.seller_transaction_fee, order.currency)}</span>
-                      </div>
-                    ) : null}
-
-                    {/* Thuế */}
-                    {(() => {
-                      const taxTotal =
-                        (escrowData?.order_income.escrow_tax || 0) +
-                        (escrowData?.order_income.final_product_vat_tax || 0) +
-                        (escrowData?.order_income.final_shipping_vat_tax || 0) +
-                        (escrowData?.order_income.final_escrow_product_gst || 0) +
-                        (escrowData?.order_income.final_escrow_shipping_gst || 0) +
-                        (escrowData?.order_income.withholding_tax || 0) +
-                        (escrowData?.order_income.withholding_vat_tax || 0) +
-                        (escrowData?.order_income.withholding_pit_tax || 0) +
-                        (escrowData?.order_income.cross_border_tax || 0) +
-                        (escrowData?.order_income.sales_tax_on_lvg || 0) +
-                        (escrowData?.order_income.vat_on_imported_goods || 0);
-
-                      return (
-                        <>
-                          <div className="flex justify-end gap-6 py-1.5 mt-2">
-                            <span className="text-slate-700 font-medium text-right">Thuế</span>
-                            <span className="text-red-600 w-24 text-right">
-                              -{formatPrice(taxTotal, order.currency)}
-                            </span>
-                          </div>
-                          {escrowData?.order_income.escrow_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế Escrow</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.escrow_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.final_product_vat_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế GTGT (sản phẩm)</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.final_product_vat_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.final_shipping_vat_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế GTGT (vận chuyển)</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.final_shipping_vat_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.final_escrow_product_gst ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">GST (sản phẩm)</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.final_escrow_product_gst, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.final_escrow_shipping_gst ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">GST (vận chuyển)</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.final_escrow_shipping_gst, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.withholding_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế khấu trừ</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.withholding_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.withholding_vat_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế GTGT khấu trừ</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.withholding_vat_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.withholding_pit_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế TNCN</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.withholding_pit_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.cross_border_tax ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế xuyên biên giới</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.cross_border_tax, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.sales_tax_on_lvg ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">Thuế bán hàng LVG</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.sales_tax_on_lvg, order.currency)}</span>
-                            </div>
-                          ) : null}
-                          {escrowData?.order_income.vat_on_imported_goods ? (
-                            <div className="flex justify-end gap-6 py-1">
-                              <span className="text-slate-500 text-right">VAT hàng nhập khẩu</span>
-                              <span className="text-slate-500 w-24 text-right">-{formatPrice(escrowData.order_income.vat_on_imported_goods, order.currency)}</span>
-                            </div>
-                          ) : null}
-                        </>
-                      );
-                    })()}
-
-                    {/* Tổng phụ dịch vụ giá trị gia tăng */}
-                    <div className="flex justify-end gap-6 py-1.5 mt-2">
-                      <span className="text-slate-700 font-medium text-right">Tổng phụ dịch vụ giá trị gia tăng cho người mua</span>
-                      <span className="text-slate-700 w-24 text-right">{formatPrice(0, order.currency)}</span>
-                    </div>
-
-                    {/* Doanh thu đơn hàng ước tính */}
-                    <div className="flex justify-end gap-6 items-center py-3 mt-3 border-t border-slate-200">
-                      <span className="text-slate-700 font-medium text-right">Doanh thu đơn hàng ước tính</span>
-                      <span className="text-lg font-bold text-orange-500 w-24 text-right">
-                        {formatPrice(escrowData?.order_income.escrow_amount || order.total_amount, order.currency)}
-                      </span>
-                    </div>
-                  </div>
+                  <EscrowFinancialSummary
+                    escrowData={escrowData}
+                    order={order}
+                    items={items}
+                    currency={order.currency}
+                  />
                 </details>
               </div>
             </div>
@@ -683,9 +1017,74 @@ export default function OrderDetailPage() {
                   <FileText className="h-4 w-4 text-slate-500" />
                   <span className="text-sm font-semibold text-slate-800">Số tiền cuối cùng</span>
                 </div>
-                <span className="text-lg font-bold text-orange-500">
-                  {formatPrice(escrowData?.order_income.escrow_amount || order.total_amount, order.currency)}
-                </span>
+                <div className="text-right">
+                  <span className="text-lg font-bold text-orange-500">
+                    {formatPrice(
+                      (order.order_status === 'CANCELLED' || order.order_status === 'IN_CANCEL')
+                        ? 0
+                        : (escrowData?.order_income.escrow_amount_after_adjustment ||
+                           escrowData?.order_income.escrow_amount ||
+                           order.total_amount),
+                      order.currency
+                    )}
+                  </span>
+                  {escrowData?.order_income.total_adjustment_amount !== undefined &&
+                   escrowData.order_income.total_adjustment_amount !== 0 &&
+                   order.order_status !== 'CANCELLED' && order.order_status !== 'IN_CANCEL' && (
+                    <div className="text-xs text-slate-500">
+                      (Đã điều chỉnh: {escrowData.order_income.total_adjustment_amount >= 0 ? '+' : ''}
+                      {formatPrice(escrowData.order_income.total_adjustment_amount, order.currency)})
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Điều chỉnh đặt hàng */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                <FileText className="h-4 w-4 text-purple-500" />
+                <span className="text-sm font-semibold text-slate-800">Điều chỉnh đặt hàng</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-500">Ngày hoàn thành điều chỉnh đơn hàng</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-500">Lý do điều chỉnh</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-slate-500">Số tiền thanh toán</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {escrowData?.order_income.order_adjustment && escrowData.order_income.order_adjustment.length > 0 ? (
+                      escrowData.order_income.order_adjustment.map((adj, idx) => (
+                        <tr key={idx} className="border-b last:border-0">
+                          <td className="px-4 py-3 text-slate-600">
+                            {adj.date ? formatDateTime(adj.date) : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {adj.adjustment_reason || '-'}
+                          </td>
+                          <td className={cn(
+                            "px-4 py-3 text-right font-medium",
+                            adj.amount >= 0 ? "text-green-600" : "text-red-600"
+                          )}>
+                            {adj.amount >= 0 ? '+' : ''}{formatPrice(adj.amount, adj.currency || order.currency)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center">
+                          <div className="flex flex-col items-center text-slate-400">
+                            <FileText className="h-8 w-8 mb-2 opacity-50" />
+                            <span className="text-sm">Chưa có điều chỉnh nào được thực hiện theo thứ tự này</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -696,28 +1095,67 @@ export default function OrderDetailPage() {
                 <span className="text-sm font-semibold text-slate-800">Thanh toán của Người Mua</span>
               </div>
               <div className="px-4 py-4 text-sm">
-                <div className="flex justify-end gap-6 py-1.5">
-                  <span className="text-slate-500 text-right">Tổng tiền sản phẩm</span>
-                  <span className="text-slate-500 w-24 text-right">{formatPrice(escrowData?.buyer_payment_info?.merchant_subtotal || order.total_amount, order.currency)}</span>
-                </div>
-                <div className="flex justify-end gap-6 py-1.5">
-                  <span className="text-slate-500 text-right">Phí vận chuyển</span>
-                  <span className="text-slate-500 w-24 text-right">{formatPrice(escrowData?.buyer_payment_info?.shipping_fee || 0, order.currency)}</span>
-                </div>
-                <div className="flex justify-end gap-6 py-1.5">
-                  <span className="text-slate-500 text-right">Shopee Voucher</span>
-                  <span className="text-slate-500 w-24 text-right">{formatPrice(escrowData?.buyer_payment_info?.shopee_voucher || 0, order.currency)}</span>
-                </div>
-                <div className="flex justify-end gap-6 py-1.5">
-                  <span className="text-slate-500 text-right">Mã giảm giá của Shop</span>
-                  <span className="text-slate-500 w-24 text-right">{formatPrice(escrowData?.buyer_payment_info?.seller_voucher || 0, order.currency)}</span>
-                </div>
-                <div className="flex justify-end gap-6 py-2 mt-2 border-t border-slate-200">
-                  <span className="text-slate-700 font-medium text-right">Tổng tiền Thanh toán</span>
-                  <span className="text-orange-500 font-bold w-24 text-right">{formatPrice(escrowData?.buyer_payment_info?.buyer_total_amount || order.total_amount, order.currency)}</span>
-                </div>
+                <BuyerPaymentSummary
+                  buyerPaymentInfo={escrowData?.buyer_payment_info}
+                  orderIncome={escrowData?.order_income}
+                  order={order}
+                  currency={order.currency}
+                />
               </div>
             </div>
+
+            {/* Đơn hoàn trả (nếu có) */}
+            {escrowData?.return_order_sn_list && escrowData.return_order_sn_list.length > 0 && (
+              <div className="bg-orange-50 rounded-lg shadow-sm border border-orange-200">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-orange-200">
+                  <Package className="h-4 w-4 text-orange-500" />
+                  <span className="text-sm font-semibold text-orange-700">Đơn hoàn trả ({escrowData.return_order_sn_list.length})</span>
+                </div>
+                <div className="p-4">
+                  <div className="flex flex-wrap gap-2">
+                    {escrowData.return_order_sn_list.map((sn, idx) => (
+                      <div key={idx} className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-orange-200">
+                        <code className="font-mono text-sm text-orange-700">{sn}</code>
+                        <CopyButton text={sn} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Thông tin hủy đơn (nếu có) */}
+            {(order.order_status === 'CANCELLED' || order.order_status === 'IN_CANCEL') && (
+              <div className="bg-red-50 rounded-lg shadow-sm border border-red-200">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-red-200">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-semibold text-red-700">Thông tin hủy đơn</span>
+                </div>
+                <div className="p-4 text-sm space-y-2">
+                  {order.cancel_by && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Hủy bởi:</span>
+                      <span className="text-red-600 font-medium">{order.cancel_by}</span>
+                    </div>
+                  )}
+                  {order.cancel_reason && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Lý do hủy:</span>
+                      <span className="text-slate-700">{order.cancel_reason}</span>
+                    </div>
+                  )}
+                  {order.buyer_cancel_reason && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Lý do từ người mua:</span>
+                      <span className="text-slate-700">{order.buyer_cancel_reason}</span>
+                    </div>
+                  )}
+                  {!order.cancel_by && !order.cancel_reason && !order.buyer_cancel_reason && (
+                    <p className="text-slate-400 italic">Không có thông tin chi tiết</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {loadingEscrow && (
               <div className="bg-white rounded shadow-sm border p-4 flex items-center justify-center">

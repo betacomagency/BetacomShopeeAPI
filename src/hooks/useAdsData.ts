@@ -13,6 +13,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { logCompletedActivity } from '@/lib/activity-logger';
 
 // ==================== TYPES ====================
 
@@ -580,6 +581,7 @@ export function useAdsData(
     if (syncing) return { success: false, message: 'Đang đồng bộ...' };
 
     setSyncing(true);
+    const startTime = new Date();
     try {
       const res = await supabase.functions.invoke('apishopee-ads-sync', {
         body: { action: 'sync', shop_id: shopId },
@@ -597,23 +599,55 @@ export function useAdsData(
         queryClient.invalidateQueries({ queryKey: prevPerformanceQueryKey });
         queryClient.invalidateQueries({ queryKey: shopLevelQueryKey }); // QUAN TRỌNG: Invalidate shop-level để overview cập nhật
 
-        return {
-          success: true,
-          message: `Đã đồng bộ ${result.campaigns_synced} chiến dịch, ${result.daily_records} bản ghi daily, ${result.hourly_records} bản ghi hourly`,
-        };
+        const message = `Đã đồng bộ ${result.campaigns_synced} chiến dịch, ${result.daily_records} bản ghi daily, ${result.hourly_records} bản ghi hourly`;
+
+        // Log activity
+        logCompletedActivity({
+          userId,
+          shopId,
+          actionType: 'ads_sync',
+          actionCategory: 'ads',
+          actionDescription: `Đồng bộ Ads: ${result.campaigns_synced} chiến dịch`,
+          status: 'success',
+          source: 'manual',
+          startedAt: startTime,
+          completedAt: new Date(),
+          durationMs: Date.now() - startTime.getTime(),
+          responseData: {
+            campaigns_synced: result.campaigns_synced,
+            daily_records: result.daily_records,
+            hourly_records: result.hourly_records,
+          },
+        });
+
+        return { success: true, message };
       } else {
         throw new Error(result.error || 'Sync failed');
       }
     } catch (err) {
+      // Log failed activity
+      logCompletedActivity({
+        userId,
+        shopId,
+        actionType: 'ads_sync',
+        actionCategory: 'ads',
+        actionDescription: 'Đồng bộ Ads thất bại',
+        status: 'failed',
+        source: 'manual',
+        startedAt: startTime,
+        completedAt: new Date(),
+        durationMs: Date.now() - startTime.getTime(),
+        errorMessage: (err as Error).message,
+      });
       return { success: false, message: (err as Error).message };
     } finally {
       setSyncing(false);
     }
-  }, [shopId, syncing, fetchSyncStatus, queryClient, campaignsQueryKey, performanceQueryKey, prevPerformanceQueryKey, shopLevelQueryKey]);
+  }, [shopId, userId, syncing, fetchSyncStatus, queryClient, campaignsQueryKey, performanceQueryKey, prevPerformanceQueryKey, shopLevelQueryKey]);
 
   /**
    * Backfill từ Shopee API - Sync 7 ngày để cập nhật GMV attribution
-   * 
+   *
    * LÝ DO CẦN BACKFILL:
    * Shopee Ads có "7-day attribution window" - đơn hàng hôm nay có thể được gán
    * cho click từ 3-7 ngày trước. Nếu chỉ sync hôm nay, GMV của các ngày cũ sẽ
@@ -623,6 +657,7 @@ export function useAdsData(
     if (syncing) return { success: false, message: 'Đang đồng bộ...' };
 
     setSyncing(true);
+    const startTime = new Date();
     try {
       const res = await supabase.functions.invoke('apishopee-ads-sync', {
         body: { action: 'backfill', shop_id: shopId, days_back: daysBack },
@@ -640,19 +675,52 @@ export function useAdsData(
         queryClient.invalidateQueries({ queryKey: prevPerformanceQueryKey });
         queryClient.invalidateQueries({ queryKey: shopLevelQueryKey }); // QUAN TRỌNG: Invalidate shop-level để overview cập nhật
 
-        return {
-          success: true,
-          message: `Backfill ${daysBack} ngày: ${result.campaigns_synced} chiến dịch, ${result.daily_records} daily, ${result.hourly_records} hourly`,
-        };
+        const message = `Backfill ${daysBack} ngày: ${result.campaigns_synced} chiến dịch, ${result.daily_records} daily, ${result.hourly_records} hourly`;
+
+        // Log activity
+        logCompletedActivity({
+          userId,
+          shopId,
+          actionType: 'ads_backfill',
+          actionCategory: 'ads',
+          actionDescription: `Backfill Ads ${daysBack} ngày: ${result.campaigns_synced} chiến dịch`,
+          status: 'success',
+          source: 'manual',
+          startedAt: startTime,
+          completedAt: new Date(),
+          durationMs: Date.now() - startTime.getTime(),
+          responseData: {
+            days_back: daysBack,
+            campaigns_synced: result.campaigns_synced,
+            daily_records: result.daily_records,
+            hourly_records: result.hourly_records,
+          },
+        });
+
+        return { success: true, message };
       } else {
         throw new Error(result.error || 'Backfill failed');
       }
     } catch (err) {
+      // Log failed activity
+      logCompletedActivity({
+        userId,
+        shopId,
+        actionType: 'ads_backfill',
+        actionCategory: 'ads',
+        actionDescription: `Backfill Ads ${daysBack} ngày thất bại`,
+        status: 'failed',
+        source: 'manual',
+        startedAt: startTime,
+        completedAt: new Date(),
+        durationMs: Date.now() - startTime.getTime(),
+        errorMessage: (err as Error).message,
+      });
       return { success: false, message: (err as Error).message };
     } finally {
       setSyncing(false);
     }
-  }, [shopId, syncing, fetchSyncStatus, queryClient, campaignsQueryKey, performanceQueryKey, prevPerformanceQueryKey, shopLevelQueryKey]);
+  }, [shopId, userId, syncing, fetchSyncStatus, queryClient, campaignsQueryKey, performanceQueryKey, prevPerformanceQueryKey, shopLevelQueryKey]);
 
   // Load hourly data for a specific campaign
   const loadHourlyData = useCallback(async (campaignId: number) => {

@@ -164,17 +164,33 @@ export function AutoSetupDialog({
       let flashSaleId = copyFromFlashSaleId;
 
       if (!flashSaleId) {
-        const { data: fsData, error: fsError } = await supabase
+        // Ưu tiên lấy FS đang chạy hoặc sắp tới
+        let { data: fsData, error: fsError } = await supabase
           .from('apishopee_flash_sale_data')
           .select('*')
           .eq('shop_id', shopId)
+          .in('type', [1, 2]) // Sắp tới hoặc đang chạy
           .order('start_time', { ascending: false })
           .limit(1)
           .single();
 
         if (fsError && fsError.code !== 'PGRST116') throw fsError;
 
-        if (!fsData || (fsData.type !== 1 && fsData.type !== 2)) {
+        // Nếu không có FS đang chạy/sắp tới, lấy FS mới nhất bất kỳ (bao gồm đã kết thúc)
+        if (!fsData) {
+          const { data: latestFs, error: latestError } = await supabase
+            .from('apishopee_flash_sale_data')
+            .select('*')
+            .eq('shop_id', shopId)
+            .order('start_time', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (latestError && latestError.code !== 'PGRST116') throw latestError;
+          fsData = latestFs;
+        }
+
+        if (!fsData) {
           setTemplateItems([]);
           setLatestFlashSaleId(null);
           return;
@@ -550,36 +566,10 @@ export function AutoSetupDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="0">Tạo ngay lập tức</SelectItem>
-                <SelectItem value="5">5 phút trước khung giờ</SelectItem>
                 <SelectItem value="10">10 phút trước khung giờ</SelectItem>
-                <SelectItem value="15">15 phút trước khung giờ</SelectItem>
                 <SelectItem value="30">30 phút trước khung giờ</SelectItem>
-                <SelectItem value="60">1 giờ trước khung giờ</SelectItem>
-                <SelectItem value="120">2 giờ trước khung giờ</SelectItem>
-                <SelectItem value="custom">Tùy chỉnh...</SelectItem>
               </SelectContent>
             </Select>
-
-            {isCustomLeadTime && (
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  max={1440}
-                  placeholder="Nhập số phút"
-                  value={customLeadTimeInput}
-                  onChange={(e) => {
-                    setCustomLeadTimeInput(e.target.value);
-                    const val = parseInt(e.target.value);
-                    if (!isNaN(val) && val > 0) {
-                      setLeadTimeMinutes(val);
-                    }
-                  }}
-                  className="w-24 h-8"
-                />
-                <span className="text-sm text-slate-500">phút trước khung giờ</span>
-              </div>
-            )}
             <p className="text-xs text-slate-500">
               {leadTimeMinutes === 0
                 ? 'Tất cả Flash Sale sẽ được tạo ngay lập tức'

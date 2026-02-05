@@ -39,17 +39,19 @@ export default function FlashSalePage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div>
       {/* Flash Sale Panel - key để force re-mount khi đổi shop */}
       {selectedShopId && user?.id ? (
         <FlashSalePanel key={selectedShopId} shopId={selectedShopId} userId={user.id} />
       ) : (
-        <Alert>
-          <Store className="h-4 w-4" />
-          <AlertDescription>
-            Vui lòng chọn shop để xem Flash Sale.
-          </AlertDescription>
-        </Alert>
+        <div className="p-6">
+          <Alert>
+            <Store className="h-4 w-4" />
+            <AlertDescription>
+              Vui lòng chọn shop để xem Flash Sale.
+            </AlertDescription>
+          </Alert>
+        </div>
       )}
     </div>
   );

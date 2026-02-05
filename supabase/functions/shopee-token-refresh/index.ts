@@ -1,13 +1,14 @@
 /**
  * Supabase Edge Function: Shopee Token Auto Refresh
  * Tự động refresh token cho tất cả shops sắp hết hạn
- * 
+ *
  * Chạy định kỳ qua pg_cron hoặc external cron service
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { logActivity, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -145,12 +146,15 @@ async function logRefreshResult(
   supabase: ReturnType<typeof createClient>,
   shopId: string,
   shopeeShopId: number,
+  shopName: string | null,
   success: boolean,
   errorMessage?: string,
   oldExpiredAt?: number,
-  newExpiredAt?: number
+  newExpiredAt?: number,
+  source: 'auto' | 'manual' = 'auto'
 ) {
   try {
+    // Log vào bảng cũ
     await supabase.from('apishopee_token_refresh_logs').insert({
       shop_id: shopId,
       shopee_shop_id: shopeeShopId,
@@ -158,7 +162,30 @@ async function logRefreshResult(
       error_message: errorMessage,
       old_token_expired_at: oldExpiredAt,
       new_token_expired_at: newExpiredAt,
-      refresh_source: 'auto',
+      refresh_source: source,
+    });
+
+    // Log vào system_activity_logs
+    await logActivity(supabase, {
+      shopId: shopeeShopId,
+      shopName: shopName || undefined,
+      actionType: 'token_refresh',
+      actionCategory: 'auth' as ActionCategory,
+      actionDescription: success
+        ? `Làm mới token thành công${newExpiredAt ? `, hết hạn lúc ${new Date(newExpiredAt * 1000).toLocaleString('vi-VN')}` : ''}`
+        : `Làm mới token thất bại: ${errorMessage || 'Unknown error'}`,
+      targetType: 'shop',
+      targetId: shopeeShopId.toString(),
+      targetName: shopName || `Shop ${shopeeShopId}`,
+      requestData: {
+        old_expired_at: oldExpiredAt,
+      },
+      responseData: success ? {
+        new_expired_at: newExpiredAt,
+      } : undefined,
+      status: (success ? 'success' : 'failed') as ActionStatus,
+      errorMessage: errorMessage,
+      source: (source === 'auto' ? 'scheduled' : 'manual') as ActionSource,
     });
   } catch (error) {
     console.error('[TOKEN-REFRESH] Error logging result:', error);
@@ -265,9 +292,24 @@ serve(async (req) => {
         );
 
         if (!refreshResult.success || !refreshResult.data) {
+          console.error(`[TOKEN-REFRESH] Failed for merchant ${merchantId}:`, refreshResult.error);
+
           for (const shop of groupShops) {
-            await logRefreshResult(supabase, shop.id, shop.shop_id, false, refreshResult.error, shop.expired_at);
-            results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: refreshResult.error });
+            await logRefreshResult(
+              supabase,
+              shop.id,
+              shop.shop_id,
+              shop.shop_name,
+              false,
+              refreshResult.error,
+              shop.expired_at
+            );
+            results.push({
+              shop_id: shop.shop_id,
+              shop_name: shop.shop_name,
+              status: 'failed',
+              error: refreshResult.error,
+            });
           }
           continue;
         }
@@ -291,14 +333,38 @@ serve(async (req) => {
           .eq('merchant_id', merchantId);
 
         if (updateError) {
+          console.error(`[TOKEN-REFRESH] Failed to update merchant ${merchantId}:`, updateError);
+
           for (const shop of groupShops) {
-            await logRefreshResult(supabase, shop.id, shop.shop_id, false, `DB update failed: ${updateError.message}`, shop.expired_at);
-            results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: `DB update failed: ${updateError.message}` });
+            await logRefreshResult(
+              supabase,
+              shop.id,
+              shop.shop_id,
+              shop.shop_name,
+              false,
+              `Database update failed: ${updateError.message}`,
+              shop.expired_at
+            );
+            results.push({
+              shop_id: shop.shop_id,
+              shop_name: shop.shop_name,
+              status: 'failed',
+              error: `Database update failed: ${updateError.message}`,
+            });
           }
         } else {
           console.log(`[TOKEN-REFRESH] Merchant ${merchantId}: updated ${groupShops.length} shops, new expiry: ${new Date(newExpiredAt).toISOString()}`);
           for (const shop of groupShops) {
-            await logRefreshResult(supabase, shop.id, shop.shop_id, true, undefined, shop.expired_at, newExpiredAt);
+            await logRefreshResult(
+              supabase,
+              shop.id,
+              shop.shop_id,
+              shop.shop_name,
+              true,
+              undefined,
+              shop.expired_at,
+              newExpiredAt
+            );
             results.push({
               shop_id: shop.shop_id,
               shop_name: shop.shop_name,
@@ -311,9 +377,24 @@ serve(async (req) => {
 
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
+        console.error(`[TOKEN-REFRESH] Error processing merchant ${merchantId}:`, error);
+
         for (const shop of groupShops) {
-          await logRefreshResult(supabase, shop.id, shop.shop_id, false, (error as Error).message, shop.expired_at);
-          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: (error as Error).message });
+          await logRefreshResult(
+            supabase,
+            shop.id,
+            shop.shop_id,
+            shop.shop_name,
+            false,
+            (error as Error).message,
+            shop.expired_at
+          );
+          results.push({
+            shop_id: shop.shop_id,
+            shop_name: shop.shop_name,
+            status: 'failed',
+            error: (error as Error).message,
+          });
         }
       }
     }
@@ -336,8 +417,24 @@ serve(async (req) => {
         );
 
         if (!refreshResult.success || !refreshResult.data) {
-          await logRefreshResult(supabase, shop.id, shop.shop_id, false, refreshResult.error, shop.expired_at);
-          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: refreshResult.error });
+          console.error(`[TOKEN-REFRESH] Failed for shop ${shop.shop_id}:`, refreshResult.error);
+
+          await logRefreshResult(
+            supabase,
+            shop.id,
+            shop.shop_id,
+            shop.shop_name,
+            false,
+            refreshResult.error,
+            shop.expired_at
+          );
+
+          results.push({
+            shop_id: shop.shop_id,
+            shop_name: shop.shop_name,
+            status: 'failed',
+            error: refreshResult.error,
+          });
           continue;
         }
 
@@ -359,12 +456,39 @@ serve(async (req) => {
           .eq('id', shop.id);
 
         if (updateError) {
-          await logRefreshResult(supabase, shop.id, shop.shop_id, false, `DB update failed: ${updateError.message}`, shop.expired_at);
-          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: `DB update failed: ${updateError.message}` });
+          console.error(`[TOKEN-REFRESH] Failed to update shop ${shop.shop_id}:`, updateError);
+
+          await logRefreshResult(
+            supabase,
+            shop.id,
+            shop.shop_id,
+            shop.shop_name,
+            false,
+            `Database update failed: ${updateError.message}`,
+            shop.expired_at
+          );
+
+          results.push({
+            shop_id: shop.shop_id,
+            shop_name: shop.shop_name,
+            status: 'failed',
+            error: `Database update failed: ${updateError.message}`,
+          });
           continue;
         }
 
-        await logRefreshResult(supabase, shop.id, shop.shop_id, true, undefined, shop.expired_at, newExpiredAt);
+        // Log success
+        await logRefreshResult(
+          supabase,
+          shop.id,
+          shop.shop_id,
+          shop.shop_name,
+          true,
+          undefined,
+          shop.expired_at,
+          newExpiredAt
+        );
+
         console.log(`[TOKEN-REFRESH] Success for shop ${shop.shop_id}, new expiry: ${new Date(newExpiredAt).toISOString()}`);
         results.push({
           shop_id: shop.shop_id,
@@ -376,8 +500,24 @@ serve(async (req) => {
 
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
-        await logRefreshResult(supabase, shop.id, shop.shop_id, false, (error as Error).message, shop.expired_at);
-        results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: (error as Error).message });
+        console.error(`[TOKEN-REFRESH] Error processing shop ${shop.shop_id}:`, error);
+
+        await logRefreshResult(
+          supabase,
+          shop.id,
+          shop.shop_id,
+          shop.shop_name,
+          false,
+          (error as Error).message,
+          shop.expired_at
+        );
+
+        results.push({
+          shop_id: shop.shop_id,
+          shop_name: shop.shop_name,
+          status: 'failed',
+          error: (error as Error).message,
+        });
       }
     }
 

@@ -170,3 +170,13 @@ code {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;  /* Chrome, Safari and Opera */
 }
+
+/* Remove focus outline from recharts SVG */
+.recharts-wrapper,
+.recharts-wrapper svg,
+.recharts-wrapper svg:focus,
+.recharts-surface,
+.recharts-surface:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
