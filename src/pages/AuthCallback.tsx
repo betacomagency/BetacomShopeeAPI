@@ -87,23 +87,22 @@ export default function AuthCallback() {
         // Thêm ?refresh param để trigger reload trong ShopManagementPanel
         navigate('/settings/shops?refresh=' + Date.now(), { replace: true });
       } catch (err) {
-        processedRef.current = false;
         const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
         setError(errorMessage);
-        
+        setIsProcessing(false);
+
         // Hiển thị toast thất bại
         toast({
           title: "Kết nối thất bại",
           description: errorMessage,
           variant: "destructive",
         });
-      } finally {
-        setIsProcessing(false);
       }
     };
 
     processCallback();
-  }, [searchParams, handleCallback, navigate, authLoading, isAuthenticated, isProcessing]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, handleCallback, navigate, authLoading, isAuthenticated]);
 
   if (error) {
     return (
