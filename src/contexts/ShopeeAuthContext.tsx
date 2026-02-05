@@ -50,7 +50,7 @@ interface ShopeeAuthContextType {
   login: (callbackUrl?: string, partnerAccountId?: string, partnerInfo?: PartnerInfo) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  handleCallback: (code: string, shopId?: number, partnerAccountId?: string) => Promise<void>;
+  handleCallback: (code: string, shopId?: number, partnerAccountId?: string, mainAccountId?: number) => Promise<void>;
   switchShop: (shopId: number) => Promise<void>;
 }
 
@@ -261,7 +261,7 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
   );
 
   const handleCallback = useCallback(
-    async (code: string, shopId?: number, partnerAccountId?: string) => {
+    async (code: string, shopId?: number, partnerAccountId?: string, mainAccountId?: number) => {
       setIsLoading(true);
       setError(null);
 
@@ -269,56 +269,95 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
       const partnerInfo = partnerInfoStr ? JSON.parse(partnerInfoStr) : null;
 
       try {
-        const newToken = await authenticateWithCode(code, shopId, partnerAccountId, partnerInfo);
+        const newToken = await authenticateWithCode(code, shopId, partnerAccountId, partnerInfo, mainAccountId);
 
-        await storeToken(newToken);
-        setToken(newToken);
+        // Main account auth: response có shop_id_list
+        const shopIdList = newToken.shop_id_list;
+        const isMerchantAuth = shopIdList && shopIdList.length > 0;
 
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user && newToken.shop_id && newToken.access_token && newToken.refresh_token) {
-            // Bước 1: Lưu shop và token vào database
-            await saveUserShop(
-              user.id,
-              newToken.shop_id,
-              newToken.access_token,
-              newToken.refresh_token,
-              newToken.expired_at || Date.now() + 4 * 60 * 60 * 1000,
-              newToken.merchant_id,
-              undefined,
-              partnerInfo
-            );
+        if (isMerchantAuth) {
+          // === MAIN ACCOUNT AUTH: nhiều shop ===
+          const firstShopId = shopIdList[0];
+          const tokenForStorage: AccessToken = { ...newToken, shop_id: firstShopId };
+          await storeToken(tokenForStorage);
+          setToken(tokenForStorage);
 
-            console.log('[AUTH] Shop and token saved to database');
-
-            // Bước 2: Fetch và lưu thông tin shop (tên, logo) từ Shopee API
-            // Đợi 1s để đảm bảo shop record đã được tạo trong database
-            // và access_token đã được propagate qua Supabase
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            try {
-              console.log('[AUTH] Fetching shop info for shop_id:', newToken.shop_id);
-              const { data, error } = await supabase.functions.invoke('shopee-shop', {
-                body: { action: 'get-full-info', shop_id: newToken.shop_id, force_refresh: true },
-              });
-              
-              if (error) {
-                console.error('[AUTH] ❌ Failed to fetch shop info (edge function error):', error);
-              } else if (data?.debug?.hasInfoError) {
-                // Shopee API returned error
-                console.error('[AUTH] ❌ Shopee API error:', data.debug.infoErrorValue, data.debug.infoErrorMessage);
-                console.warn('[AUTH] This may be normal for newly authorized shops - try refreshing later');
-              } else if (data?.info?.shop_name) {
-                console.log('[AUTH] ✅ Shop info fetched and saved:', data.info.shop_name);
-              } else {
-                console.warn('[AUTH] ⚠️ Shop info fetched but no shop_name. Debug:', JSON.stringify(data?.debug));
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && newToken.access_token && newToken.refresh_token) {
+              // Lưu từng shop + tạo shop_members
+              for (const sid of shopIdList) {
+                await saveUserShop(
+                  user.id,
+                  sid,
+                  newToken.access_token,
+                  newToken.refresh_token,
+                  newToken.expired_at || Date.now() + 4 * 60 * 60 * 1000,
+                  newToken.merchant_id,
+                  undefined,
+                  partnerInfo
+                );
               }
-            } catch (err) {
-              console.error('[AUTH] ❌ Error fetching shop info:', err);
+              console.log(`[AUTH] All ${shopIdList.length} shops saved for merchant:`, newToken.merchant_id);
+
+              // Fetch shop info cho từng shop
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              const infoPromises = shopIdList.map(sid =>
+                supabase.functions.invoke('shopee-shop', {
+                  body: { action: 'get-full-info', shop_id: sid, force_refresh: true },
+                }).then(({ data }) => {
+                  if (data?.info?.shop_name) {
+                    console.log(`[AUTH] Shop info fetched: ${data.info.shop_name} (${sid})`);
+                  }
+                }).catch(err => {
+                  console.error(`[AUTH] Failed to fetch info for shop ${sid}:`, err);
+                })
+              );
+              await Promise.all(infoPromises);
             }
+          } catch (err) {
+            console.error('[AUTH] Error saving merchant shops:', err);
           }
-        } catch (err) {
-          console.error('[AUTH] Error saving shop to database:', err);
+        } else {
+          // === SHOP-LEVEL AUTH (fallback) ===
+          await storeToken(newToken);
+          setToken(newToken);
+
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && newToken.shop_id && newToken.access_token && newToken.refresh_token) {
+              await saveUserShop(
+                user.id,
+                newToken.shop_id,
+                newToken.access_token,
+                newToken.refresh_token,
+                newToken.expired_at || Date.now() + 4 * 60 * 60 * 1000,
+                newToken.merchant_id,
+                undefined,
+                partnerInfo
+              );
+
+              console.log('[AUTH] Shop and token saved to database');
+
+              await new Promise(resolve => setTimeout(resolve, 1000));
+
+              try {
+                const { data, error } = await supabase.functions.invoke('shopee-shop', {
+                  body: { action: 'get-full-info', shop_id: newToken.shop_id, force_refresh: true },
+                });
+
+                if (error) {
+                  console.error('[AUTH] Failed to fetch shop info:', error);
+                } else if (data?.info?.shop_name) {
+                  console.log('[AUTH] Shop info fetched:', data.info.shop_name);
+                }
+              } catch (err) {
+                console.error('[AUTH] Error fetching shop info:', err);
+              }
+            }
+          } catch (err) {
+            console.error('[AUTH] Error saving shop to database:', err);
+          }
         }
 
         sessionStorage.removeItem('shopee_partner_info');

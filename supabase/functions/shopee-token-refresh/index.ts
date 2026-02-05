@@ -80,9 +80,11 @@ async function refreshAccessToken(
     const body: Record<string, unknown> = {
       refresh_token: refreshToken,
       partner_id: partnerId,
-      shop_id: shopId,
     };
 
+    if (shopId) {
+      body.shop_id = shopId;
+    }
     if (merchantId) {
       body.merchant_id = merchantId;
     }
@@ -225,48 +227,48 @@ serve(async (req) => {
       new_expiry?: string;
     }> = [];
 
+    // Group shops by merchant_id để refresh hiệu quả
+    const merchantGroups = new Map<number, ShopToken[]>();
+    const standaloneShops: ShopToken[] = [];
+
     for (const shop of shopsToRefresh) {
-      try {
-        // Skip if missing required fields
-        if (!shop.refresh_token || !shop.partner_id || !shop.partner_key) {
-          console.log(`[TOKEN-REFRESH] Skipping shop ${shop.shop_id} - missing credentials`);
-          results.push({
-            shop_id: shop.shop_id,
-            shop_name: shop.shop_name,
-            status: 'skipped',
-            error: 'Missing refresh_token or partner credentials',
-          });
-          continue;
+      if (shop.merchant_id) {
+        const group = merchantGroups.get(shop.merchant_id) || [];
+        group.push(shop);
+        merchantGroups.set(shop.merchant_id, group);
+      } else {
+        standaloneShops.push(shop);
+      }
+    }
+
+    // === Merchant-level refresh: 1 lần refresh cho tất cả shop cùng merchant ===
+    for (const [merchantId, groupShops] of merchantGroups) {
+      const representative = groupShops[0];
+
+      if (!representative.refresh_token || !representative.partner_id || !representative.partner_key) {
+        for (const shop of groupShops) {
+          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'skipped', error: 'Missing credentials' });
         }
+        continue;
+      }
 
-        console.log(`[TOKEN-REFRESH] Refreshing token for shop ${shop.shop_id} (${shop.shop_name})`);
+      console.log(`[TOKEN-REFRESH] Refreshing merchant ${merchantId} (${groupShops.length} shops)`);
 
+      try {
+        // Refresh với merchant_id, không truyền shop_id
         const refreshResult = await refreshAccessToken(
-          shop.partner_id,
-          shop.partner_key,
-          shop.refresh_token,
-          shop.shop_id,
-          shop.merchant_id
+          representative.partner_id,
+          representative.partner_key,
+          representative.refresh_token,
+          0, // không truyền shop_id cho merchant refresh
+          merchantId
         );
 
         if (!refreshResult.success || !refreshResult.data) {
-          console.error(`[TOKEN-REFRESH] Failed for shop ${shop.shop_id}:`, refreshResult.error);
-          
-          await logRefreshResult(
-            supabase,
-            shop.id,
-            shop.shop_id,
-            false,
-            refreshResult.error,
-            shop.expired_at
-          );
-
-          results.push({
-            shop_id: shop.shop_id,
-            shop_name: shop.shop_name,
-            status: 'failed',
-            error: refreshResult.error,
-          });
+          for (const shop of groupShops) {
+            await logRefreshResult(supabase, shop.id, shop.shop_id, false, refreshResult.error, shop.expired_at);
+            results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: refreshResult.error });
+          }
           continue;
         }
 
@@ -274,7 +276,75 @@ serve(async (req) => {
         const now = Date.now();
         const newExpiredAt = now + (newToken.expire_in as number) * 1000;
 
-        // Update token in database
+        // Update ALL shops cùng merchant_id bằng 1 query
+        const { error: updateError } = await supabase
+          .from('apishopee_shops')
+          .update({
+            access_token: newToken.access_token,
+            refresh_token: newToken.refresh_token,
+            expire_in: newToken.expire_in,
+            expired_at: newExpiredAt,
+            access_token_expired_at: newExpiredAt,
+            token_updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('merchant_id', merchantId);
+
+        if (updateError) {
+          for (const shop of groupShops) {
+            await logRefreshResult(supabase, shop.id, shop.shop_id, false, `DB update failed: ${updateError.message}`, shop.expired_at);
+            results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: `DB update failed: ${updateError.message}` });
+          }
+        } else {
+          console.log(`[TOKEN-REFRESH] Merchant ${merchantId}: updated ${groupShops.length} shops, new expiry: ${new Date(newExpiredAt).toISOString()}`);
+          for (const shop of groupShops) {
+            await logRefreshResult(supabase, shop.id, shop.shop_id, true, undefined, shop.expired_at, newExpiredAt);
+            results.push({
+              shop_id: shop.shop_id,
+              shop_name: shop.shop_name,
+              status: 'success',
+              old_expiry: shop.expired_at ? new Date(shop.expired_at).toISOString() : undefined,
+              new_expiry: new Date(newExpiredAt).toISOString(),
+            });
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        for (const shop of groupShops) {
+          await logRefreshResult(supabase, shop.id, shop.shop_id, false, (error as Error).message, shop.expired_at);
+          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: (error as Error).message });
+        }
+      }
+    }
+
+    // === Standalone shop refresh (không có merchant_id - flow cũ) ===
+    for (const shop of standaloneShops) {
+      try {
+        if (!shop.refresh_token || !shop.partner_id || !shop.partner_key) {
+          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'skipped', error: 'Missing credentials' });
+          continue;
+        }
+
+        console.log(`[TOKEN-REFRESH] Refreshing standalone shop ${shop.shop_id} (${shop.shop_name})`);
+
+        const refreshResult = await refreshAccessToken(
+          shop.partner_id,
+          shop.partner_key,
+          shop.refresh_token,
+          shop.shop_id
+        );
+
+        if (!refreshResult.success || !refreshResult.data) {
+          await logRefreshResult(supabase, shop.id, shop.shop_id, false, refreshResult.error, shop.expired_at);
+          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: refreshResult.error });
+          continue;
+        }
+
+        const newToken = refreshResult.data;
+        const now = Date.now();
+        const newExpiredAt = now + (newToken.expire_in as number) * 1000;
+
         const { error: updateError } = await supabase
           .from('apishopee_shops')
           .update({
@@ -289,39 +359,13 @@ serve(async (req) => {
           .eq('id', shop.id);
 
         if (updateError) {
-          console.error(`[TOKEN-REFRESH] Failed to update shop ${shop.shop_id}:`, updateError);
-          
-          await logRefreshResult(
-            supabase,
-            shop.id,
-            shop.shop_id,
-            false,
-            `Database update failed: ${updateError.message}`,
-            shop.expired_at
-          );
-
-          results.push({
-            shop_id: shop.shop_id,
-            shop_name: shop.shop_name,
-            status: 'failed',
-            error: `Database update failed: ${updateError.message}`,
-          });
+          await logRefreshResult(supabase, shop.id, shop.shop_id, false, `DB update failed: ${updateError.message}`, shop.expired_at);
+          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: `DB update failed: ${updateError.message}` });
           continue;
         }
 
-        // Log success
-        await logRefreshResult(
-          supabase,
-          shop.id,
-          shop.shop_id,
-          true,
-          undefined,
-          shop.expired_at,
-          newExpiredAt
-        );
-
+        await logRefreshResult(supabase, shop.id, shop.shop_id, true, undefined, shop.expired_at, newExpiredAt);
         console.log(`[TOKEN-REFRESH] Success for shop ${shop.shop_id}, new expiry: ${new Date(newExpiredAt).toISOString()}`);
-
         results.push({
           shop_id: shop.shop_id,
           shop_name: shop.shop_name,
@@ -330,27 +374,10 @@ serve(async (req) => {
           new_expiry: new Date(newExpiredAt).toISOString(),
         });
 
-        // Delay between requests to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
-
       } catch (error) {
-        console.error(`[TOKEN-REFRESH] Error processing shop ${shop.shop_id}:`, error);
-        
-        await logRefreshResult(
-          supabase,
-          shop.id,
-          shop.shop_id,
-          false,
-          (error as Error).message,
-          shop.expired_at
-        );
-
-        results.push({
-          shop_id: shop.shop_id,
-          shop_name: shop.shop_name,
-          status: 'failed',
-          error: (error as Error).message,
-        });
+        await logRefreshResult(supabase, shop.id, shop.shop_id, false, (error as Error).message, shop.expired_at);
+        results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'failed', error: (error as Error).message });
       }
     }
 

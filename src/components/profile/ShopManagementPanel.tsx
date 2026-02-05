@@ -1056,7 +1056,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                   <svg className="w-4 h-4 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  <span className="hidden sm:inline">Kết nối Shop</span>
+                  <span className="hidden sm:inline">Kết nối tài khoản</span>
                 </Button>
               </div>
             )}
@@ -1122,7 +1122,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                   <svg className="w-4 h-4 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  <span className="hidden sm:inline">Kết nối Shop</span>
+                  <span className="hidden sm:inline">Kết nối tài khoản</span>
                 </Button>
               </div>
             )}
@@ -1255,7 +1255,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
               data={shops}
               keyExtractor={(shop) => shop.id}
               emptyMessage="Chưa có shop nào được kết nối"
-              emptyDescription="Nhấn 'Kết nối Shop' để bắt đầu"
+              emptyDescription="Nhấn 'Kết nối tài khoản' để bắt đầu"
             />
           </div>
         </CardContent>
@@ -1295,9 +1295,9 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Kết nối Shop mới</DialogTitle>
+            <DialogTitle>Kết nối tài khoản Shopee</DialogTitle>
             <DialogDescription>
-              Nhập thông tin Partner từ Shopee Open Platform để kết nối shop.
+              Nhập thông tin Partner từ Shopee Open Platform. Tất cả shop trong tài khoản sẽ được tự động thêm vào hệ thống.
             </DialogDescription>
           </DialogHeader>
 

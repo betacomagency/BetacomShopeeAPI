@@ -91,23 +91,26 @@ export async function getAuthorizationUrl(
 /**
  * Đổi code lấy access token
  * @param code - Authorization code từ callback
- * @param shopId - Shop ID (optional)
+ * @param shopId - Shop ID (optional, cho shop-level auth)
  * @param partnerAccountId - (deprecated) ID của partner account
  * @param partnerInfo - Partner credentials trực tiếp
+ * @param mainAccountId - Main account ID (cho main account auth)
  */
 export async function authenticateWithCode(
   code: string,
   shopId?: number,
   partnerAccountId?: string,
-  partnerInfo?: PartnerInfo
+  partnerInfo?: PartnerInfo,
+  mainAccountId?: number
 ): Promise<AccessToken> {
-  console.log('[Shopee] authenticateWithCode called:', { code: code.substring(0, 10) + '...', shopId, partnerInfo });
+  console.log('[Shopee] authenticateWithCode called:', { code: code.substring(0, 10) + '...', shopId, mainAccountId, partnerInfo });
 
   const { data, error } = await supabase.functions.invoke('apishopee-auth', {
     body: {
       action: 'get-token',
       code,
       shop_id: shopId,
+      main_account_id: mainAccountId,
       partner_info: partnerInfo,
     },
   });
@@ -122,13 +125,13 @@ export async function authenticateWithCode(
     throw new Error(data.message || data.error);
   }
 
-  // Đảm bảo shop_id có giá trị (lấy từ param nếu API không trả về)
+  // Main account auth: shop_id có thể không có ở top level, nhưng có shop_id_list
   const token: AccessToken = {
     ...data,
     shop_id: data.shop_id || shopId,
   };
 
-  console.log('[Shopee] Final token:', { shop_id: token.shop_id, has_access_token: !!token.access_token });
+  console.log('[Shopee] Final token:', { shop_id: token.shop_id, merchant_id: token.merchant_id, shop_id_list: token.shop_id_list, has_access_token: !!token.access_token });
 
   return token;
 }

@@ -267,6 +267,65 @@ async function saveToken(
 }
 
 /**
+ * Lưu token cho tất cả shop trong merchant (main account auth)
+ * Copy cùng 1 token vào mỗi shop record
+ */
+async function saveTokenForMerchant(
+  supabase: ReturnType<typeof createClient>,
+  token: Record<string, unknown>,
+  userId?: string,
+  partnerInfo?: PartnerCredentials
+): Promise<{ shop_id_list: number[]; merchant_id?: number }> {
+  const shopIdList = token.shop_id_list as number[] | undefined;
+  const merchantId = token.merchant_id as number | undefined;
+
+  if (!shopIdList || shopIdList.length === 0) {
+    // Fallback: không có shop_id_list, lưu single shop
+    await saveToken(supabase, token, userId, partnerInfo);
+    return { shop_id_list: token.shop_id ? [token.shop_id as number] : [], merchant_id: merchantId };
+  }
+
+  const now = Date.now();
+  const accessTokenExpiredAt = now + (token.expire_in as number) * 1000;
+
+  // Base data dùng chung cho tất cả shop
+  const baseData: Record<string, unknown> = {
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    expire_in: token.expire_in,
+    expired_at: accessTokenExpiredAt,
+    access_token_expired_at: accessTokenExpiredAt,
+    merchant_id: merchantId,
+    token_updated_at: new Date().toISOString(),
+  };
+
+  if (token.expire_time) baseData.expire_time = token.expire_time;
+  if (token.auth_time) baseData.auth_time = token.auth_time;
+
+  if (partnerInfo) {
+    baseData.partner_id = partnerInfo.partnerId;
+    baseData.partner_key = partnerInfo.partnerKey;
+    if (partnerInfo.partnerName) baseData.partner_name = partnerInfo.partnerName;
+    if (partnerInfo.partnerCreatedBy) baseData.partner_created_by = partnerInfo.partnerCreatedBy;
+  }
+
+  // Upsert từng shop_id
+  for (const shopId of shopIdList) {
+    const shopData = { ...baseData, shop_id: shopId };
+    const { error } = await supabase.from('apishopee_shops').upsert(shopData, {
+      onConflict: 'shop_id',
+    });
+    if (error) {
+      console.error(`[AUTH] Failed to save token for shop ${shopId}:`, error);
+    } else {
+      console.log(`[AUTH] Token saved for shop ${shopId} (merchant: ${merchantId})`);
+    }
+  }
+
+  return { shop_id_list: shopIdList, merchant_id: merchantId };
+}
+
+/**
  * Lấy token từ Supabase (bảng shops)
  */
 async function getToken(supabase: ReturnType<typeof createClient>, shopId: number) {
@@ -359,13 +418,26 @@ serve(async (req) => {
           });
         }
 
-        // Đảm bảo shop_id có giá trị (lấy từ request nếu API không trả về)
+        // Main account auth: response có shop_id_list
+        if (token.shop_id_list && token.shop_id_list.length > 0) {
+          const result = await saveTokenForMerchant(supabase, token, userId, credentials);
+          console.log('[AUTH] Main account tokens saved for shops:', result.shop_id_list);
+
+          return new Response(JSON.stringify({
+            ...token,
+            merchant_id: result.merchant_id,
+            shop_id_list: result.shop_id_list,
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Shop-level auth: single shop
         const tokenWithShopId = {
           ...token,
           shop_id: token.shop_id || shopId,
         };
 
-        // Save token to database với partner info
         await saveToken(supabase, tokenWithShopId, userId, credentials);
         console.log('[AUTH] Token saved to database for shop:', tokenWithShopId.shop_id);
 

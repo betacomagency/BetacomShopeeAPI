@@ -27,6 +27,7 @@ export default function AuthCallback() {
     const processCallback = async () => {
       const code = searchParams.get('code');
       const shopId = searchParams.get('shop_id');
+      const mainAccountId = searchParams.get('main_account_id');
       const errorParam = searchParams.get('error');
 
       if (errorParam) {
@@ -67,12 +68,19 @@ export default function AuthCallback() {
       setIsProcessing(true);
 
       try {
-        await handleCallback(code, shopId ? Number(shopId) : undefined);
-        
+        await handleCallback(
+          code,
+          shopId ? Number(shopId) : undefined,
+          undefined,
+          mainAccountId ? Number(mainAccountId) : undefined
+        );
+
         // Hiển thị toast thành công
         toast({
-          title: "Kết nối thành công! 🎉",
-          description: "Shop Shopee đã được liên kết với tài khoản của bạn.",
+          title: "Kết nối thành công!",
+          description: mainAccountId
+            ? "Tất cả shop trong tài khoản đã được liên kết."
+            : "Shop Shopee đã được liên kết với tài khoản của bạn.",
         });
         
         // Dùng navigate với state để báo cho ShopsSettingsPage reload data
