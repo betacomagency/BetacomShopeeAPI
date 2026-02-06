@@ -24,6 +24,12 @@ const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
 // Token sẽ được refresh nếu còn dưới X giờ
 const REFRESH_THRESHOLD_HOURS = 3; // Refresh nếu còn dưới 3 giờ
 
+// Performance config để tránh timeout
+const BATCH_SIZE = 10; // Số shop xử lý mỗi batch
+const REQUEST_TIMEOUT_MS = 10000; // Timeout cho mỗi request Shopee (10s)
+const DELAY_BETWEEN_SHOPS_MS = 500; // Delay giữa các shop (500ms thay vì 1s)
+const MAX_CONCURRENT_IN_BATCH = 3; // Số request chạy song song trong batch
+
 interface ShopToken {
   id: string;
   shop_id: number;
@@ -38,14 +44,26 @@ interface ShopToken {
 }
 
 /**
- * Helper function để gọi API qua proxy hoặc trực tiếp
+ * Helper function để gọi API qua proxy hoặc trực tiếp (với timeout)
  */
-async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
-  if (PROXY_URL) {
-    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
-    return await fetch(proxyUrl, options);
+async function fetchWithProxy(targetUrl: string, options: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const fetchOptions = {
+      ...options,
+      signal: controller.signal,
+    };
+
+    if (PROXY_URL) {
+      const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+      return await fetch(proxyUrl, fetchOptions);
+    }
+    return await fetch(targetUrl, fetchOptions);
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return await fetch(targetUrl, options);
 }
 
 /**
@@ -64,7 +82,7 @@ function createSignature(
 }
 
 /**
- * Refresh access token từ Shopee API
+ * Refresh access token từ Shopee API (với timeout handling)
  */
 async function refreshAccessToken(
   partnerId: number,
@@ -106,7 +124,12 @@ async function refreshAccessToken(
 
     return { success: true, data: result };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    const err = error as Error;
+    // Handle timeout/abort error
+    if (err.name === 'AbortError') {
+      return { success: false, error: `Request timeout after ${REQUEST_TIMEOUT_MS}ms` };
+    }
+    return { success: false, error: err.message };
   }
 }
 
@@ -254,6 +277,8 @@ serve(async (req) => {
       new_expiry?: string;
     }> = [];
 
+    console.log(`[TOKEN-REFRESH] Processing ${shopsToRefresh.length} shops with BATCH_SIZE=${BATCH_SIZE}, TIMEOUT=${REQUEST_TIMEOUT_MS}ms`);
+
     // Group shops by merchant_id để refresh hiệu quả
     const merchantGroups = new Map<number, ShopToken[]>();
     const standaloneShops: ShopToken[] = [];
@@ -266,6 +291,25 @@ serve(async (req) => {
       } else {
         standaloneShops.push(shop);
       }
+    }
+
+    // Helper function để xử lý từng batch song song (giới hạn MAX_CONCURRENT_IN_BATCH)
+    async function processBatch<T, R>(
+      items: T[],
+      processor: (item: T) => Promise<R>,
+      concurrency: number = MAX_CONCURRENT_IN_BATCH
+    ): Promise<R[]> {
+      const results: R[] = [];
+      for (let i = 0; i < items.length; i += concurrency) {
+        const batch = items.slice(i, i + concurrency);
+        const batchResults = await Promise.all(batch.map(processor));
+        results.push(...batchResults);
+        // Delay nhỏ giữa các concurrent batch
+        if (i + concurrency < items.length) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_SHOPS_MS));
+        }
+      }
+      return results;
     }
 
     // === Merchant-level refresh: 1 lần refresh cho tất cả shop cùng merchant ===
@@ -375,7 +419,7 @@ serve(async (req) => {
           }
         }
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_SHOPS_MS));
       } catch (error) {
         console.error(`[TOKEN-REFRESH] Error processing merchant ${merchantId}:`, error);
 
@@ -399,12 +443,37 @@ serve(async (req) => {
       }
     }
 
-    // === Standalone shop refresh (không có merchant_id - flow cũ) ===
-    for (const shop of standaloneShops) {
+    // === Standalone shop refresh (không có merchant_id - xử lý theo batch) ===
+    // Chia shops thành các batch để xử lý song song
+    console.log(`[TOKEN-REFRESH] Processing ${standaloneShops.length} standalone shops in batches of ${BATCH_SIZE}`);
+
+    for (let batchIdx = 0; batchIdx < standaloneShops.length; batchIdx += BATCH_SIZE) {
+      const batch = standaloneShops.slice(batchIdx, batchIdx + BATCH_SIZE);
+      console.log(`[TOKEN-REFRESH] Processing batch ${Math.floor(batchIdx / BATCH_SIZE) + 1}/${Math.ceil(standaloneShops.length / BATCH_SIZE)} (${batch.length} shops)`);
+
+      // Xử lý batch song song (giới hạn MAX_CONCURRENT_IN_BATCH)
+      const batchResults = await processBatch(batch, async (shop) => {
+        return processStandaloneShop(supabase, shop);
+      });
+
+      results.push(...batchResults);
+    }
+
+    // Helper function để xử lý từng standalone shop (trả về result thay vì push)
+    async function processStandaloneShop(
+      supabase: ReturnType<typeof createClient>,
+      shop: ShopToken
+    ): Promise<{
+      shop_id: number;
+      shop_name: string | null;
+      status: 'success' | 'failed' | 'skipped';
+      error?: string;
+      old_expiry?: string;
+      new_expiry?: string;
+    }> {
       try {
         if (!shop.refresh_token || !shop.partner_id || !shop.partner_key) {
-          results.push({ shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'skipped', error: 'Missing credentials' });
-          continue;
+          return { shop_id: shop.shop_id, shop_name: shop.shop_name, status: 'skipped', error: 'Missing credentials' };
         }
 
         console.log(`[TOKEN-REFRESH] Refreshing standalone shop ${shop.shop_id} (${shop.shop_name})`);
@@ -429,13 +498,12 @@ serve(async (req) => {
             shop.expired_at
           );
 
-          results.push({
+          return {
             shop_id: shop.shop_id,
             shop_name: shop.shop_name,
             status: 'failed',
             error: refreshResult.error,
-          });
-          continue;
+          };
         }
 
         const newToken = refreshResult.data;
@@ -468,13 +536,12 @@ serve(async (req) => {
             shop.expired_at
           );
 
-          results.push({
+          return {
             shop_id: shop.shop_id,
             shop_name: shop.shop_name,
             status: 'failed',
             error: `Database update failed: ${updateError.message}`,
-          });
-          continue;
+          };
         }
 
         // Log success
@@ -490,15 +557,13 @@ serve(async (req) => {
         );
 
         console.log(`[TOKEN-REFRESH] Success for shop ${shop.shop_id}, new expiry: ${new Date(newExpiredAt).toISOString()}`);
-        results.push({
+        return {
           shop_id: shop.shop_id,
           shop_name: shop.shop_name,
           status: 'success',
           old_expiry: shop.expired_at ? new Date(shop.expired_at).toISOString() : undefined,
           new_expiry: new Date(newExpiredAt).toISOString(),
-        });
-
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        };
       } catch (error) {
         console.error(`[TOKEN-REFRESH] Error processing shop ${shop.shop_id}:`, error);
 
@@ -512,12 +577,12 @@ serve(async (req) => {
           shop.expired_at
         );
 
-        results.push({
+        return {
           shop_id: shop.shop_id,
           shop_name: shop.shop_name,
           status: 'failed',
           error: (error as Error).message,
-        });
+        };
       }
     }
 

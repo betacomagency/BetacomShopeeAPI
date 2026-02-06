@@ -6,7 +6,7 @@ import ShopManagementPanel from '@/components/profile/ShopManagementPanel';
 
 export default function ShopsSettingsPage() {
   return (
-    <div className="space-y-6 bg-white min-h-full">
+    <div className="h-full flex flex-col bg-white">
       {/* Shop Management Panel */}
       <ShopManagementPanel />
     </div>

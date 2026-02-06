@@ -52,7 +52,9 @@
       "Bash(node -e \"const {execSync} = require\\(''child_process''\\); const result = execSync\\(''npx supabase functions deploy apishopee-order-reports --no-verify-jwt'', {encoding: ''utf-8'', stdio: ''pipe''}\\); console.log\\(result\\);\")",
       "Bash(pnpm tsc:*)",
       "Bash(pnpm run build:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(del \"d:\\\\Betacom\\\\BetacomShopeeAPI\\\\src\\\\pages\\\\LandingPage.tsx\")",
+      "Bash(del /f \"src\\\\hooks\\\\useAdsData.ts\" \"src\\\\components\\\\panels\\\\AdsPanel.tsx\")"
     ]
   }
 }

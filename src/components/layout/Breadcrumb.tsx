@@ -9,6 +9,7 @@ import ShopSelector from './ShopSelector';
 // Map route path to display name
 const routeNames: Record<string, string> = {
   '': 'Trang chủ',
+  'dashboard': 'Dashboard',
   'orders': 'Đơn hàng',
   'products': 'Sản phẩm',
   'reviews': 'Đánh giá',

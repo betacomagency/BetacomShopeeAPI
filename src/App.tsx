@@ -15,7 +15,6 @@ import MainLayout from '@/components/layout/MainLayout';
 import AuthPage from '@/pages/AuthPage';
 import AuthCallback from '@/pages/AuthCallback';
 import HomePage from '@/pages/HomePage';
-import LandingPage from '@/pages/LandingPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
 // Settings Pages
@@ -32,11 +31,9 @@ import OrderDetailPage from '@/pages/OrderDetailPage';
 
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
 import ProductsPage from '@/pages/ProductsPage';
-import MultiPlatformProductsPage from '@/pages/MultiPlatformProductsPage';
 import OrdersPage from '@/pages/OrdersPage';
 import ReviewsPage from '@/pages/ReviewsPage';
 import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
-import AdsPage from '@/pages/AdsPage';
 import AutoAdsPage from '@/pages/AutoAdsPage';
 import AdsSchedulesPage from '@/pages/AdsSchedulesPage';
 import AdsHistoryPage from '@/pages/AdsHistoryPage';
@@ -80,7 +77,7 @@ function App() {
             <BrowserRouter>
               <Routes>
                 {/* Public routes */}
-                <Route path="/" element={<LandingPage />} />
+                <Route path="/" element={<Navigate to="/auth" replace />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/lazada/callback" element={<LazadaCallbackPage />} />
@@ -92,14 +89,12 @@ function App() {
                   <Route path="/orders" element={<OrdersPage />} />
                   <Route path="/orders/:orderSn" element={<OrderDetailPage />} />
                   <Route path="/products" element={<ProductsPage />} />
-                  <Route path="/products/multi-platform" element={<MultiPlatformProductsPage />} />
                   <Route path="/reviews" element={<ReviewsPage />} />
                   <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} />
                   <Route path="/flash-sale" element={<FlashSalePage />} />
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
 
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
-                  <Route path="/ads" element={<AdsPage />} />
                   <Route path="/ads/auto" element={<AutoAdsPage />} />
                   <Route path="/ads/schedules" element={<AdsSchedulesPage />} />
                   <Route path="/ads/history" element={<AdsHistoryPage />} />

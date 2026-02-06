@@ -31,6 +31,7 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 // Batch size for API calls
 const BATCH_SIZE_ITEM_INFO = 50;
 const DELAY_BETWEEN_CALLS_MS = 100; // Delay để tránh rate limit
+const REQUEST_TIMEOUT_MS = 15000; // 15s timeout cho mỗi request Shopee
 
 interface PartnerCredentials {
   partnerId: number;
@@ -58,12 +59,24 @@ async function getPartnerCredentials(
   return { partnerId: DEFAULT_PARTNER_ID, partnerKey: DEFAULT_PARTNER_KEY };
 }
 
-async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
-  if (PROXY_URL) {
-    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
-    return await fetch(proxyUrl, options);
+async function fetchWithProxy(targetUrl: string, options: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const fetchOptions = {
+      ...options,
+      signal: controller.signal,
+    };
+
+    if (PROXY_URL) {
+      const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+      return await fetch(proxyUrl, fetchOptions);
+    }
+    return await fetch(targetUrl, fetchOptions);
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return await fetch(targetUrl, options);
 }
 
 function createSignature(
@@ -187,8 +200,17 @@ async function callShopeeAPI(
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetchWithProxy(url, options);
-    return await response.json();
+    try {
+      const response = await fetchWithProxy(url, options);
+      return await response.json();
+    } catch (fetchError) {
+      const err = fetchError as Error;
+      if (err.name === 'AbortError') {
+        console.error(`[PRODUCT] Request timeout for ${path} after ${REQUEST_TIMEOUT_MS}ms`);
+        return { error: 'timeout', message: `Request timeout after ${REQUEST_TIMEOUT_MS}ms` };
+      }
+      throw fetchError;
+    }
   };
 
   let result = await makeRequest(token.access_token);
@@ -628,10 +650,14 @@ async function syncAllProducts(
       };
     });
 
-    const { error: insertError } = await supabase.from('apishopee_products').insert(productData);
+    // Sử dụng upsert thay vì insert để tránh lỗi 409 Conflict khi sync lại
+    const { error: insertError } = await supabase.from('apishopee_products').upsert(productData, {
+      onConflict: 'shop_id,user_id,item_id', // Unique constraint
+      ignoreDuplicates: false, // Update nếu đã tồn tại
+    });
     if (insertError) {
-      console.error('[SYNC] Insert products error:', insertError);
-      throw new Error(`Insert products failed: ${insertError.message}`);
+      console.error('[SYNC] Upsert products error:', insertError);
+      throw new Error(`Upsert products failed: ${insertError.message}`);
     }
 
     // ========== STEP 6: Insert tier variations và models ==========
@@ -641,17 +667,20 @@ async function syncAllProducts(
       const product = allProducts.find(p => p.item_id === itemId);
       if (!product) continue;
 
-      // Insert tier variations
+      // Upsert tier variations
       if (modelInfo.tierVariations.length > 0) {
-        const { error: tierError } = await supabase.from('apishopee_product_tier_variations').insert({
+        const { error: tierError } = await supabase.from('apishopee_product_tier_variations').upsert({
           shop_id: shopId,
           user_id: userId,
           item_id: itemId,
           tier_variations: modelInfo.tierVariations,
           synced_at: new Date().toISOString(),
+        }, {
+          onConflict: 'shop_id,user_id,item_id',
+          ignoreDuplicates: false,
         });
         if (tierError) {
-          console.error(`[SYNC] Insert tier variations error for item ${itemId}:`, tierError);
+          console.error(`[SYNC] Upsert tier variations error for item ${itemId}:`, tierError);
         }
       }
 
@@ -697,11 +726,14 @@ async function syncAllProducts(
           };
         });
 
-        const { error: modelInsertError } = await supabase.from('apishopee_product_models').insert(modelData);
+        const { error: modelInsertError } = await supabase.from('apishopee_product_models').upsert(modelData, {
+          onConflict: 'shop_id,user_id,item_id,model_id',
+          ignoreDuplicates: false,
+        });
         if (modelInsertError) {
-          console.error(`[SYNC] Insert models error for item ${itemId}:`, modelInsertError);
+          console.error(`[SYNC] Upsert models error for item ${itemId}:`, modelInsertError);
         } else {
-          console.log(`[SYNC] Inserted ${modelData.length} models for item ${itemId}`);
+          console.log(`[SYNC] Upserted ${modelData.length} models for item ${itemId}`);
         }
       }
     }

@@ -19,7 +19,6 @@ import {
   Clock,
   BarChart3,
   ShoppingBag,
-  Layers,
   FileText,
   type LucideIcon,
 } from 'lucide-react';
@@ -78,13 +77,6 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: 'Sản phẩm sàn',
-    icon: Layers,
-    path: '/products/multi-platform',
-    permissionKey: 'products-multi',
-    description: 'Quản lý sản phẩm đa nền tảng',
-  },
-  {
     title: 'Đánh giá',
     icon: Star,
     permissionKey: 'reviews',
@@ -110,7 +102,6 @@ export const menuItems: MenuItem[] = [
     permissionKey: 'ads',
     description: 'Quản lý quảng cáo',
     children: [
-      { title: 'Quản lý quảng cáo', icon: Megaphone, path: '/ads', permissionKey: 'ads' },
       { title: 'Quảng cáo tự động', icon: Zap, path: '/ads/auto', permissionKey: 'ads' },
       { title: 'Lịch tự động', icon: Clock, path: '/ads/schedules', permissionKey: 'ads' },
       { title: 'Lịch sử thực thi', icon: Zap, path: '/ads/history', permissionKey: 'ads' },

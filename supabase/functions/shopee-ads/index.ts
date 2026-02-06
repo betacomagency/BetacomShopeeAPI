@@ -1,16 +1,12 @@
 /**
  * Supabase Edge Function: Shopee Ads
- * Quản lý chiến dịch quảng cáo Shopee
- * 
+ * API quản lý chiến dịch quảng cáo Shopee
+ *
  * Actions:
  * - get-campaign-id-list: Lấy danh sách campaign IDs
  * - get-campaign-setting-info: Lấy thông tin chi tiết campaigns
  * - edit-manual-product-ads: Chỉnh sửa Manual Product Ads
  * - edit-auto-product-ads: Chỉnh sửa Auto Product Ads
- * - get-hourly-performance: Lấy hiệu suất theo giờ (shop-level)
- * - get-daily-performance: Lấy hiệu suất theo ngày (shop-level)
- * - get-campaign-daily-performance: Lấy hiệu suất campaign theo ngày
- * - get-campaign-hourly-performance: Lấy hiệu suất campaign theo giờ
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -23,8 +19,39 @@ const corsHeaders = {
 };
 
 const SHOPEE_HOST = 'https://partner.shopeemobile.com';
+const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
+const REQUEST_TIMEOUT_MS = 30000;
 
-// HMAC-SHA256 using Web Crypto API
+/**
+ * Fetch with proxy support for static IP
+ * Supabase Edge Functions không có static IP, cần route qua proxy server
+ */
+async function fetchWithProxy(
+  targetUrl: string,
+  options: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const fetchOptions = { ...options, signal: controller.signal };
+
+    if (PROXY_URL) {
+      // Route through proxy server with static IP
+      const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+      console.log('[shopee-ads] Using proxy:', PROXY_URL);
+      return await fetch(proxyUrl, fetchOptions);
+    }
+
+    // Direct fetch (will fail if IP not whitelisted)
+    console.log('[shopee-ads] Warning: No PROXY_URL configured, calling Shopee directly');
+    return await fetch(targetUrl, fetchOptions);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function hmacSha256(key: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(key);
@@ -44,11 +71,10 @@ async function hmacSha256(key: string, message: string): Promise<string> {
     .join('');
 }
 
-// Lấy shop credentials từ database
 async function getShopCredentials(supabase: ReturnType<typeof createClient>, shopId: number) {
   const { data: shop, error } = await supabase
     .from('apishopee_shops')
-    .select('access_token, refresh_token, partner_id, partner_key, expired_at')
+    .select('access_token, partner_id, partner_key')
     .eq('shop_id', shopId)
     .single();
 
@@ -67,7 +93,6 @@ async function getShopCredentials(supabase: ReturnType<typeof createClient>, sho
   return shop;
 }
 
-// Gọi Shopee API
 async function callShopeeAPI(
   partnerId: number,
   partnerKey: string,
@@ -98,7 +123,6 @@ async function callShopeeAPI(
   }
 
   const url = `${SHOPEE_HOST}${apiPath}?${queryParams.toString()}`;
-  console.log(`[shopee-ads] ${method} ${apiPath}`);
 
   const fetchOptions: RequestInit = {
     method,
@@ -107,16 +131,10 @@ async function callShopeeAPI(
 
   if (body && method === 'POST') {
     fetchOptions.body = JSON.stringify(body);
-    console.log(`[shopee-ads] Body:`, JSON.stringify(body));
   }
 
-  const response = await fetch(url, fetchOptions);
-  const jsonResponse = await response.json();
-
-  // In ra toàn bộ response để debug
-  console.log(`[shopee-ads] Full Response:`, JSON.stringify(jsonResponse, null, 2));
-
-  return jsonResponse;
+  const response = await fetchWithProxy(url, fetchOptions);
+  return response.json();
 }
 
 serve(async (req) => {
@@ -141,7 +159,6 @@ serve(async (req) => {
       );
     }
 
-    // Use service role key for database operations
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -152,9 +169,7 @@ serve(async (req) => {
     let result;
 
     switch (action) {
-      // Lấy danh sách campaign IDs
       case 'get-campaign-id-list': {
-        console.log(`[shopee-ads] get-campaign-id-list - shop_id: ${shop_id}, ad_type: ${params.ad_type || 'all'}, offset: ${params.offset ?? 0}, limit: ${params.limit ?? 5000}`);
         result = await callShopeeAPI(
           partner_id,
           partner_key,
@@ -168,11 +183,9 @@ serve(async (req) => {
             limit: params.limit ?? 5000,
           }
         );
-        console.log(`[shopee-ads] get-campaign-id-list result - total campaigns: ${result.response?.campaign_list?.length || 0}`);
         break;
       }
 
-      // Lấy thông tin chi tiết campaigns
       case 'get-campaign-setting-info': {
         if (!params.campaign_id_list) {
           return new Response(
@@ -180,9 +193,6 @@ serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
-        const campaignIds = params.campaign_id_list.split(',');
-        console.log(`[shopee-ads] get-campaign-setting-info - shop_id: ${shop_id}, campaigns count: ${campaignIds.length}, info_type_list: ${params.info_type_list || '1,3'}`);
-        console.log(`[shopee-ads] Campaign IDs: ${params.campaign_id_list}`);
 
         result = await callShopeeAPI(
           partner_id,
@@ -196,29 +206,9 @@ serve(async (req) => {
             info_type_list: params.info_type_list || '1,3',
           }
         );
-        console.log(`[shopee-ads] get-campaign-setting-info result - campaigns returned: ${result.response?.campaign_list?.length || 0}`);
-
-        // In ra thông tin từng campaign để debug
-        if (result.response?.campaign_list) {
-          result.response.campaign_list.forEach((camp: any, index: number) => {
-            console.log(`[shopee-ads] Campaign ${index + 1}/${result.response.campaign_list.length}:`);
-            console.log(`  - campaign_id: ${camp.campaign_id}`);
-            console.log(`  - name: ${camp.common_info?.ad_name || 'N/A'}`);
-            console.log(`  - status: ${camp.common_info?.campaign_status || 'N/A'}`);
-            console.log(`  - ad_type: ${camp.common_info?.ad_type || 'N/A'}`);
-            console.log(`  - budget: ${camp.common_info?.campaign_budget || 0}`);
-            console.log(`  - placement: ${camp.common_info?.campaign_placement || 'N/A'}`);
-            console.log(`  - bidding_method: ${camp.common_info?.bidding_method || 'N/A'}`);
-            console.log(`  - roas_target: ${camp.auto_bidding_info?.roas_target || 'N/A'}`);
-            console.log(`  - start_time: ${camp.common_info?.campaign_duration?.start_time || 'N/A'}`);
-            console.log(`  - end_time: ${camp.common_info?.campaign_duration?.end_time || 'N/A'}`);
-            console.log(`  - items: ${camp.common_info?.item_id_list?.length || 0}`);
-          });
-        }
         break;
       }
 
-      // Chỉnh sửa Manual Product Ads
       case 'edit-manual-product-ads': {
         if (!params.campaign_id || !params.edit_action) {
           return new Response(
@@ -226,11 +216,13 @@ serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
+
         const manualBody: Record<string, unknown> = {
           reference_id: params.reference_id || `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
           campaign_id: params.campaign_id,
           edit_action: params.edit_action,
         };
+
         if (params.budget !== undefined) manualBody.budget = params.budget;
         if (params.start_date) manualBody.start_date = params.start_date;
         if (params.end_date !== undefined) manualBody.end_date = params.end_date;
@@ -250,7 +242,6 @@ serve(async (req) => {
         break;
       }
 
-      // Chỉnh sửa Auto Product Ads
       case 'edit-auto-product-ads': {
         if (!params.campaign_id || !params.edit_action) {
           return new Response(
@@ -258,11 +249,13 @@ serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
+
         const autoBody: Record<string, unknown> = {
           reference_id: params.reference_id || `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
           campaign_id: params.campaign_id,
           edit_action: params.edit_action,
         };
+
         if (params.budget !== undefined) autoBody.budget = params.budget;
         if (params.start_date) autoBody.start_date = params.start_date;
         if (params.end_date !== undefined) autoBody.end_date = params.end_date;
@@ -280,125 +273,15 @@ serve(async (req) => {
         break;
       }
 
-      // Lấy hiệu suất theo giờ (shop-level)
-      case 'get-hourly-performance': {
-        if (!params.date) {
-          return new Response(
-            JSON.stringify({ error: 'date is required (DD-MM-YYYY)' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        console.log(`[shopee-ads] get-hourly-performance - shop_id: ${shop_id}, date: ${params.date}`);
-        result = await callShopeeAPI(
-          partner_id,
-          partner_key,
-          access_token,
-          shop_id,
-          '/api/v2/ads/get_all_cpc_ads_hourly_performance',
-          'GET',
-          { performance_date: params.date }
-        );
-        console.log(`[shopee-ads] get-hourly-performance result - hours: ${Array.isArray(result.response) ? result.response.length : (result.response?.metrics_list?.length || 0)}`);
-        break;
-      }
-
-      // Lấy hiệu suất theo ngày (shop-level)
-      case 'get-daily-performance': {
-        if (!params.start_date || !params.end_date) {
-          return new Response(
-            JSON.stringify({ error: 'start_date and end_date are required (DD-MM-YYYY)' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        console.log(`[shopee-ads] get-daily-performance - shop_id: ${shop_id}, start_date: ${params.start_date}, end_date: ${params.end_date}`);
-        result = await callShopeeAPI(
-          partner_id,
-          partner_key,
-          access_token,
-          shop_id,
-          '/api/v2/ads/get_all_cpc_ads_daily_performance',
-          'GET',
-          { start_date: params.start_date, end_date: params.end_date }
-        );
-        console.log(`[shopee-ads] get-daily-performance result - days: ${Array.isArray(result.response) ? result.response.length : (result.response?.metrics_list?.length || 0)}`);
-        break;
-      }
-
-      // Lấy hiệu suất campaign theo ngày
-      case 'get-campaign-daily-performance': {
-        if (!params.start_date || !params.end_date || !params.campaign_id_list) {
-          return new Response(
-            JSON.stringify({ error: 'start_date, end_date, and campaign_id_list are required' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        const campaignIds = params.campaign_id_list.split(',');
-        console.log(`[shopee-ads] get-campaign-daily-performance - shop_id: ${shop_id}, start_date: ${params.start_date}, end_date: ${params.end_date}, campaigns: ${campaignIds.length}`);
-        result = await callShopeeAPI(
-          partner_id,
-          partner_key,
-          access_token,
-          shop_id,
-          '/api/v2/ads/get_product_campaign_daily_performance',
-          'GET',
-          {
-            start_date: params.start_date,
-            end_date: params.end_date,
-            campaign_id_list: params.campaign_id_list,
-          }
-        );
-        console.log(`[shopee-ads] get-campaign-daily-performance result - campaigns: ${result.response?.campaign_list?.length || 0}`);
-        break;
-      }
-
-      // Lấy hiệu suất campaign theo giờ
-      case 'get-campaign-hourly-performance': {
-        if (!params.date || !params.campaign_id_list) {
-          return new Response(
-            JSON.stringify({ error: 'date and campaign_id_list are required' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        const campaignIds = params.campaign_id_list.split(',');
-        console.log(`[shopee-ads] get-campaign-hourly-performance - shop_id: ${shop_id}, date: ${params.date}, campaigns: ${campaignIds.length}`);
-        result = await callShopeeAPI(
-          partner_id,
-          partner_key,
-          access_token,
-          shop_id,
-          '/api/v2/ads/get_product_campaign_hourly_performance',
-          'GET',
-          {
-            performance_date: params.date,
-            campaign_id_list: params.campaign_id_list,
-          }
-        );
-        console.log(`[shopee-ads] get-campaign-hourly-performance result - campaigns: ${result.response?.campaign_list?.length || 0}`);
-        break;
-      }
-
       default:
         return new Response(
-          JSON.stringify({ error: `Invalid action: ${action}` }),
+          JSON.stringify({ error: `Invalid action: ${action}. Valid: get-campaign-id-list, get-campaign-setting-info, edit-manual-product-ads, edit-auto-product-ads` }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
 
-    // Thêm metadata vào response
-    const enrichedResponse = {
-      ...result,
-      _metadata: {
-        action,
-        shop_id,
-        timestamp: new Date().toISOString(),
-        request_params: params,
-      }
-    };
-
-    console.log(`[shopee-ads] Response sent successfully for action: ${action}`);
-
     return new Response(
-      JSON.stringify(enrichedResponse),
+      JSON.stringify({ ...result, _metadata: { action, shop_id, timestamp: new Date().toISOString() } }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

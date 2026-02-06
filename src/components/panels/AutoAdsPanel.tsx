@@ -3,10 +3,12 @@
  * - Không có phần overview thống kê
  * - Thông tin chiến dịch hiển thị dạng bảng
  * - Không có chi tiết theo giờ
+ *
+ * Sử dụng useAdsCampaigns hook để fetch trực tiếp từ Shopee API.
  */
 
-import { useState, useEffect, useMemo } from 'react';
-import { RefreshCw, Wifi, Zap, Clock, Play } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RefreshCw, Zap, Clock, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -24,13 +26,12 @@ import {
   type ScheduledAdsBudget,
 } from '@/lib/shopee/ads';
 import { cn } from '@/lib/utils';
-import { useAdsData, type CampaignWithPerformance } from '@/hooks/useAdsData';
+import { useAdsCampaigns, type CampaignInfo } from '@/hooks/useAdsCampaigns';
 
 // ==================== TYPES ====================
 
 interface AutoAdsPanelProps {
   shopId: number;
-  userId: string;
 }
 
 // ==================== CONSTANTS ====================
@@ -55,30 +56,23 @@ const formatPrice = (p: number) => new Intl.NumberFormat('vi-VN').format(p) + '�
 
 // ==================== MAIN COMPONENT ====================
 
-export function AutoAdsPanel({ shopId, userId }: AutoAdsPanelProps) {
+export function AutoAdsPanel({ shopId }: AutoAdsPanelProps) {
   const { toast } = useToast();
 
-  // ==================== USE REALTIME HOOK ====================
-  // Memoize today's date to prevent re-renders
-  const today = useMemo(() => new Date(), []);
-
+  // ==================== USE NEW HOOK - FETCH DIRECTLY FROM SHOPEE API ====================
   const {
     campaigns,
-    syncStatus,
-    loading: realtimeLoading,
-    syncing,
+    allCampaigns,
+    loading,
     isFetching,
-    error: realtimeError,
-    syncFromAPI,
-    lastSyncAt,
-  } = useAdsData(shopId, userId, {
-    dateRange: 'today',
-    selectedDate: today,
+    error,
+    refetch,
+  } = useAdsCampaigns(shopId, {
     statusFilter: 'ongoing',
   });
 
   // State
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Auto ADS dialog state
   const [showAutoAdsDialog, setShowAutoAdsDialog] = useState(false);
@@ -101,37 +95,47 @@ export function AutoAdsPanel({ shopId, userId }: AutoAdsPanelProps) {
     }
   }, [showAutoAdsDialog, shopId]);
 
-  // Show realtime error
+  // Show error if any
   useEffect(() => {
-    if (realtimeError) {
-      console.warn('[AutoAdsPanel] Realtime error (non-critical):', realtimeError);
+    if (error) {
+      console.warn('[AutoAdsPanel] Error fetching campaigns:', error);
     }
-  }, [realtimeError]);
+  }, [error]);
 
-  // Sync từ Shopee API (manual trigger)
-  const handleSyncFromAPI = async () => {
-    if (syncing || loading) return;
+  // Refresh từ Shopee API (manual trigger)
+  const handleRefresh = async () => {
+    if (refreshing || loading) return;
 
-    setLoading(true);
+    setRefreshing(true);
     try {
-      const result = await syncFromAPI();
-
-      if (result.success) {
+      await refetch();
+      // Show appropriate message based on result
+      if (error) {
         toast({
-          title: 'Thành công',
-          description: result.message
+          title: 'Lỗi',
+          description: error,
+          variant: 'destructive'
+        });
+      } else if (allCampaigns.length === 0) {
+        toast({
+          title: 'Không có dữ liệu',
+          description: 'Shop này chưa có chiến dịch quảng cáo nào',
+        });
+      } else if (campaigns.length === 0) {
+        toast({
+          title: 'Không có chiến dịch đang chạy',
+          description: `Shop có ${allCampaigns.length} chiến dịch nhưng không có chiến dịch nào đang chạy`,
         });
       } else {
         toast({
-          title: 'Lỗi',
-          description: result.message,
-          variant: 'destructive'
+          title: 'Thành công',
+          description: `Đã tải ${campaigns.length} chiến dịch đang chạy`
         });
       }
     } catch (e) {
       toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -271,40 +275,23 @@ export function AutoAdsPanel({ shopId, userId }: AutoAdsPanelProps) {
               <span className="text-xs md:text-sm text-gray-600">
                 Hiển thị <span className="font-semibold text-green-600">{campaigns.length}</span> chiến dịch đang chạy
               </span>
-              {/* Realtime Status Indicator */}
-              <div className="flex items-center gap-1.5">
-                {syncing ? (
-                  <div className="flex items-center gap-1 text-orange-600">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
-                    <span className="text-[10px] md:text-xs">Đang sync...</span>
-                  </div>
-                ) : isFetching ? (
-                  <div className="flex items-center gap-1 text-blue-600">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                    <span className="text-[10px] md:text-xs">Đang cập nhật...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 text-green-600">
-                    <Wifi className="w-3 h-3" />
-                    <span className="text-[10px] md:text-xs">Realtime</span>
-                  </div>
-                )}
-              </div>
-              {lastSyncAt && (
-                <span className="text-[10px] md:text-xs text-gray-400 hidden md:inline">
-                  Sync lần cuối: {new Date(lastSyncAt).toLocaleTimeString('vi-VN')}
-                </span>
+              {/* Status Indicator */}
+              {isFetching && (
+                <div className="flex items-center gap-1 text-blue-600">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                  <span className="text-[10px] md:text-xs">Đang cập nhật...</span>
+                </div>
               )}
             </div>
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <Button variant="outline" size="sm" onClick={() => setShowAutoAdsDialog(true)} disabled={loading || syncing} className="h-8 text-xs whitespace-nowrap">
+              <Button variant="outline" size="sm" onClick={() => setShowAutoAdsDialog(true)} disabled={loading || refreshing} className="h-8 text-xs whitespace-nowrap cursor-pointer">
                 <Zap className="h-4 w-4 mr-1 md:mr-2" />
                 Tự động ADS
               </Button>
-              <Button variant="outline" size="sm" onClick={handleSyncFromAPI} disabled={loading || syncing} className="h-8 text-xs whitespace-nowrap">
-                <RefreshCw className={cn("h-4 w-4 mr-1 md:mr-2", (loading || syncing) && "animate-spin")} />
-                <span className="hidden md:inline">{syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ Shopee'}</span>
-                <span className="md:hidden">Sync</span>
+              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading || refreshing} className="h-8 text-xs whitespace-nowrap cursor-pointer">
+                <RefreshCw className={cn("h-4 w-4 mr-1 md:mr-2", (loading || refreshing) && "animate-spin")} />
+                <span className="hidden md:inline">{refreshing ? 'Đang làm mới...' : 'Làm mới'}</span>
+                <span className="md:hidden">Refresh</span>
               </Button>
             </div>
           </div>
@@ -313,17 +300,17 @@ export function AutoAdsPanel({ shopId, userId }: AutoAdsPanelProps) {
         {/* Content - Bảng chiến dịch đơn giản */}
         <div className="p-4 min-h-[400px]">
           <div className="space-y-4 relative">
-            {(realtimeLoading || isFetching) && campaigns.length === 0 && (
+            {loading && campaigns.length === 0 && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-gray-600 font-medium">Đang tải dữ liệu từ DB...</p>
+                  <p className="text-sm text-gray-600 font-medium">Đang tải dữ liệu...</p>
                 </div>
               </div>
             )}
             <CampaignTable
               campaigns={campaigns}
-              loading={realtimeLoading && campaigns.length === 0}
+              loading={loading && campaigns.length === 0}
             />
           </div>
         </div>
@@ -382,9 +369,9 @@ export function AutoAdsPanel({ shopId, userId }: AutoAdsPanelProps) {
                               )}>
                                 {AD_TYPE_MAP[campaign.ad_type]?.label || campaign.ad_type}
                               </span>
-                              {campaign.performance && (
+                              {campaign.roas_target && (
                                 <span className="text-[10px] md:text-xs text-gray-500">
-                                  ROAS: {campaign.performance.roas?.toFixed(2) || '0.00'}
+                                  ROAS mục tiêu: {campaign.roas_target.toFixed(2)}
                                 </span>
                               )}
                               <span className="text-[10px] md:text-xs text-orange-600 font-medium">
@@ -647,7 +634,7 @@ function CampaignTable({
   campaigns,
   loading,
 }: {
-  campaigns: CampaignWithPerformance[];
+  campaigns: CampaignInfo[];
   loading: boolean;
 }) {
   if (loading) {
@@ -662,8 +649,8 @@ function CampaignTable({
   if (campaigns.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
-        <p className="font-medium">Chưa có chiến dịch</p>
-        <p className="text-sm mt-1">Nhấn "Đồng bộ từ Shopee" để tải</p>
+        <p className="font-medium">Không có chiến dịch đang chạy</p>
+        <p className="text-sm mt-1">Shop này chưa có chiến dịch quảng cáo nào đang hoạt động</p>
       </div>
     );
   }
@@ -685,7 +672,7 @@ function CampaignTable({
           return (
             <div
               key={c.campaign_id}
-              className="grid grid-cols-[1fr_auto_100px] gap-3 px-4 py-3.5 items-center hover:bg-orange-50/50 transition-colors cursor-pointer group"
+              className="grid grid-cols-[1fr_auto_100px] gap-3 px-4 py-3.5 items-center hover:bg-orange-50/50 transition-colors group"
             >
               {/* Campaign Name */}
               <div className="min-w-0">
@@ -695,9 +682,9 @@ function CampaignTable({
                 >
                   {c.name || `Campaign ${c.campaign_id}`}
                 </p>
-                {c.performance && c.performance.roas > 0 && (
+                {c.roas_target && c.roas_target > 0 && (
                   <p className="text-xs text-gray-400 mt-0.5">
-                    ROAS: <span className="font-medium text-green-600">{c.performance.roas.toFixed(2)}</span>
+                    ROAS mục tiêu: <span className="font-medium text-green-600">{c.roas_target.toFixed(2)}</span>
                   </p>
                 )}
               </div>

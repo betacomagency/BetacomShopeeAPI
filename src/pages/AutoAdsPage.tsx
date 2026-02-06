@@ -1,8 +1,8 @@
 /**
  * Auto Ads Page - Trang quảng cáo tự động
+ * Sử dụng hook mới fetch trực tiếp từ Shopee API
  */
 
-import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { AutoAdsPanel } from '@/components/panels/AutoAdsPanel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -10,7 +10,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { AlertCircle, Store } from 'lucide-react';
 
 export default function AutoAdsPage() {
-  const { user } = useAuth();
   const { shops, selectedShopId, isLoading } = useShopeeAuth();
 
   // Loading state
@@ -41,8 +40,8 @@ export default function AutoAdsPage() {
   return (
     <div className="space-y-6">
       {/* Auto Ads Panel */}
-      {selectedShopId && user?.id ? (
-        <AutoAdsPanel key={selectedShopId} shopId={selectedShopId} userId={user.id} />
+      {selectedShopId ? (
+        <AutoAdsPanel key={selectedShopId} shopId={selectedShopId} />
       ) : (
         <Alert>
           <Store className="h-4 w-4" />

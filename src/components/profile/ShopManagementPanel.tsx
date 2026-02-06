@@ -2,7 +2,7 @@
  * Shop Management Panel - Quản lý danh sách shop
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
@@ -32,7 +32,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Users, Trash2 } from 'lucide-react';
+import { Users, Trash2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+
+// Số shop mỗi trang
+const SHOPS_PER_PAGE = 30;
 
 // Admin email - chỉ tài khoản này mới được thêm shop và phân quyền
 const ADMIN_EMAIL = 'betacom.work@gmail.com';
@@ -128,6 +131,12 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [allShopMembers, setAllShopMembers] = useState<Record<string, ShopMember[]>>({});
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Shop search state
+  const [shopSearchQuery, setShopSearchQuery] = useState('');
   const loadShops = useCallback(async (userId?: string) => {
     // Sử dụng userId được truyền vào, hoặc fallback về user?.id
     const effectiveUserId = userId || user?.id;
@@ -928,6 +937,80 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     }
   };
 
+  // Filter shops by search query
+  const filteredShops = useMemo(() => {
+    if (!shopSearchQuery.trim()) return shops;
+    const query = shopSearchQuery.toLowerCase().trim();
+    return shops.filter(shop =>
+      (shop.shop_name?.toLowerCase().includes(query)) ||
+      (shop.shop_id.toString().includes(query))
+    );
+  }, [shops, shopSearchQuery]);
+
+  // Pagination logic - use filteredShops instead of shops
+  const totalPages = useMemo(() => Math.ceil(filteredShops.length / SHOPS_PER_PAGE), [filteredShops.length]);
+
+  const paginatedShops = useMemo(() => {
+    const startIndex = (currentPage - 1) * SHOPS_PER_PAGE;
+    const endIndex = startIndex + SHOPS_PER_PAGE;
+    return filteredShops.slice(startIndex, endIndex);
+  }, [filteredShops, currentPage]);
+
+  // Reset về trang 1 khi danh sách shop hoặc filter thay đổi
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [shopSearchQuery]);
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+
+  // Hàm điều hướng trang
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  // Tạo danh sách số trang để hiển thị
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisiblePages = 5;
+
+    if (totalPages <= maxVisiblePages) {
+      // Hiển thị tất cả nếu ít trang
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Luôn hiển thị trang 1
+      pages.push(1);
+
+      if (currentPage > 3) {
+        pages.push('...');
+      }
+
+      // Các trang xung quanh trang hiện tại
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+
+      if (currentPage < totalPages - 2) {
+        pages.push('...');
+      }
+
+      // Luôn hiển thị trang cuối
+      pages.push(totalPages);
+    }
+
+    return pages;
+  };
+
   const columns = [
     {
       key: 'shop',
@@ -1045,7 +1128,14 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <span className="text-base md:text-lg">Shop có quyền truy cập</span>
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Tìm theo tên hoặc ID shop..."
+                className="pl-9 h-9 text-sm"
+                disabled
+              />
+            </div>
             {!readOnly && isSystemAdmin && (
               <div className="flex items-center gap-2 flex-wrap">
                 <Button variant="outline" size="sm" className="text-blue-600 h-8 md:h-9" disabled>
@@ -1081,11 +1171,19 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader className="pb-4">
+    <div className="h-full flex flex-col">
+      <Card className="flex flex-col flex-1 min-h-0">
+        <CardHeader className="pb-4 flex-shrink-0 border-b bg-white sticky top-0 z-10">
           <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <span className="text-base md:text-lg whitespace-nowrap">Shop có quyền truy cập ({shops.length})</span>
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder={`Tìm theo tên hoặc ID (${shops.length} shop)...`}
+                value={shopSearchQuery}
+                onChange={(e) => setShopSearchQuery(e.target.value)}
+                className="pl-9 h-9 text-sm"
+              />
+            </div>
             {!readOnly && isSystemAdmin && (
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
@@ -1128,135 +1226,294 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0 md:p-6">
+        <CardContent className="p-0 md:p-6 flex-1 overflow-hidden flex flex-col">
           {/* Mobile View */}
-          <div className="md:hidden divide-y">
-            {shops.length === 0 ? (
+          <div className="md:hidden divide-y overflow-y-auto flex-1">
+            {paginatedShops.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-12">
-                <p className="text-slate-500">Chưa có shop nào được kết nối</p>
-                <p className="text-sm text-slate-400">Nhấn '+' để bắt đầu</p>
+                {shopSearchQuery ? (
+                  <>
+                    <p className="text-slate-500">Không tìm thấy shop nào</p>
+                    <p className="text-sm text-slate-400">Thử tìm kiếm với từ khóa khác</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-slate-500">Chưa có shop nào được kết nối</p>
+                    <p className="text-sm text-slate-400">Nhấn '+' để bắt đầu</p>
+                  </>
+                )}
               </div>
             ) : (
-              shops.map((shop) => {
-                const tokenStatus = getTokenStatus(shop);
-                return (
-                  <div key={shop.id} className="p-4 hover:bg-slate-50">
-                    <div className="flex items-start gap-3">
-                      {/* Shop Logo */}
-                      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {shop.shop_logo ? (
-                          <img src={shop.shop_logo} alt={shop.shop_name || ''} className="w-full h-full object-cover" />
-                        ) : (
-                          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                          </svg>
-                        )}
-                      </div>
-                      
-                      {/* Shop Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-medium text-slate-800 truncate">
-                            {shop.shop_name || `Shop ${shop.shop_id}`}
-                          </p>
-                          {refreshingShop === shop.shop_id ? (
-                            <Spinner size="sm" />
-                          ) : !readOnly && (
-                            <button
-                              onClick={() => handleRefreshShopName(shop.shop_id)}
-                              className="text-slate-400 hover:text-slate-600"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
-                            </button>
+              <>
+                {paginatedShops.map((shop) => {
+                  const tokenStatus = getTokenStatus(shop);
+                  return (
+                    <div key={shop.id} className="p-4 hover:bg-slate-50">
+                      <div className="flex items-start gap-3">
+                        {/* Shop Logo */}
+                        <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {shop.shop_logo ? (
+                            <img src={shop.shop_logo} alt={shop.shop_name || ''} className="w-full h-full object-cover" />
+                          ) : (
+                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                            </svg>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 mb-2">
-                          {shop.region || 'VN'} - <span className="font-mono">{shop.shop_id}</span>
-                        </p>
-                        
-                        {/* Badges */}
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                            shop.role === 'admin' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {shop.role === 'admin' ? 'Quản trị viên' : 'Thành viên'}
-                          </span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                            tokenStatus.variant === 'success' ? 'bg-green-100 text-green-700' :
-                            tokenStatus.variant === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            Token: {tokenStatus.label}
-                          </span>
-                        </div>
-                      </div>
 
-                      {/* Actions */}
-                      {!readOnly && isSystemAdmin && (
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-blue-600 h-7 w-7 p-0"
-                            onClick={() => handleRefreshToken(shop)}
-                            disabled={refreshingToken === shop.shop_id}
-                          >
-                            {refreshingToken === shop.shop_id ? (
+                        {/* Shop Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-medium text-slate-800 truncate">
+                              {shop.shop_name || `Shop ${shop.shop_id}`}
+                            </p>
+                            {refreshingShop === shop.shop_id ? (
                               <Spinner size="sm" />
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
+                            ) : !readOnly && (
+                              <button
+                                onClick={() => handleRefreshShopName(shop.shop_id)}
+                                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              </button>
                             )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-slate-600 h-7 w-7 p-0"
-                            onClick={() => handleReconnectShop(shop)}
-                            disabled={reconnectingShop === shop.shop_id}
-                          >
-                            {reconnectingShop === shop.shop_id ? (
-                              <Spinner size="sm" />
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                              </svg>
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-500 h-7 w-7 p-0"
-                            onClick={() => {
-                              setShopToDelete(shop);
-                              setDeleteDialogOpen(true);
-                            }}
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </Button>
+                          </div>
+                          <p className="text-xs text-slate-500 mb-2">
+                            {shop.region || 'VN'} - <span className="font-mono">{shop.shop_id}</span>
+                          </p>
+
+                          {/* Badges */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                              shop.role === 'admin' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {shop.role === 'admin' ? 'Quản trị viên' : 'Thành viên'}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                              tokenStatus.variant === 'success' ? 'bg-green-100 text-green-700' :
+                              tokenStatus.variant === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              Token: {tokenStatus.label}
+                            </span>
+                          </div>
                         </div>
-                      )}
+
+                        {/* Actions */}
+                        {!readOnly && isSystemAdmin && (
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-600 h-7 w-7 p-0"
+                              onClick={() => handleRefreshToken(shop)}
+                              disabled={refreshingToken === shop.shop_id}
+                            >
+                              {refreshingToken === shop.shop_id ? (
+                                <Spinner size="sm" />
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-slate-600 h-7 w-7 p-0"
+                              onClick={() => handleReconnectShop(shop)}
+                              disabled={reconnectingShop === shop.shop_id}
+                            >
+                              {reconnectingShop === shop.shop_id ? (
+                                <Spinner size="sm" />
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 h-7 w-7 p-0"
+                              onClick={() => {
+                                setShopToDelete(shop);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Pagination Controls - Mobile (inside scroll) */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
+                    <div className="text-sm text-slate-500">
+                      Trang {currentPage} / {totalPages}
+                      <span className="ml-2 text-slate-400">
+                        ({filteredShops.length} shop)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {getPageNumbers().map((page, index) => (
+                          typeof page === 'number' ? (
+                            <Button
+                              key={index}
+                              variant={currentPage === page ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => goToPage(page)}
+                              className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+                            >
+                              {page}
+                            </Button>
+                          ) : (
+                            <span key={index} className="px-2 text-slate-400">
+                              {page}
+                            </span>
+                          )
+                        ))}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
 
           {/* Desktop View */}
-          <div className="hidden md:block">
-            <SimpleDataTable
-              columns={columns}
-              data={shops}
-              keyExtractor={(shop) => shop.id}
-              emptyMessage="Chưa có shop nào được kết nối"
-              emptyDescription="Nhấn 'Kết nối tài khoản' để bắt đầu"
-            />
+          <div className="hidden md:flex md:flex-col md:flex-1 md:overflow-hidden">
+            {paginatedShops.length === 0 ? (
+              <div className="flex items-center justify-center py-16 flex-1">
+                <div className="flex flex-col items-center gap-2">
+                  {shopSearchQuery ? (
+                    <>
+                      <p className="text-slate-500">Không tìm thấy shop nào</p>
+                      <p className="text-sm text-slate-400">Thử tìm kiếm với từ khóa khác</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-500">Chưa có shop nào được kết nối</p>
+                      <p className="text-sm text-slate-400">Nhấn 'Kết nối tài khoản' để bắt đầu</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto">
+                <table className="w-full table-fixed">
+                  <thead className="bg-slate-50 border-b sticky top-0 z-10">
+                    <tr>
+                      {columns.map((col) => (
+                        <th
+                          key={col.key}
+                          className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap"
+                          style={{ width: col.width }}
+                        >
+                          {col.header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedShops.map((shop) => (
+                      <tr
+                        key={shop.id}
+                        className="border-b transition-colors hover:bg-slate-50/50"
+                      >
+                        {columns.map((col) => (
+                          <td
+                            key={col.key}
+                            className="px-4 py-3 align-middle text-sm"
+                            style={{ width: col.width }}
+                          >
+                            {col.render(shop)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Pagination Controls - Desktop (at bottom of scroll) */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
+                    <div className="text-sm text-slate-500">
+                      Trang {currentPage} / {totalPages}
+                      <span className="ml-2 text-slate-400">
+                        ({filteredShops.length} shop)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {getPageNumbers().map((page, index) => (
+                          typeof page === 'number' ? (
+                            <Button
+                              key={index}
+                              variant={currentPage === page ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => goToPage(page)}
+                              className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+                            >
+                              {page}
+                            </Button>
+                          ) : (
+                            <span key={index} className="px-2 text-slate-400">
+                              {page}
+                            </span>
+                          )
+                        ))}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

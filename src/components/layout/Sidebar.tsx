@@ -156,16 +156,6 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
         </div>
       </Link>
 
-      {/* Demo Badge */}
-      {user?.email === 'betacom.work@gmail.com' && !collapsed && (
-        <div className="mx-3 mt-3 px-3 py-2 bg-gradient-to-r from-orange-100 to-red-100 rounded-lg border border-orange-200">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
-            <span className="text-xs font-medium text-orange-700">Tài khoản Demo</span>
-          </div>
-        </div>
-      )}
-
       {/* Menu Items */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {filteredMenuItems.map((item) => {

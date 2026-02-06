@@ -2,19 +2,24 @@
  * Supabase Edge Function: Shopee Ads Budget Scheduler
  * Tự động điều chỉnh ngân sách quảng cáo theo lịch
  *
+ * OPTIMIZED FOR SCALE:
+ * - Batch processing với timeout protection
+ * - Concurrent shop processing với rate limiting
+ * - Adaptive delay based on error rates
+ * - Group schedules by shop để giảm credential lookups
+ *
  * Actions:
  * - create: Tạo cấu hình lịch ngân sách mới
  * - update: Cập nhật cấu hình
  * - delete: Xóa cấu hình
  * - list: Xem danh sách cấu hình
  * - logs: Xem lịch sử thay đổi
- * - process: Xử lý điều chỉnh ngân sách (gọi bởi cron mỗi giờ)
+ * - process: Xử lý điều chỉnh ngân sách (gọi bởi cron mỗi 30 phút)
  * - run-now: Test chạy ngay một schedule
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { logActivity, getShopInfo, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,16 +28,57 @@ const corsHeaders = {
 };
 
 const SHOPEE_HOST = 'https://partner.shopeemobile.com';
+const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
 
-// Delay utility to avoid rate limit
+/**
+ * Fetch with proxy support for static IP
+ * Supabase Edge Functions không có static IP, cần route qua proxy server
+ */
+async function fetchWithProxy(
+  targetUrl: string,
+  options: RequestInit,
+  signal?: AbortSignal
+): Promise<Response> {
+  const fetchOptions = signal ? { ...options, signal } : options;
+
+  if (PROXY_URL) {
+    // Route through proxy server with static IP
+    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+    console.log('[scheduler] Using proxy:', PROXY_URL);
+    return await fetch(proxyUrl, fetchOptions);
+  }
+
+  // Direct fetch (will fail if IP not whitelisted)
+  console.log('[scheduler] Warning: No PROXY_URL configured, calling Shopee directly');
+  return await fetch(targetUrl, fetchOptions);
+}
+
+// ================== CONFIGURATION ==================
+const CONFIG = {
+  // Rate limiting
+  BASE_DELAY_MS: 500,
+  MAX_DELAY_MS: 5000,
+  DELAY_INCREMENT_MS: 200,
+
+  // Retry settings
+  MAX_RETRIES: 3,
+  RETRY_BASE_DELAY_MS: 1000,
+
+  // Timeout settings
+  REQUEST_TIMEOUT_MS: 15000,
+  BATCH_TIMEOUT_MS: 50000,
+
+  // Concurrent processing
+  MAX_CONCURRENT_SHOPS: 3,
+  MAX_CAMPAIGNS_PER_BATCH: 50,
+
+  // Error thresholds
+  ERROR_RATE_THRESHOLD: 0.5,
+};
+
+// ================== UTILITIES ==================
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Config for rate limiting
-const API_DELAY_MS = 800; // 800ms delay between API calls
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 2000; // Base retry delay (will use exponential backoff)
-
-// HMAC-SHA256 using Web Crypto API
 async function hmacSha256(key: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(key);
@@ -52,124 +98,458 @@ async function hmacSha256(key: string, message: string): Promise<string> {
     .join('');
 }
 
-// Lấy shop credentials từ database
-async function getShopCredentials(supabase: ReturnType<typeof createClient>, shopId: number) {
+// ================== ACTIVITY LOGGING (INLINED) ==================
+async function logActivity(
+  supabase: SupabaseClient,
+  params: {
+    shopId?: number;
+    shopName?: string;
+    actionType: string;
+    actionCategory: string;
+    actionDescription: string;
+    targetType?: string;
+    targetId?: string;
+    targetName?: string;
+    requestData?: Record<string, unknown>;
+    responseData?: Record<string, unknown>;
+    status?: string;
+    errorMessage?: string;
+    source?: string;
+    durationMs?: number;
+  }
+): Promise<void> {
+  try {
+    await supabase.from('system_activity_logs').insert({
+      shop_id: params.shopId || null,
+      shop_name: params.shopName || null,
+      action_type: params.actionType,
+      action_category: params.actionCategory,
+      action_description: params.actionDescription,
+      target_type: params.targetType || null,
+      target_id: params.targetId || null,
+      target_name: params.targetName || null,
+      request_data: params.requestData || null,
+      response_data: params.responseData || null,
+      status: params.status || 'pending',
+      error_message: params.errorMessage || null,
+      source: params.source || 'auto',
+      duration_ms: params.durationMs || null,
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[activity-log] Error:', err);
+  }
+}
+
+async function getShopName(supabase: SupabaseClient, shopId: number): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('apishopee_shops')
+      .select('shop_name')
+      .eq('shop_id', shopId)
+      .single();
+    return data?.shop_name || null;
+  } catch {
+    return null;
+  }
+}
+
+// ================== TYPES ==================
+interface ShopCredentials {
+  access_token: string;
+  partner_id: number;
+  partner_key: string;
+}
+
+interface Schedule {
+  id: string;
+  shop_id: number;
+  campaign_id: number;
+  campaign_name: string | null;
+  ad_type: 'auto' | 'manual';
+  hour_start: number;
+  hour_end: number;
+  minute_start: number;
+  minute_end: number;
+  budget: number;
+  days_of_week: number[] | null;
+  specific_dates: string[] | null;
+}
+
+interface ProcessResult {
+  schedule_id: string;
+  shop_id: number;
+  campaign_id: number;
+  budget: number;
+  success: boolean;
+  error?: string;
+  retried?: number;
+  skipped?: boolean;
+  skip_reason?: string;
+}
+
+interface ErrorClassification {
+  isRetryable: boolean;
+  isRateLimit: boolean;
+  isAuthError: boolean;
+  isIpWhitelistError: boolean;
+  isCampaignError: boolean;
+  friendlyMessage: string;
+}
+
+// ================== CREDENTIAL CACHE ==================
+const credentialCache = new Map<number, ShopCredentials | null>();
+
+async function getShopCredentials(
+  supabase: SupabaseClient,
+  shopId: number
+): Promise<ShopCredentials | null> {
+  if (credentialCache.has(shopId)) {
+    return credentialCache.get(shopId) || null;
+  }
+
   const { data: shop, error } = await supabase
     .from('apishopee_shops')
     .select('access_token, partner_id, partner_key')
     .eq('shop_id', shopId)
     .single();
 
-  if (error || !shop) {
-    throw new Error(`Shop ${shopId} not found`);
+  if (error || !shop || !shop.access_token || !shop.partner_id || !shop.partner_key) {
+    credentialCache.set(shopId, null);
+    return null;
   }
 
-  return shop;
+  const credentials: ShopCredentials = {
+    access_token: shop.access_token,
+    partner_id: shop.partner_id,
+    partner_key: shop.partner_key,
+  };
+
+  credentialCache.set(shopId, credentials);
+  return credentials;
 }
 
-// Gọi Shopee API để thay đổi ngân sách (với retry logic)
+// ================== ERROR CLASSIFICATION ==================
+function classifyError(errorCode: string, errorMessage: string): ErrorClassification {
+  const lowerMessage = (errorMessage || '').toLowerCase();
+
+  if (lowerMessage.includes('ip') && lowerMessage.includes('undeclared')) {
+    return {
+      isRetryable: false,
+      isRateLimit: false,
+      isAuthError: false,
+      isIpWhitelistError: true,
+      isCampaignError: false,
+      friendlyMessage: 'IP chưa được whitelist trên Shopee Partner Console',
+    };
+  }
+
+  if (errorCode === 'error_rate_limit') {
+    return {
+      isRetryable: true,
+      isRateLimit: true,
+      isAuthError: false,
+      isIpWhitelistError: false,
+      isCampaignError: false,
+      friendlyMessage: 'Quá nhiều request - đang chờ retry',
+    };
+  }
+
+  if (errorCode === 'error_auth' || errorCode === 'error_permission') {
+    return {
+      isRetryable: false,
+      isRateLimit: false,
+      isAuthError: true,
+      isIpWhitelistError: false,
+      isCampaignError: false,
+      friendlyMessage: 'Lỗi xác thực - Token hết hạn hoặc không hợp lệ',
+    };
+  }
+
+  if (errorCode === 'error_server') {
+    return {
+      isRetryable: true,
+      isRateLimit: false,
+      isAuthError: false,
+      isIpWhitelistError: false,
+      isCampaignError: false,
+      friendlyMessage: 'Lỗi server Shopee - đang retry',
+    };
+  }
+
+  const campaignErrors: Record<string, string> = {
+    'ads.error_budget_too_low': 'Ngân sách quá thấp (tối thiểu 100.000đ)',
+    'ads.error_budget_too_high': 'Ngân sách vượt quá giới hạn cho phép',
+    'ads.error_campaign_not_found': 'Không tìm thấy chiến dịch quảng cáo',
+    'ads.error_campaign_status': 'Trạng thái chiến dịch không cho phép thay đổi ngân sách',
+    'error_not_found': 'Không tìm thấy chiến dịch',
+  };
+
+  if (campaignErrors[errorCode]) {
+    return {
+      isRetryable: false,
+      isRateLimit: false,
+      isAuthError: false,
+      isIpWhitelistError: false,
+      isCampaignError: true,
+      friendlyMessage: campaignErrors[errorCode],
+    };
+  }
+
+  return {
+    isRetryable: false,
+    isRateLimit: false,
+    isAuthError: false,
+    isIpWhitelistError: false,
+    isCampaignError: false,
+    friendlyMessage: `${errorMessage} (code: ${errorCode})`,
+  };
+}
+
+// ================== SHOPEE API ==================
+interface EditBudgetResult {
+  success: boolean;
+  error?: string;
+  errorClassification?: ErrorClassification;
+  retried?: number;
+}
+
 async function editCampaignBudget(
-  supabase: ReturnType<typeof createClient>,
+  credentials: ShopCredentials,
   shopId: number,
   campaignId: number,
   adType: 'auto' | 'manual',
   budget: number,
   retryCount = 0
-): Promise<{ success: boolean; error?: string; retried?: number }> {
+): Promise<EditBudgetResult> {
   try {
-    const shop = await getShopCredentials(supabase, shopId);
-    const { access_token, partner_id, partner_key } = shop;
-
-    if (!access_token || !partner_id || !partner_key) {
-      return { success: false, error: 'Thiếu thông tin xác thực shop (access_token/partner_id/partner_key)' };
-    }
-
     const apiPath = adType === 'manual'
       ? '/api/v2/ads/edit_manual_product_ads'
       : '/api/v2/ads/edit_auto_product_ads';
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const baseString = `${partner_id}${apiPath}${timestamp}${access_token}${shopId}`;
-    const sign = await hmacSha256(partner_key, baseString);
+    const baseString = `${credentials.partner_id}${apiPath}${timestamp}${credentials.access_token}${shopId}`;
+    const sign = await hmacSha256(credentials.partner_key, baseString);
 
     const queryParams = new URLSearchParams();
-    queryParams.set('partner_id', partner_id.toString());
+    queryParams.set('partner_id', credentials.partner_id.toString());
     queryParams.set('timestamp', timestamp.toString());
-    queryParams.set('access_token', access_token);
+    queryParams.set('access_token', credentials.access_token);
     queryParams.set('shop_id', shopId.toString());
     queryParams.set('sign', sign);
 
     const url = `${SHOPEE_HOST}${apiPath}?${queryParams.toString()}`;
 
     const body = {
-      reference_id: `scheduler-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      reference_id: `scheduler-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       campaign_id: campaignId,
       edit_action: 'change_budget',
       budget: budget,
     };
 
-    console.log(`[ads-scheduler] Editing campaign ${campaignId} (${adType}) budget to ${budget}${retryCount > 0 ? ` (retry ${retryCount})` : ''}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT_MS);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+      response = await fetchWithProxy(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }, controller.signal);
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      const err = fetchError as Error;
+
+      if (err.name === 'AbortError') {
+        if (retryCount < CONFIG.MAX_RETRIES) {
+          const retryDelay = CONFIG.RETRY_BASE_DELAY_MS * Math.pow(2, retryCount);
+          await delay(retryDelay);
+          return editCampaignBudget(credentials, shopId, campaignId, adType, budget, retryCount + 1);
+        }
+        return { success: false, error: `Request timeout`, retried: retryCount };
+      }
+      throw fetchError;
+    }
+    clearTimeout(timeoutId);
 
     const result = await response.json();
 
-    console.log(`[ads-scheduler] Shopee API response:`, JSON.stringify(result));
-
-    // Kiểm tra lỗi từ Shopee API
     if (result.error && result.error !== '' && result.error !== '-') {
       const errorCode = result.error;
       const errorMsg = result.message || result.error;
+      const classification = classifyError(errorCode, errorMsg);
 
-      // Kiểm tra nếu là rate limit hoặc server error -> retry
-      const isRetryableError = errorCode === 'error_rate_limit' || errorCode === 'error_server';
-
-      if (isRetryableError && retryCount < MAX_RETRIES) {
-        const retryDelay = RETRY_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff
-        console.log(`[ads-scheduler] Rate limit/server error for campaign ${campaignId}, retrying in ${retryDelay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-        await delay(retryDelay);
-        return editCampaignBudget(supabase, shopId, campaignId, adType, budget, retryCount + 1);
+      if (classification.isRetryable && retryCount < CONFIG.MAX_RETRIES) {
+        const retryDelay = CONFIG.RETRY_BASE_DELAY_MS * Math.pow(2, retryCount);
+        if (classification.isRateLimit) {
+          await delay(retryDelay * 2);
+        } else {
+          await delay(retryDelay);
+        }
+        return editCampaignBudget(credentials, shopId, campaignId, adType, budget, retryCount + 1);
       }
 
-      // Map các error code phổ biến sang tiếng Việt
-      const errorMessages: Record<string, string> = {
-        'error_auth': 'Lỗi xác thực - Token hết hạn hoặc không hợp lệ',
-        'error_param': 'Tham số không hợp lệ',
-        'error_permission': 'Không có quyền thực hiện thao tác này',
-        'error_server': 'Lỗi server Shopee',
-        'error_not_found': 'Không tìm thấy chiến dịch',
-        'error_rate_limit': 'Quá nhiều request - Đã retry tối đa',
-        'ads.error_budget_too_low': 'Ngân sách quá thấp (tối thiểu 100.000đ)',
-        'ads.error_budget_too_high': 'Ngân sách vượt quá giới hạn cho phép',
-        'ads.error_campaign_not_found': 'Không tìm thấy chiến dịch quảng cáo',
-        'ads.error_campaign_status': 'Trạng thái chiến dịch không cho phép thay đổi ngân sách',
+      return {
+        success: false,
+        error: classification.friendlyMessage,
+        errorClassification: classification,
+        retried: retryCount,
       };
-
-      const friendlyError = errorMessages[errorCode] || `${errorMsg} (code: ${errorCode})`;
-      return { success: false, error: friendlyError, retried: retryCount };
     }
 
-    // Kiểm tra response có data không
     if (!result.response) {
-      return { success: false, error: 'Shopee API không trả về dữ liệu response', retried: retryCount };
+      return { success: false, error: 'Shopee API không trả về dữ liệu', retried: retryCount };
     }
 
     return { success: true, retried: retryCount };
   } catch (err) {
-    const errorMessage = (err as Error).message;
-    console.error(`[ads-scheduler] Error editing campaign ${campaignId}:`, errorMessage);
-    return { success: false, error: `Lỗi hệ thống: ${errorMessage}`, retried: retryCount };
+    return { success: false, error: `Lỗi: ${(err as Error).message}`, retried: retryCount };
   }
 }
 
+// ================== SCHEDULE PROCESSING ==================
+function groupSchedulesByShop(schedules: Schedule[]): Map<number, Schedule[]> {
+  const grouped = new Map<number, Schedule[]>();
+  for (const schedule of schedules) {
+    const existing = grouped.get(schedule.shop_id) || [];
+    existing.push(schedule);
+    grouped.set(schedule.shop_id, existing);
+  }
+  return grouped;
+}
+
+async function processShopSchedules(
+  supabase: SupabaseClient,
+  shopId: number,
+  schedules: Schedule[],
+  currentDelayMs: number
+): Promise<{ results: ProcessResult[]; newDelayMs: number; errorCount: number }> {
+  const results: ProcessResult[] = [];
+  let delayMs = currentDelayMs;
+  let errorCount = 0;
+
+  const credentials = await getShopCredentials(supabase, shopId);
+
+  if (!credentials) {
+    return {
+      results: schedules.map(s => ({
+        schedule_id: s.id,
+        shop_id: s.shop_id,
+        campaign_id: s.campaign_id,
+        budget: s.budget,
+        success: false,
+        error: 'Shop credentials không hợp lệ',
+        skipped: true,
+        skip_reason: 'invalid_credentials',
+      })),
+      newDelayMs: delayMs,
+      errorCount: schedules.length,
+    };
+  }
+
+  const shopName = await getShopName(supabase, shopId);
+
+  for (let i = 0; i < schedules.length; i++) {
+    const schedule = schedules[i];
+
+    if (i > 0) await delay(delayMs);
+
+    const startTime = Date.now();
+    const result = await editCampaignBudget(
+      credentials,
+      shopId,
+      schedule.campaign_id,
+      schedule.ad_type,
+      schedule.budget
+    );
+    const durationMs = Date.now() - startTime;
+
+    if (!result.success) {
+      errorCount++;
+
+      if (result.errorClassification?.isRateLimit) {
+        delayMs = Math.min(delayMs + CONFIG.DELAY_INCREMENT_MS * 2, CONFIG.MAX_DELAY_MS);
+      } else if (result.errorClassification?.isIpWhitelistError || result.errorClassification?.isAuthError) {
+        results.push({
+          schedule_id: schedule.id,
+          shop_id: shopId,
+          campaign_id: schedule.campaign_id,
+          budget: schedule.budget,
+          success: false,
+          error: result.error,
+          retried: result.retried,
+        });
+
+        for (let j = i + 1; j < schedules.length; j++) {
+          results.push({
+            schedule_id: schedules[j].id,
+            shop_id: shopId,
+            campaign_id: schedules[j].campaign_id,
+            budget: schedules[j].budget,
+            success: false,
+            error: `Skipped - ${result.errorClassification.isIpWhitelistError ? 'IP whitelist' : 'Auth'} error`,
+            skipped: true,
+            skip_reason: result.errorClassification.isIpWhitelistError ? 'ip_whitelist_error' : 'auth_error',
+          });
+          errorCount++;
+        }
+        break;
+      }
+    } else {
+      delayMs = Math.max(delayMs - 50, CONFIG.BASE_DELAY_MS);
+    }
+
+    results.push({
+      schedule_id: schedule.id,
+      shop_id: shopId,
+      campaign_id: schedule.campaign_id,
+      budget: schedule.budget,
+      success: result.success,
+      error: result.error,
+      retried: result.retried,
+    });
+
+    // Log to database (fire and forget)
+    Promise.all([
+      supabase.from('apishopee_ads_budget_logs').insert({
+        shop_id: shopId,
+        campaign_id: schedule.campaign_id,
+        campaign_name: schedule.campaign_name,
+        schedule_id: schedule.id,
+        new_budget: schedule.budget,
+        status: result.success ? 'success' : 'failed',
+        error_message: result.error || null,
+      }),
+      logActivity(supabase, {
+        shopId,
+        shopName: shopName || undefined,
+        actionType: 'ads_budget_update',
+        actionCategory: 'ads',
+        actionDescription: `Cập nhật ngân sách "${schedule.campaign_name || schedule.campaign_id}" → ${schedule.budget.toLocaleString()}đ`,
+        targetType: 'campaign',
+        targetId: schedule.campaign_id.toString(),
+        targetName: schedule.campaign_name || `Campaign ${schedule.campaign_id}`,
+        requestData: { schedule_id: schedule.id, ad_type: schedule.ad_type, budget: schedule.budget },
+        status: result.success ? 'success' : 'failed',
+        errorMessage: result.error,
+        source: 'scheduled',
+        durationMs,
+      }),
+    ]).catch(console.error);
+  }
+
+  return { results, newDelayMs: delayMs, errorCount };
+}
+
+// ================== MAIN HANDLER ==================
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
 
   try {
     const { action, shop_id, ...params } = await req.json();
@@ -179,7 +559,6 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     switch (action) {
-      // Tạo cấu hình lịch ngân sách mới (hoặc update nếu đã tồn tại)
       case 'create': {
         const { campaign_id, campaign_name, ad_type, hour_start, hour_end, minute_start, minute_end, budget, days_of_week, specific_dates } = params;
 
@@ -190,7 +569,6 @@ serve(async (req) => {
           );
         }
 
-        // Dùng upsert để tự động update nếu đã tồn tại schedule với cùng shop_id, campaign_id, hour_start, minute_start
         const { data, error } = await supabase
           .from('apishopee_scheduled_ads_budget')
           .upsert({
@@ -206,10 +584,7 @@ serve(async (req) => {
             days_of_week: days_of_week || null,
             specific_dates: specific_dates || null,
             is_active: true,
-          }, {
-            onConflict: 'shop_id,campaign_id,hour_start,minute_start',
-            ignoreDuplicates: false, // Update nếu đã tồn tại
-          })
+          }, { onConflict: 'shop_id,campaign_id,hour_start,minute_start', ignoreDuplicates: false })
           .select()
           .single();
 
@@ -219,7 +594,6 @@ serve(async (req) => {
         );
       }
 
-      // Cập nhật cấu hình
       case 'update': {
         const { schedule_id, ...updateData } = params;
 
@@ -230,12 +604,9 @@ serve(async (req) => {
           );
         }
 
-        // Remove undefined values
         const cleanData: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(updateData)) {
-          if (value !== undefined) {
-            cleanData[key] = value;
-          }
+          if (value !== undefined) cleanData[key] = value;
         }
 
         const { data, error } = await supabase
@@ -252,7 +623,6 @@ serve(async (req) => {
         );
       }
 
-      // Xóa cấu hình
       case 'delete': {
         const { schedule_id } = params;
 
@@ -275,7 +645,6 @@ serve(async (req) => {
         );
       }
 
-      // Xem danh sách cấu hình
       case 'list': {
         let query = supabase
           .from('apishopee_scheduled_ads_budget')
@@ -284,9 +653,7 @@ serve(async (req) => {
           .order('campaign_id')
           .order('hour_start');
 
-        if (params.campaign_id) {
-          query = query.eq('campaign_id', params.campaign_id);
-        }
+        if (params.campaign_id) query = query.eq('campaign_id', params.campaign_id);
 
         const { data, error } = await query;
 
@@ -296,7 +663,6 @@ serve(async (req) => {
         );
       }
 
-      // Xem lịch sử thay đổi
       case 'logs': {
         let query = supabase
           .from('apishopee_ads_budget_logs')
@@ -305,9 +671,7 @@ serve(async (req) => {
           .order('executed_at', { ascending: false })
           .limit(params.limit || 50);
 
-        if (params.campaign_id) {
-          query = query.eq('campaign_id', params.campaign_id);
-        }
+        if (params.campaign_id) query = query.eq('campaign_id', params.campaign_id);
 
         const { data, error } = await query;
 
@@ -317,23 +681,17 @@ serve(async (req) => {
         );
       }
 
-      // Xử lý điều chỉnh ngân sách (gọi bởi cron mỗi 30 phút)
       case 'process': {
-        // Chuyển sang timezone Việt Nam (UTC+7)
         const now = new Date();
         const vnTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
         const currentHour = vnTime.getHours();
         const currentMinute = vnTime.getMinutes();
-        const currentDay = vnTime.getDay(); // 0 = Sunday
-        const today = vnTime.toISOString().split('T')[0]; // YYYY-MM-DD
-        
-        // Tính tổng phút từ 00:00 để so sánh chính xác
+        const currentDay = vnTime.getDay();
+        const today = vnTime.toISOString().split('T')[0];
         const currentTotalMinutes = currentHour * 60 + currentMinute;
 
-        console.log(`[ads-scheduler] Processing at ${currentHour}:${currentMinute.toString().padStart(2, '0')} (${currentTotalMinutes} mins), day ${currentDay}, date ${today}`);
+        console.log(`[scheduler] ${currentHour}:${currentMinute.toString().padStart(2, '0')} VN, day=${currentDay}`);
 
-        // Lấy tất cả cấu hình active
-        // Sẽ filter chính xác theo phút ở bước sau
         const { data: schedules, error: scheduleError } = await supabase
           .from('apishopee_scheduled_ads_budget')
           .select('*')
@@ -346,132 +704,103 @@ serve(async (req) => {
           );
         }
 
-        // Lọc theo thời gian chính xác (giờ + phút) và ngày
-        const applicableSchedules = (schedules || []).filter((s: any) => {
-          // Tính tổng phút cho start và end
+        const currentSlotStart = currentHour * 60 + (currentMinute < 30 ? 0 : 30);
+        const currentSlotEnd = currentSlotStart + 30;
+
+        const applicableSchedules = (schedules || []).filter((s: Schedule) => {
           const startMinutes = s.hour_start * 60 + (s.minute_start || 0);
           const endMinutes = s.hour_end * 60 + (s.minute_end || 0);
-          
-          // Kiểm tra thời gian hiện tại có nằm trong khoảng không
-          // Cron chạy mỗi 30 phút (phút 0 và 30), nên chỉ chạy schedule khi:
-          // - Schedule start time khớp với thời điểm cron hiện tại (cùng khung 30 phút)
-          // Ví dụ: schedule 10:30, cron 10:30 -> OK, cron 11:00 -> SKIP
-          
-          // Xác định khung 30 phút hiện tại (0-29 hoặc 30-59)
-          const currentSlotStart = currentHour * 60 + (currentMinute < 30 ? 0 : 30);
-          const currentSlotEnd = currentSlotStart + 30;
-          
-          // Schedule chỉ được chạy nếu start time nằm trong khung 30 phút hiện tại
+
           const isScheduleStartInCurrentSlot = startMinutes >= currentSlotStart && startMinutes < currentSlotEnd;
-          
-          // Và thời gian hiện tại vẫn trong khoảng schedule (chưa qua end time)
           const isBeforeEndTime = currentTotalMinutes < endMinutes;
-          
-          console.log(`[ads-scheduler] Schedule ${s.campaign_id}: start=${startMinutes}, end=${endMinutes}, slot=${currentSlotStart}-${currentSlotEnd}, inSlot=${isScheduleStartInCurrentSlot}, beforeEnd=${isBeforeEndTime}`);
-          
-          if (!isScheduleStartInCurrentSlot || !isBeforeEndTime) {
-            return false;
-          }
-          
-          // Nếu có specific_dates, kiểm tra ngày hôm nay
-          if (s.specific_dates && s.specific_dates.length > 0) {
-            return s.specific_dates.includes(today);
-          }
-          // Nếu có days_of_week, kiểm tra ngày trong tuần
-          if (s.days_of_week && s.days_of_week.length > 0 && s.days_of_week.length < 7) {
-            return s.days_of_week.includes(currentDay);
-          }
-          // Mặc định áp dụng tất cả các ngày (hàng ngày)
+
+          if (!isScheduleStartInCurrentSlot || !isBeforeEndTime) return false;
+
+          if (s.specific_dates?.length) return s.specific_dates.includes(today);
+          if (s.days_of_week?.length && s.days_of_week.length < 7) return s.days_of_week.includes(currentDay);
+
           return true;
-        });
+        }) as Schedule[];
 
-        console.log(`[ads-scheduler] Found ${applicableSchedules.length} applicable schedules`);
+        console.log(`[scheduler] ${applicableSchedules.length}/${schedules?.length || 0} schedules applicable`);
 
-        const results: Array<{schedule_id: string; campaign_id: number; budget: number; success: boolean; error?: string; retried?: number}> = [];
+        if (applicableSchedules.length === 0) {
+          return new Response(
+            JSON.stringify({ success: true, processed: 0, message: 'No schedules for current slot' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
 
-        for (let i = 0; i < applicableSchedules.length; i++) {
-          const schedule = applicableSchedules[i];
+        const schedulesToProcess = applicableSchedules.slice(0, CONFIG.MAX_CAMPAIGNS_PER_BATCH);
+        const groupedSchedules = groupSchedulesByShop(schedulesToProcess);
+        const shopIds = Array.from(groupedSchedules.keys());
 
-          // Add delay between API calls to avoid rate limit (except for first call)
-          if (i > 0) {
-            console.log(`[ads-scheduler] Waiting ${API_DELAY_MS}ms before next API call...`);
-            await delay(API_DELAY_MS);
+        console.log(`[scheduler] Processing ${schedulesToProcess.length} schedules across ${shopIds.length} shops`);
+
+        const allResults: ProcessResult[] = [];
+        let currentDelayMs = CONFIG.BASE_DELAY_MS;
+        let totalErrors = 0;
+
+        for (let i = 0; i < shopIds.length; i += CONFIG.MAX_CONCURRENT_SHOPS) {
+          if (Date.now() - startTime > CONFIG.BATCH_TIMEOUT_MS) {
+            console.log(`[scheduler] Timeout reached`);
+            for (let j = i; j < shopIds.length; j++) {
+              const remaining = groupedSchedules.get(shopIds[j]) || [];
+              for (const s of remaining) {
+                allResults.push({
+                  schedule_id: s.id,
+                  shop_id: s.shop_id,
+                  campaign_id: s.campaign_id,
+                  budget: s.budget,
+                  success: false,
+                  error: 'Timeout - will retry next cycle',
+                  skipped: true,
+                  skip_reason: 'batch_timeout',
+                });
+              }
+            }
+            break;
           }
 
-          const startTime = Date.now();
-          const shopInfo = await getShopInfo(supabase, schedule.shop_id);
-
-          const result = await editCampaignBudget(
-            supabase,
-            schedule.shop_id,
-            schedule.campaign_id,
-            schedule.ad_type as 'auto' | 'manual',
-            schedule.budget
+          const batchShopIds = shopIds.slice(i, i + CONFIG.MAX_CONCURRENT_SHOPS);
+          const batchResults = await Promise.all(
+            batchShopIds.map(shopId =>
+              processShopSchedules(supabase, shopId, groupedSchedules.get(shopId) || [], currentDelayMs)
+            )
           );
 
-          const durationMs = Date.now() - startTime;
+          for (const { results, newDelayMs, errorCount } of batchResults) {
+            allResults.push(...results);
+            currentDelayMs = Math.max(currentDelayMs, newDelayMs);
+            totalErrors += errorCount;
+          }
 
-          // Log kết quả vào bảng cũ (backward compatible)
-          await supabase.from('apishopee_ads_budget_logs').insert({
-            shop_id: schedule.shop_id,
-            campaign_id: schedule.campaign_id,
-            campaign_name: schedule.campaign_name,
-            schedule_id: schedule.id,
-            new_budget: schedule.budget,
-            status: result.success ? 'success' : 'failed',
-            error_message: result.error || null,
-          });
-
-          // Log vào system_activity_logs
-          await logActivity(supabase, {
-            shopId: schedule.shop_id,
-            shopName: shopInfo.shopName || undefined,
-            actionType: 'ads_budget_update',
-            actionCategory: 'ads' as ActionCategory,
-            actionDescription: `Cập nhật ngân sách chiến dịch "${schedule.campaign_name || schedule.campaign_id}" thành ${schedule.budget.toLocaleString()}đ`,
-            targetType: 'campaign',
-            targetId: schedule.campaign_id.toString(),
-            targetName: schedule.campaign_name || `Campaign ${schedule.campaign_id}`,
-            requestData: {
-              schedule_id: schedule.id,
-              ad_type: schedule.ad_type,
-              old_budget: schedule.old_budget,
-              new_budget: schedule.budget,
-              hour_start: schedule.hour_start,
-              hour_end: schedule.hour_end,
-            },
-            responseData: result.success ? { success: true } : undefined,
-            status: (result.success ? 'success' : 'failed') as ActionStatus,
-            errorMessage: result.error,
-            source: 'scheduled' as ActionSource,
-            durationMs,
-          });
-
-          results.push({
-            schedule_id: schedule.id,
-            campaign_id: schedule.campaign_id,
-            budget: schedule.budget,
-            success: result.success,
-            error: result.error,
-            retried: result.retried,
-          });
+          if (totalErrors / allResults.length > CONFIG.ERROR_RATE_THRESHOLD) {
+            console.log(`[scheduler] High error rate, slowing down`);
+            await delay(CONFIG.MAX_DELAY_MS);
+          }
         }
+
+        const successCount = allResults.filter(r => r.success).length;
+        const failureCount = allResults.filter(r => !r.success && !r.skipped).length;
+        const skippedCount = allResults.filter(r => r.skipped).length;
+
+        console.log(`[scheduler] Done: ${successCount} ok, ${failureCount} failed, ${skippedCount} skipped`);
 
         return new Response(
           JSON.stringify({
             success: true,
-            processed: results.length,
-            hour: currentHour,
-            minute: currentMinute,
-            day: currentDay,
-            date: today,
-            results,
+            processed: allResults.length,
+            success_count: successCount,
+            failure_count: failureCount,
+            skipped_count: skippedCount,
+            duration_ms: Date.now() - startTime,
+            results: allResults,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // Test: Chạy ngay cho một schedule cụ thể
       case 'run-now': {
         const { schedule_id } = params;
 
@@ -496,51 +825,53 @@ serve(async (req) => {
           );
         }
 
-        const startTime = Date.now();
-        const shopInfo = await getShopInfo(supabase, shop_id);
+        const credentials = await getShopCredentials(supabase, shop_id);
 
+        if (!credentials) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Shop credentials không hợp lệ' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const apiStartTime = Date.now();
         const result = await editCampaignBudget(
-          supabase,
+          credentials,
           shop_id,
           schedule.campaign_id,
           schedule.ad_type as 'auto' | 'manual',
           schedule.budget
         );
+        const durationMs = Date.now() - apiStartTime;
 
-        const durationMs = Date.now() - startTime;
+        const shopName = await getShopName(supabase, shop_id);
 
-        // Log kết quả vào bảng cũ
-        await supabase.from('apishopee_ads_budget_logs').insert({
-          shop_id,
-          campaign_id: schedule.campaign_id,
-          campaign_name: schedule.campaign_name,
-          schedule_id: schedule.id,
-          new_budget: schedule.budget,
-          status: result.success ? 'success' : 'failed',
-          error_message: result.error || null,
-        });
-
-        // Log vào system_activity_logs (manual run)
-        await logActivity(supabase, {
-          shopId: shop_id,
-          shopName: shopInfo.shopName || undefined,
-          actionType: 'ads_budget_update',
-          actionCategory: 'ads' as ActionCategory,
-          actionDescription: `[Manual] Cập nhật ngân sách chiến dịch "${schedule.campaign_name || schedule.campaign_id}" thành ${schedule.budget.toLocaleString()}đ`,
-          targetType: 'campaign',
-          targetId: schedule.campaign_id.toString(),
-          targetName: schedule.campaign_name || `Campaign ${schedule.campaign_id}`,
-          requestData: {
+        Promise.all([
+          supabase.from('apishopee_ads_budget_logs').insert({
+            shop_id,
+            campaign_id: schedule.campaign_id,
+            campaign_name: schedule.campaign_name,
             schedule_id: schedule.id,
-            ad_type: schedule.ad_type,
             new_budget: schedule.budget,
-            trigger: 'run-now',
-          },
-          status: (result.success ? 'success' : 'failed') as ActionStatus,
-          errorMessage: result.error,
-          source: 'manual' as ActionSource,
-          durationMs,
-        });
+            status: result.success ? 'success' : 'failed',
+            error_message: result.error || null,
+          }),
+          logActivity(supabase, {
+            shopId: shop_id,
+            shopName: shopName || undefined,
+            actionType: 'ads_budget_update',
+            actionCategory: 'ads',
+            actionDescription: `[Manual] Cập nhật ngân sách "${schedule.campaign_name || schedule.campaign_id}" → ${schedule.budget.toLocaleString()}đ`,
+            targetType: 'campaign',
+            targetId: schedule.campaign_id.toString(),
+            targetName: schedule.campaign_name || `Campaign ${schedule.campaign_id}`,
+            requestData: { schedule_id: schedule.id, ad_type: schedule.ad_type, budget: schedule.budget, trigger: 'run-now' },
+            status: result.success ? 'success' : 'failed',
+            errorMessage: result.error,
+            source: 'manual',
+            durationMs,
+          }),
+        ]).catch(console.error);
 
         return new Response(
           JSON.stringify({
@@ -548,6 +879,7 @@ serve(async (req) => {
             error: result.error,
             campaign_id: schedule.campaign_id,
             budget: schedule.budget,
+            duration_ms: durationMs,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -559,11 +891,10 @@ serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
-
   } catch (err) {
-    console.error('[ads-scheduler] Error:', err);
+    console.error('[scheduler] Error:', err);
     return new Response(
-      JSON.stringify({ error: (err as Error).message }),
+      JSON.stringify({ error: (err as Error).message, duration_ms: Date.now() - startTime }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

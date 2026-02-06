@@ -53,7 +53,7 @@ export default function MainLayout() {
       {/* Main Content */}
       <main
         className={cn(
-          'min-h-screen transition-all duration-300',
+          'min-h-screen h-screen flex flex-col transition-all duration-300',
           sidebarCollapsed ? 'md:pl-16' : 'md:pl-64',
           'pl-0' // No padding on mobile
         )}
@@ -61,7 +61,10 @@ export default function MainLayout() {
         {/* Breadcrumb Header */}
         <Breadcrumb onMobileMenuClick={() => setMobileMenuOpen(true)} />
 
-        <Outlet />
+        {/* Page Content - fills remaining height with scrolling */}
+        <div className="flex-1 overflow-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   );
