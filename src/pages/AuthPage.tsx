@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 
 // Platform icons
@@ -65,11 +65,9 @@ const FEATURES = [
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { error, signIn, isAuthenticated } = useAuth();
-  const isDemo = searchParams.get('demo') === 'true';
-  const [email, setEmail] = useState(isDemo ? 'betacom.work@gmail.com' : '');
-  const [password, setPassword] = useState(isDemo ? 'Admin123a' : '');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
