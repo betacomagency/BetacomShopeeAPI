@@ -32,3 +32,4 @@ dist-ssr
 import-data-to-target.sql
 migrate-data.mjs
 migration-to-target.sql
+.vercel
