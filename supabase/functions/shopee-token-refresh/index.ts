@@ -18,7 +18,7 @@ const corsHeaders = {
 // Config
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const SHOPEE_BASE_URL = Deno.env.get('SHOPEE_BASE_URL') || 'https://partner.shopeemobile.com';
+const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com';
 const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
 
 // Token sẽ được refresh nếu còn dưới X giờ

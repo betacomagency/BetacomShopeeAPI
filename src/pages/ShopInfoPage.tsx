@@ -1,15 +1,15 @@
 /**
- * Orders Page - Trang quản lý đơn hàng Shopee
+ * Shop Info Page - Trang thông tin chi tiết shop Shopee
  */
 
 import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
-import { OrdersPanel } from '@/components/panels/OrdersPanel';
+import { ShopInfoPanel } from '@/components/panels/ShopInfoPanel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { AlertCircle, Store } from 'lucide-react';
 
-export default function OrdersPage() {
+export default function ShopInfoPage() {
   const { user } = useAuth();
   const { shops, selectedShopId, isLoading } = useShopeeAuth();
 
@@ -28,7 +28,7 @@ export default function OrdersPage() {
         <AlertDescription>
           Bạn chưa kết nối shop nào. Vui lòng vào{' '}
           <a href="/settings/shops" className="text-orange-500 hover:underline font-medium">
-            Cài đặt → Quản lý Shop
+            Cài đặt &rarr; Quản lý Shop
           </a>{' '}
           để kết nối shop Shopee.
         </AlertDescription>
@@ -36,20 +36,18 @@ export default function OrdersPage() {
     );
   }
 
-  return (
-    <div>
-      {selectedShopId && user?.id ? (
-        <OrdersPanel key={selectedShopId} shopId={selectedShopId} userId={user.id} />
-      ) : (
-        <div className="p-6">
-          <Alert>
-            <Store className="h-4 w-4" />
-            <AlertDescription>
-              Vui lòng chọn shop để xem đơn hàng.
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
-    </div>
-  );
+  if (!selectedShopId || !user?.id) {
+    return (
+      <div className="p-6">
+        <Alert>
+          <Store className="h-4 w-4" />
+          <AlertDescription>
+            Vui lòng chọn shop để xem thông tin.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return <ShopInfoPanel key={`shop-info-${selectedShopId}`} shopId={selectedShopId} userId={user.id} />;
 }

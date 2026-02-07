@@ -24,24 +24,17 @@ import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
 import AdvancedSettingsPage from '@/pages/settings/AdvancedSettingsPage';
 
 // Feature Pages
+import ShopInfoPage from '@/pages/ShopInfoPage';
+import AccountHealthPage from '@/pages/AccountHealthPage';
 import FlashSalePage from '@/pages/FlashSalePage';
 import FlashSaleDetailPage from '@/pages/FlashSaleDetailPage';
-import OrderDetailPage from '@/pages/OrderDetailPage';
-
-
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
 import ProductsPage from '@/pages/ProductsPage';
-import OrdersPage from '@/pages/OrdersPage';
 import ReviewsPage from '@/pages/ReviewsPage';
 import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
 import AutoAdsPage from '@/pages/AutoAdsPage';
 import AdsSchedulesPage from '@/pages/AdsSchedulesPage';
 import AdsHistoryPage from '@/pages/AdsHistoryPage';
-
-// Analytics Pages
-import AnalyticsOrdersPage from '@/pages/analytics/AnalyticsOrdersPageOptimized';
-import AnalyticsReviewsPage from '@/pages/analytics/AnalyticsReviewsPage';
-import AnalyticsCampaignsPage from '@/pages/analytics/AnalyticsCampaignsPage';
 
 // Lazada Pages
 import LazadaDashboardPage from '@/pages/lazada/LazadaDashboardPage';
@@ -85,9 +78,9 @@ function App() {
                 {/* Protected routes with MainLayout */}
                 <Route element={<MainLayout />}>
                   <Route path="/dashboard" element={<HomePage />} />
+                  <Route path="/shop-info" element={<ShopInfoPage />} />
+                  <Route path="/account-health" element={<AccountHealthPage />} />
                   {/* Feature Routes */}
-                  <Route path="/orders" element={<OrdersPage />} />
-                  <Route path="/orders/:orderSn" element={<OrderDetailPage />} />
                   <Route path="/products" element={<ProductsPage />} />
                   <Route path="/reviews" element={<ReviewsPage />} />
                   <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} />
@@ -99,10 +92,6 @@ function App() {
                   <Route path="/ads/schedules" element={<AdsSchedulesPage />} />
                   <Route path="/ads/history" element={<AdsHistoryPage />} />
 
-                  {/* Analytics Routes */}
-                  <Route path="/analytics/orders" element={<AnalyticsOrdersPage />} />
-                  <Route path="/analytics/reviews" element={<AnalyticsReviewsPage />} />
-                  <Route path="/analytics/campaigns" element={<AnalyticsCampaignsPage />} />
                   {/* Settings Routes */}
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />

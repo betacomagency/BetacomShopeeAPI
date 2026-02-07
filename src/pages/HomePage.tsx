@@ -3,7 +3,6 @@
  * Hiển thị thống kê từ tất cả các kênh bán hàng (Shopee, Lazada)
  */
 
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Store,
@@ -23,12 +22,7 @@ import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { useLazadaAuth } from '@/contexts/LazadaAuthContext';
 import { cn } from '@/lib/utils';
 import { ADMIN_EMAIL } from '@/config/menu-config';
-import { useDashboardData, type DateRangeOption } from '@/hooks/useDashboardData';
-import { useBestSellingProducts, type TopLimitOption } from '@/hooks/useBestSellingProducts';
 import { useInventorySummary } from '@/hooks/useInventorySummary';
-import { DashboardOverview } from '@/components/dashboard/DashboardOverview';
-import { RevenueChart } from '@/components/dashboard/RevenueChart';
-import { BestSellingProducts } from '@/components/dashboard/BestSellingProducts';
 import { InventorySummary } from '@/components/dashboard/InventorySummary';
 
 // Platform icons
@@ -164,33 +158,6 @@ export default function HomePage() {
   const { shops: shopeeShops, selectedShopId, isLoading: isShopeeLoading } = useShopeeAuth();
   const { shops: lazadaShops, isLoading: isLazadaLoading } = useLazadaAuth();
 
-  const [overviewDateRange, setOverviewDateRange] = useState<DateRangeOption>('today');
-  const [chartDateRange, setChartDateRange] = useState<DateRangeOption>('14days');
-  const [bestSellingDateRange, setBestSellingDateRange] = useState<DateRangeOption>('7days');
-  const [bestSellingTopLimit, setBestSellingTopLimit] = useState<TopLimitOption>(10);
-
-  // Dashboard data - uses overview date range for stats
-  const { stats: overviewStats, loading: overviewLoading } = useDashboardData(
-    selectedShopId || 0,
-    user?.id || '',
-    overviewDateRange
-  );
-
-  // Chart data - uses chart date range
-  const { stats: chartStats, loading: chartLoading } = useDashboardData(
-    selectedShopId || 0,
-    user?.id || '',
-    chartDateRange
-  );
-
-  // Best selling products
-  const { products: bestSellingProducts, loading: bestSellingLoading } = useBestSellingProducts(
-    selectedShopId || 0,
-    user?.id || '',
-    bestSellingDateRange,
-    bestSellingTopLimit
-  );
-
   // Inventory summary
   const { summary: inventorySummary, loading: inventoryLoading } = useInventorySummary(
     selectedShopId || 0,
@@ -253,32 +220,6 @@ export default function HomePage() {
     <div className="p-4 md:p-6 space-y-6">
       {/* Token Alerts for Admin */}
       <TokenAlerts />
-
-      {/* Dashboard Overview */}
-      <DashboardOverview
-        stats={overviewStats}
-        loading={overviewLoading}
-        dateRange={overviewDateRange}
-        onDateRangeChange={setOverviewDateRange}
-      />
-
-      {/* Revenue Chart */}
-      <RevenueChart
-        data={chartStats?.dailyStats || []}
-        loading={chartLoading}
-        dateRange={chartDateRange}
-        onDateRangeChange={setChartDateRange}
-      />
-
-      {/* Best Selling Products */}
-      <BestSellingProducts
-        products={bestSellingProducts}
-        loading={bestSellingLoading}
-        dateRange={bestSellingDateRange}
-        onDateRangeChange={setBestSellingDateRange}
-        topLimit={bestSellingTopLimit}
-        onTopLimitChange={setBestSellingTopLimit}
-      />
 
       {/* Inventory Summary */}
       <InventorySummary

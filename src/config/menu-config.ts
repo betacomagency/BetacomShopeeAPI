@@ -17,9 +17,9 @@ import {
   Star,
   Megaphone,
   Clock,
-  BarChart3,
   ShoppingBag,
   FileText,
+  Activity,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -59,13 +59,18 @@ export const menuItems: MenuItem[] = [
     description: 'Xem tổng quan hệ thống',
   },
   {
-    title: 'Đơn hàng',
-    icon: ShoppingCart,
-    permissionKey: 'orders',
-    description: 'Quản lý đơn hàng',
-    children: [
-      { title: 'Danh sách đơn hàng', icon: ShoppingCart, path: '/orders', permissionKey: 'orders' },
-    ],
+    title: 'Thông tin Shop',
+    icon: Store,
+    path: '/shop-info',
+    permissionKey: 'shop-info',
+    description: 'Xem thông tin chi tiết shop Shopee',
+  },
+  {
+    title: 'Hiệu quả hoạt động',
+    icon: Activity,
+    path: '/account-health',
+    permissionKey: 'account-health',
+    description: 'Xem hiệu quả hoạt động shop',
   },
   {
     title: 'Sản phẩm',
@@ -105,17 +110,6 @@ export const menuItems: MenuItem[] = [
       { title: 'Quảng cáo tự động', icon: Zap, path: '/ads/auto', permissionKey: 'ads' },
       { title: 'Lịch tự động', icon: Clock, path: '/ads/schedules', permissionKey: 'ads' },
       { title: 'Lịch sử thực thi', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
-    ],
-  },
-  {
-    title: 'Báo cáo',
-    icon: BarChart3,
-    permissionKey: 'analytics',
-    description: 'Báo cáo dữ liệu',
-    children: [
-      { title: 'Đơn hàng', icon: ShoppingCart, path: '/analytics/orders', permissionKey: 'analytics' },
-      { title: 'Đánh giá', icon: Star, path: '/analytics/reviews', permissionKey: 'analytics' },
-      { title: 'Chiến dịch', icon: Megaphone, path: '/analytics/campaigns', permissionKey: 'analytics' },
     ],
   },
   {

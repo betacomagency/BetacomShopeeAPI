@@ -10,7 +10,8 @@ import ShopSelector from './ShopSelector';
 const routeNames: Record<string, string> = {
   '': 'Trang chủ',
   'dashboard': 'Dashboard',
-  'orders': 'Đơn hàng',
+  'shop-info': 'Thông tin Shop',
+  'account-health': 'Hiệu quả hoạt động',
   'products': 'Sản phẩm',
   'reviews': 'Đánh giá',
   'auto-reply': 'Đánh giá tự động',
@@ -25,25 +26,19 @@ const routeNames: Record<string, string> = {
   'shops': 'Quản lý Shop',
   'users': 'Quản lý người dùng',
   'advanced': 'Quản lý nâng cao',
-  'analytics': 'Báo cáo',
 };
 
 // Parent route names for nested routes
 const parentRouteNames: Record<string, string> = {
-  'orders': 'Đơn hàng',
   'products': 'Sản phẩm',
   'reviews': 'Đánh giá',
   'flash-sale': 'Flash Sale',
   'settings': 'Cài đặt',
   'ads': 'Quảng cáo',
-  'analytics': 'Báo cáo',
 };
 
 // Child route display names (when showing as last item)
 const childRouteNames: Record<string, Record<string, string>> = {
-  'orders': {
-    '': 'Danh sách đơn hàng',
-  },
   'products': {
     '': 'Danh sách sản phẩm',
   },
@@ -60,11 +55,6 @@ const childRouteNames: Record<string, Record<string, string>> = {
     '': 'Quản lý quảng cáo',
     'history': 'Lịch sử',
   },
-  'analytics': {
-    'orders': 'Báo cáo đơn hàng',
-    'reviews': 'Báo cáo đánh giá',
-    'campaigns': 'Báo cáo chiến dịch',
-  },
 };
 
 // Check if segment is a dynamic ID (numeric or order SN like "260121KA117CKD")
@@ -80,10 +70,6 @@ function isDynamicSegment(segment: string): boolean {
 function getSegmentName(segment: string, prevSegment?: string, isLast?: boolean, allSegments?: string[]): string {
   // If it's a dynamic ID, show contextual name
   if (isDynamicSegment(segment)) {
-    // Order detail page: /orders/:orderSn
-    if (prevSegment === 'orders') {
-      return `Chi tiết đơn hàng #${segment}`;
-    }
     if (prevSegment === 'detail') {
       return `#${segment}`;
     }
@@ -111,7 +97,6 @@ function getSegmentName(segment: string, prevSegment?: string, isLast?: boolean,
 // Routes that need a virtual parent in breadcrumb
 // e.g., /reviews should show: Trang chủ > Đánh giá > Quản lý đánh giá
 const virtualParentRoutes: Record<string, { parentName: string; childName: string }> = {
-  'orders': { parentName: 'Đơn hàng', childName: 'Danh sách đơn hàng' },
   'products': { parentName: 'Sản phẩm', childName: 'Danh sách sản phẩm' },
   'reviews': { parentName: 'Đánh giá', childName: 'Quản lý đánh giá' },
   'flash-sale': { parentName: 'Flash Sale', childName: 'Danh sách' },
