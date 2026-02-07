@@ -15,14 +15,6 @@ const ShopeeIcon = () => (
   />
 );
 
-const LazadaIcon = () => (
-  <img
-    src="https://recland.s3.ap-southeast-1.amazonaws.com/company/19a57791bf92848b511de18eaebca94a.png"
-    alt="Lazada"
-    className="w-7 h-7 object-contain"
-  />
-);
-
 const TikTokIcon = () => (
   <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
     <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/>
@@ -37,7 +29,6 @@ const FacebookIcon = () => (
 
 const PLATFORMS = [
   { name: 'Shopee', icon: ShopeeIcon, color: 'text-orange-500', bgColor: 'bg-orange-100', available: true },
-  { name: 'Lazada', icon: LazadaIcon, color: 'text-blue-600', bgColor: 'bg-blue-100', available: true },
   { name: 'TikTok Shop', icon: TikTokIcon, color: 'text-slate-800', bgColor: 'bg-slate-100', available: false },
   { name: 'Facebook', icon: FacebookIcon, color: 'text-blue-500', bgColor: 'bg-blue-100', available: false },
 ];
@@ -50,7 +41,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Kết nối đa nền tảng',
-    description: 'Shopee, Lazada, TikTok Shop, Facebook trong một nơi',
+    description: 'Shopee, TikTok Shop, Facebook trong một nơi',
   },
   {
     icon: (
@@ -237,7 +228,7 @@ export default function AuthPage() {
 
           <div className="text-center mt-6">
             <p className="text-xs text-slate-400">
-              Hỗ trợ <span className="font-medium text-orange-500">Shopee</span> · <span className="font-medium text-blue-600">Lazada</span> · <span className="font-medium text-slate-600">TikTok</span> · <span className="font-medium text-blue-500">Facebook</span>
+              Hỗ trợ <span className="font-medium text-orange-500">Shopee</span> · <span className="font-medium text-slate-600">TikTok</span> · <span className="font-medium text-blue-500">Facebook</span>
             </p>
           </div>
         </div>

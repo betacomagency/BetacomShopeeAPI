@@ -7,6 +7,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -396,7 +397,22 @@ serve(async (req) => {
         const credentials = await getPartnerCredentials(supabase, partnerInfo, shopId);
         console.log('[AUTH] Using partner credentials:', { partnerId: credentials.partnerId });
 
+        const getTokenStart = Date.now();
         const token = await getAccessToken(credentials, code, shopId, mainAccountId);
+
+        // Log API call
+        const tokenStatus = getApiCallStatus(token);
+        logApiCall(supabase, {
+          shopId: shopId || token.shop_id,
+          edgeFunction: 'apishopee-auth',
+          apiEndpoint: '/api/v2/auth/token/get',
+          httpMethod: 'POST',
+          apiCategory: 'auth',
+          status: tokenStatus.status,
+          shopeeError: tokenStatus.shopeeError,
+          shopeeMessage: tokenStatus.shopeeMessage,
+          durationMs: Date.now() - getTokenStart,
+        });
 
         console.log('[AUTH] Shopee API response:', {
           error: token.error,
@@ -452,7 +468,22 @@ serve(async (req) => {
 
         // Lấy partner credentials
         const credentials = await getPartnerCredentials(supabase, partnerInfo, shop_id);
+        const refreshStart = Date.now();
         const token = await refreshAccessToken(credentials, refresh_token, shop_id, merchant_id);
+
+        // Log API call
+        const refreshStatus = getApiCallStatus(token);
+        logApiCall(supabase, {
+          shopId: shop_id,
+          edgeFunction: 'apishopee-auth',
+          apiEndpoint: '/api/v2/auth/access_token/get',
+          httpMethod: 'POST',
+          apiCategory: 'auth',
+          status: refreshStatus.status,
+          shopeeError: refreshStatus.shopeeError,
+          shopeeMessage: refreshStatus.shopeeMessage,
+          durationMs: Date.now() - refreshStart,
+        });
 
         if (token.error) {
           return new Response(JSON.stringify({ error: token.error, message: token.message, success: false }), {

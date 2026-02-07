@@ -13,6 +13,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 import { logActivity, getShopInfo, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -221,6 +222,9 @@ async function callShopeeReplyAPI(
     return await response.json();
   };
 
+  const startTime = Date.now();
+  let wasTokenRefreshed = false;
+  let retryCount = 0;
   let result = await makeRequest(token.access_token);
 
   // Auto-retry khi token hết hạn
@@ -230,9 +234,29 @@ async function callShopeeReplyAPI(
 
     if (!newToken.error) {
       await saveToken(supabase, shopId, newToken);
+      wasTokenRefreshed = true;
+      retryCount = 1;
       result = await makeRequest(newToken.access_token);
     }
   }
+
+  // Log API call (non-blocking)
+  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+  logApiCall(supabase, {
+    shopId,
+    edgeFunction: 'apishopee-auto-reply',
+    apiEndpoint: REPLY_API_PATH,
+    httpMethod: 'POST',
+    apiCategory: 'review',
+    status: apiStatus.status,
+    shopeeError: apiStatus.shopeeError,
+    shopeeMessage: apiStatus.shopeeMessage,
+    durationMs: Date.now() - startTime,
+    responseSummary: createResponseSummary(result as Record<string, unknown>),
+    retryCount,
+    wasTokenRefreshed,
+    requestParams: { comment_count: commentList.length },
+  });
 
   return result;
 }

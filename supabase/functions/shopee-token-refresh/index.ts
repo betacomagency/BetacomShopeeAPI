@@ -9,6 +9,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 import { logActivity, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
+import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -327,6 +328,7 @@ serve(async (req) => {
 
       try {
         // Refresh với merchant_id, không truyền shop_id
+        const refreshStartTime = Date.now();
         const refreshResult = await refreshAccessToken(
           representative.partner_id,
           representative.partner_key,
@@ -334,6 +336,18 @@ serve(async (req) => {
           0, // không truyền shop_id cho merchant refresh
           merchantId
         );
+
+        // Log API call
+        logApiCall(supabase, {
+          shopId: representative.shop_id,
+          edgeFunction: 'shopee-token-refresh',
+          apiEndpoint: '/api/v2/auth/access_token/get',
+          httpMethod: 'POST',
+          apiCategory: 'auth',
+          status: refreshResult.success ? 'success' : 'failed',
+          shopeeError: refreshResult.success ? undefined : refreshResult.error,
+          durationMs: Date.now() - refreshStartTime,
+        });
 
         if (!refreshResult.success || !refreshResult.data) {
           console.error(`[TOKEN-REFRESH] Failed for merchant ${merchantId}:`, refreshResult.error);
@@ -478,12 +492,25 @@ serve(async (req) => {
 
         console.log(`[TOKEN-REFRESH] Refreshing standalone shop ${shop.shop_id} (${shop.shop_name})`);
 
+        const refreshStartTime = Date.now();
         const refreshResult = await refreshAccessToken(
           shop.partner_id,
           shop.partner_key,
           shop.refresh_token,
           shop.shop_id
         );
+
+        // Log API call
+        logApiCall(supabase, {
+          shopId: shop.shop_id,
+          edgeFunction: 'shopee-token-refresh',
+          apiEndpoint: '/api/v2/auth/access_token/get',
+          httpMethod: 'POST',
+          apiCategory: 'auth',
+          status: refreshResult.success ? 'success' : 'failed',
+          shopeeError: refreshResult.success ? undefined : refreshResult.error,
+          durationMs: Date.now() - refreshStartTime,
+        });
 
         if (!refreshResult.success || !refreshResult.data) {
           console.error(`[TOKEN-REFRESH] Failed for shop ${shop.shop_id}:`, refreshResult.error);

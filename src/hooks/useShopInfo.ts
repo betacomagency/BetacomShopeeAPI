@@ -75,9 +75,8 @@ export function useShopInfo(shopId: number | null) {
     queryKey: ['shop-all-info', shopId],
     queryFn: () => fetchAllShopData(shopId!),
     enabled: !!shopId,
-    staleTime: 5 * 60 * 1000, // 5 phút
-    gcTime: 30 * 60 * 1000, // 30 phút cache
-    refetchInterval: 10 * 60 * 1000, // Auto-refresh mỗi 10 phút
+    staleTime: 30 * 60 * 1000, // 30 phút - dùng cache lâu hơn
+    gcTime: 60 * 60 * 1000, // 60 phút cache
     refetchOnWindowFocus: false,
     retry: 1,
   });

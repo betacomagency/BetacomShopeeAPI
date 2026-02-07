@@ -5,7 +5,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Trash2, Eye, Clock, Package, Archive, Calendar, Copy } from 'lucide-react';
+import { RefreshCw, Trash2, Eye, Clock, Calendar, Copy } from 'lucide-react';
 import { ColumnDef } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -148,9 +148,6 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
       }
     };
   }, [shopId, userId, triggerSync, refetch]);
-
-  // Debug: log khi data thay đổi
-  console.log('[FlashSalePanel] shopId:', shopId, 'userId:', userId, 'flashSales count:', flashSales?.length, 'loading:', loading, 'error:', error);
 
   // Filter and sort data
   const filteredData = useMemo(() => {
@@ -744,7 +741,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                 {dataUpdatedAt && `Cập nhật UI: ${formatDateTime(dataUpdatedAt / 1000)}`}
               </span>
               <span className="text-slate-300">
-                Tự động làm mới mỗi 1 giờ
+                Tự động làm mới mỗi 30 phút
               </span>
             </div>
           )}

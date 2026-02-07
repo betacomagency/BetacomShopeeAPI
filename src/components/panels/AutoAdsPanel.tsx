@@ -67,6 +67,7 @@ export function AutoAdsPanel({ shopId }: AutoAdsPanelProps) {
     isFetching,
     error,
     refetch,
+    hasFetched,
   } = useAdsCampaigns(shopId, {
     statusFilter: 'ongoing',
   });
@@ -300,7 +301,7 @@ export function AutoAdsPanel({ shopId }: AutoAdsPanelProps) {
         {/* Content - Bảng chiến dịch đơn giản */}
         <div className="p-4 min-h-[400px]">
           <div className="space-y-4 relative">
-            {loading && campaigns.length === 0 && (
+            {(loading || isFetching) && campaigns.length === 0 && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -308,10 +309,22 @@ export function AutoAdsPanel({ shopId }: AutoAdsPanelProps) {
                 </div>
               </div>
             )}
-            <CampaignTable
-              campaigns={campaigns}
-              loading={loading && campaigns.length === 0}
-            />
+            {!hasFetched && !loading && !isFetching ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <RefreshCw className="w-12 h-12 text-slate-300 mb-3" />
+                <p className="text-sm text-slate-600 mb-1">Bấm để tải chiến dịch quảng cáo</p>
+                <p className="text-xs text-slate-400 mb-4">Dữ liệu sẽ được lấy từ Shopee API</p>
+                <Button variant="default" size="sm" onClick={handleRefresh} className="cursor-pointer">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Tải dữ liệu
+                </Button>
+              </div>
+            ) : (
+              <CampaignTable
+                campaigns={campaigns}
+                loading={loading && campaigns.length === 0}
+              />
+            )}
           </div>
         </div>
 

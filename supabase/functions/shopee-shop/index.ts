@@ -7,6 +7,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,7 +17,7 @@ const corsHeaders = {
 // Shopee API config (fallback)
 const DEFAULT_PARTNER_ID = Number(Deno.env.get('SHOPEE_PARTNER_ID'));
 const DEFAULT_PARTNER_KEY = Deno.env.get('SHOPEE_PARTNER_KEY') || '';
-const SHOPEE_BASE_URL = Deno.env.get('SHOPEE_BASE_URL') || 'https://partner.shopeemobile.com';
+const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com';
 const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || ''; // VPS Proxy URL
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -159,6 +160,10 @@ async function callShopeeAPIWithRetry(
   body?: Record<string, unknown>,
   extraParams?: Record<string, string | number | boolean>
 ): Promise<unknown> {
+  const startTime = Date.now();
+  let wasTokenRefreshed = false;
+  let retryCount = 0;
+
   const makeRequest = async (accessToken: string) => {
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = createSignature(credentials.partnerKey, credentials.partnerId, path, timestamp, accessToken, shopId);
@@ -201,6 +206,8 @@ async function callShopeeAPIWithRetry(
 
     if (!newToken.error) {
       await saveToken(supabase, shopId, newToken);
+      wasTokenRefreshed = true;
+      retryCount = 1;
 
       // Cập nhật bảng shops
       await supabase.from('apishopee_shops').upsert({
@@ -214,6 +221,23 @@ async function callShopeeAPIWithRetry(
       result = await makeRequest(newToken.access_token);
     }
   }
+
+  // Log API call (non-blocking)
+  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+  logApiCall(supabase, {
+    shopId,
+    edgeFunction: 'shopee-shop',
+    apiEndpoint: path,
+    httpMethod: method,
+    apiCategory: 'shop',
+    status: apiStatus.status,
+    shopeeError: apiStatus.shopeeError,
+    shopeeMessage: apiStatus.shopeeMessage,
+    durationMs: Date.now() - startTime,
+    responseSummary: createResponseSummary(result as Record<string, unknown>),
+    retryCount,
+    wasTokenRefreshed,
+  });
 
   return result;
 }
@@ -471,6 +495,63 @@ serve(async (req) => {
             authTime: infoResult.auth_time,
             expireTime: infoResult.expire_time,
             profileShopLogo: (profileResult.response as Record<string, unknown>)?.shop_logo,
+          },
+        };
+        break;
+      }
+
+      // Action: lấy tất cả dữ liệu shop (info + profile + holiday mode)
+      case 'get-all-shop-data': {
+        const credentials = await getPartnerCredentials(supabase, shop_id);
+        const token = await getTokenWithAutoRefresh(supabase, shop_id);
+
+        const apiCalls = [
+          { name: 'info', path: '/api/v2/shop/get_shop_info' },
+          { name: 'profile', path: '/api/v2/shop/get_profile' },
+          { name: 'holidayMode', path: '/api/v2/shop/get_shop_holiday' },
+        ];
+
+        const results = await Promise.allSettled(
+          apiCalls.map(api =>
+            callShopeeAPIWithRetry(supabase, credentials, api.path, 'GET', shop_id, token)
+          )
+        );
+
+        let successCount = 0;
+        let failedCount = 0;
+        const responseData: Record<string, unknown> = {};
+
+        results.forEach((r, i) => {
+          const apiName = apiCalls[i].name;
+          if (r.status === 'fulfilled') {
+            responseData[apiName] = r.value;
+            const val = r.value as Record<string, unknown>;
+            if (!val.error || val.error === '') {
+              successCount++;
+            } else {
+              failedCount++;
+            }
+          } else {
+            responseData[apiName] = { error: r.reason?.message || 'Unknown error' };
+            failedCount++;
+          }
+        });
+
+        // Save cache if info is valid
+        const infoResult = responseData.info as Record<string, unknown> || {};
+        const profileResult = responseData.profile as Record<string, unknown> || {};
+        const hasInfoError = infoResult.error && infoResult.error !== '';
+        if (!hasInfoError && (infoResult.shop_name || infoResult.auth_time || infoResult.expire_time)) {
+          await saveShopInfoCache(supabase, shop_id, infoResult, profileResult);
+        }
+
+        result = {
+          ...responseData,
+          _meta: {
+            total_apis: apiCalls.length,
+            success: successCount,
+            failed: failedCount,
+            timestamp: new Date().toISOString(),
           },
         };
         break;

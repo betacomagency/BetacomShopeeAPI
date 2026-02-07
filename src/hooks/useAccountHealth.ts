@@ -89,10 +89,9 @@ export function useAccountHealth(shopId: number | null) {
   return useQuery({
     queryKey: ['account-health', shopId],
     queryFn: () => fetchAccountHealth(shopId!),
-    enabled: !!shopId,
+    enabled: false, // Chỉ fetch khi user bấm nút, không tự động call API
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    refetchInterval: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
   });

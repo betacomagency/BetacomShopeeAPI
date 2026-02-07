@@ -123,71 +123,110 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
     setIsSyncing(true);
     setLastError(null);
 
+    const PAGE_SIZE = 100;
+
     try {
-      // Gọi trực tiếp apishopee-flash-sale để lấy danh sách
-      console.log('[useSyncData] Fetching flash sales from Shopee API...');
-      const { data: apiResult, error: apiError } = await supabase.functions.invoke('apishopee-flash-sale', {
-        body: {
-          action: 'get-flash-sale-list',
-          shop_id: shopId,
-          type: 0, // 0 = All
-          offset: 0,
-          limit: 100,
-        },
-      });
+      // Pagination: fetch tất cả flash sales
+      let allFlashSales: ShopeeFlashSale[] = [];
+      let offset = 0;
+      let totalCount = 0;
+      let pagesFetched = 0;
 
-      if (apiError) {
-        throw new Error(apiError.message);
-      }
+      console.log('[useSyncData] Fetching flash sales from Shopee API (paginated)...');
 
-      if (apiResult?.error) {
-        throw new Error(apiResult.error);
-      }
+      do {
+        const { data: apiResult, error: apiError } = await supabase.functions.invoke('apishopee-flash-sale', {
+          body: {
+            action: 'get-flash-sale-list',
+            shop_id: shopId,
+            type: 0, // 0 = All
+            offset,
+            limit: PAGE_SIZE,
+          },
+        });
 
-      console.log('[useSyncData] API Response:', apiResult);
-
-      const flashSaleList: ShopeeFlashSale[] = apiResult?.response?.flash_sale_list || [];
-      console.log(`[useSyncData] Received ${flashSaleList.length} flash sales from Shopee`);
-
-      if (flashSaleList.length > 0) {
-        // Xóa dữ liệu cũ của shop (shared data, không theo user)
-        console.log('[useSyncData] Deleting old data for shop...');
-        const { error: deleteError } = await supabase
-          .from('apishopee_flash_sale_data')
-          .delete()
-          .eq('shop_id', shopId);
-
-        if (deleteError) {
-          console.error('[useSyncData] Delete error:', deleteError);
+        if (apiError) {
+          // Nếu đã fetch được một số trang, giữ data đã có thay vì throw
+          if (allFlashSales.length > 0) {
+            console.warn(`[useSyncData] API error at page ${pagesFetched + 1}, keeping ${allFlashSales.length} fetched items:`, apiError.message);
+            break;
+          }
+          throw new Error(apiError.message);
         }
 
-        // Insert dữ liệu mới (shared per shop, synced_by tracks who synced)
-        console.log('[useSyncData] Inserting new data...');
-        const insertData = flashSaleList.map(sale => ({
-          shop_id: shopId,
-          user_id: null, // Data is shared per shop
-          synced_by: userId, // Track who performed the sync
-          flash_sale_id: sale.flash_sale_id,
-          timeslot_id: sale.timeslot_id,
-          status: sale.status,
-          start_time: sale.start_time,
-          end_time: sale.end_time,
-          enabled_item_count: sale.enabled_item_count || 0,
-          item_count: sale.item_count || 0,
-          type: sale.type,
-          remindme_count: sale.remindme_count || 0,
-          click_count: sale.click_count || 0,
-          raw_response: sale,
-          synced_at: new Date().toISOString(),
-        }));
+        if (apiResult?.error) {
+          if (allFlashSales.length > 0) {
+            console.warn(`[useSyncData] API error at page ${pagesFetched + 1}, keeping ${allFlashSales.length} fetched items:`, apiResult.error);
+            break;
+          }
+          throw new Error(apiResult.error);
+        }
 
-        const { error: insertError } = await supabase
-          .from('apishopee_flash_sale_data')
-          .insert(insertData);
+        const pageList: ShopeeFlashSale[] = apiResult?.response?.flash_sale_list || [];
+        totalCount = apiResult?.response?.total_count || 0;
+        allFlashSales = allFlashSales.concat(pageList);
+        pagesFetched++;
+        offset += PAGE_SIZE;
 
-        if (insertError) {
-          console.error('[useSyncData] Insert error:', insertError);
-          throw new Error(`Lỗi lưu dữ liệu: ${insertError.message}`);
+        console.log(`[useSyncData] Page ${pagesFetched}: ${pageList.length} items (total fetched: ${allFlashSales.length}/${totalCount})`);
+
+        // Dừng khi đã lấy hết hoặc page trống
+      } while (offset < totalCount && allFlashSales.length < totalCount);
+
+      console.log(`[useSyncData] Done: ${allFlashSales.length} flash sales in ${pagesFetched} API calls`);
+
+      if (allFlashSales.length > 0) {
+        const syncedAt = new Date().toISOString();
+
+        // Upsert thay vì delete+insert → an toàn hơn, fail giữa chừng không mất data
+        // Chia thành batch 50 records để tránh payload quá lớn
+        const BATCH_SIZE = 50;
+        const syncedIds: number[] = [];
+
+        for (let i = 0; i < allFlashSales.length; i += BATCH_SIZE) {
+          const batch = allFlashSales.slice(i, i + BATCH_SIZE);
+          const upsertData = batch.map(sale => ({
+            shop_id: shopId,
+            user_id: null,
+            synced_by: userId,
+            flash_sale_id: sale.flash_sale_id,
+            timeslot_id: sale.timeslot_id,
+            status: sale.status,
+            start_time: sale.start_time,
+            end_time: sale.end_time,
+            enabled_item_count: sale.enabled_item_count || 0,
+            item_count: sale.item_count || 0,
+            type: sale.type,
+            remindme_count: sale.remindme_count || 0,
+            click_count: sale.click_count || 0,
+            raw_response: sale,
+            synced_at: syncedAt,
+          }));
+
+          const { error: upsertError } = await supabase
+            .from('apishopee_flash_sale_data')
+            .upsert(upsertData, { onConflict: 'shop_id,flash_sale_id' });
+
+          if (upsertError) {
+            console.error(`[useSyncData] Upsert error at batch ${Math.floor(i / BATCH_SIZE) + 1}:`, upsertError);
+            // Tiếp tục batch khác thay vì throw
+            continue;
+          }
+
+          syncedIds.push(...batch.map(s => s.flash_sale_id));
+        }
+
+        // Xóa flash sales không còn tồn tại trên Shopee (chỉ khi fetch đủ tất cả)
+        if (allFlashSales.length >= totalCount && syncedIds.length > 0) {
+          const { error: cleanupError } = await supabase
+            .from('apishopee_flash_sale_data')
+            .delete()
+            .eq('shop_id', shopId)
+            .lt('synced_at', syncedAt);
+
+          if (cleanupError) {
+            console.warn('[useSyncData] Cleanup stale data error:', cleanupError);
+          }
         }
       }
 
@@ -201,17 +240,14 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'shop_id,user_id' });
 
-      // Đợi một chút để database commit xong
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       // Invalidate queries to refresh data
       await queryClient.invalidateQueries({ queryKey });
-      await queryClient.invalidateQueries({ 
+      await queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey;
-          return Array.isArray(key) && 
-            key[0] === 'realtime' && 
-            key[1] === 'apishopee_flash_sale_data' && 
+          return Array.isArray(key) &&
+            key[0] === 'realtime' &&
+            key[1] === 'apishopee_flash_sale_data' &&
             key[2] === shopId;
         },
         refetchType: 'all',
@@ -219,7 +255,7 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
 
       toast({
         title: 'Đồng bộ thành công',
-        description: `Đã đồng bộ ${flashSaleList.length} Flash Sales`,
+        description: `Đã đồng bộ ${allFlashSales.length} Flash Sales (${pagesFetched} lần gọi API)`,
       });
 
       // Log activity
@@ -228,11 +264,13 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
         shopId,
         actionType: 'flash_sale_sync',
         actionCategory: 'flash_sale',
-        actionDescription: `Đồng bộ Flash Sale: ${flashSaleList.length} chương trình`,
+        actionDescription: `Đồng bộ Flash Sale: ${allFlashSales.length}/${totalCount} chương trình`,
         status: 'success',
         source: 'manual',
         responseData: {
-          synced_count: flashSaleList.length,
+          synced_count: allFlashSales.length,
+          total_count: totalCount,
+          api_calls: pagesFetched,
         },
       });
     } catch (error) {

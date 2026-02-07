@@ -20,6 +20,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -466,6 +467,20 @@ async function processShopSchedules(
     );
     const durationMs = Date.now() - startTime;
 
+    // Log API call
+    const apiPath = schedule.ad_type === 'manual' ? '/api/v2/ads/edit_manual_product_ads' : '/api/v2/ads/edit_auto_product_ads';
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'shopee-ads-scheduler',
+      apiEndpoint: apiPath,
+      httpMethod: 'POST',
+      apiCategory: 'ads',
+      status: result.success ? 'success' : 'failed',
+      shopeeError: result.success ? undefined : result.error,
+      durationMs,
+      retryCount: result.retried,
+    });
+
     if (!result.success) {
       errorCount++;
 
@@ -843,6 +858,20 @@ serve(async (req) => {
           schedule.budget
         );
         const durationMs = Date.now() - apiStartTime;
+
+        // Log API call
+        const runNowApiPath = (schedule.ad_type as string) === 'manual' ? '/api/v2/ads/edit_manual_product_ads' : '/api/v2/ads/edit_auto_product_ads';
+        logApiCall(supabase, {
+          shopId: shop_id,
+          edgeFunction: 'shopee-ads-scheduler',
+          apiEndpoint: runNowApiPath,
+          httpMethod: 'POST',
+          apiCategory: 'ads',
+          status: result.success ? 'success' : 'failed',
+          shopeeError: result.success ? undefined : result.error,
+          durationMs,
+          retryCount: result.retried,
+        });
 
         const shopName = await getShopName(supabase, shop_id);
 

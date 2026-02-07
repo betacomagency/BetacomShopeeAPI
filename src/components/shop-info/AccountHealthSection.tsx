@@ -75,7 +75,27 @@ export function AccountHealthSection({ shopId }: AccountHealthSectionProps) {
   const { data, isLoading, isError, error, refetch, isFetching } = useAccountHealth(shopId);
   const [showAllPunishments, setShowAllPunishments] = useState(false);
 
-  if (isLoading) {
+  // Chưa fetch - hiện nút tải
+  if (!data && !isLoading && !isFetching && !isError) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="flex flex-col items-center justify-center py-8 text-center">
+          <RefreshCw className="w-10 h-10 text-slate-300 mb-3" />
+          <p className="text-sm text-slate-600 mb-1">Bấm để tải hiệu quả hoạt động</p>
+          <p className="text-xs text-slate-400 mb-4">Dữ liệu sẽ được lấy từ Shopee API</p>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Tải dữ liệu
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading || isFetching) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <div className="flex items-center gap-3">

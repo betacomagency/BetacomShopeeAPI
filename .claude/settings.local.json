@@ -54,7 +54,8 @@
       "Bash(pnpm run build:*)",
       "Bash(git stash:*)",
       "Bash(del \"d:\\\\Betacom\\\\BetacomShopeeAPI\\\\src\\\\pages\\\\LandingPage.tsx\")",
-      "Bash(del /f \"src\\\\hooks\\\\useAdsData.ts\" \"src\\\\components\\\\panels\\\\AdsPanel.tsx\")"
+      "Bash(del /f \"src\\\\hooks\\\\useAdsData.ts\" \"src\\\\components\\\\panels\\\\AdsPanel.tsx\")",
+      "Bash(python3:*)"
     ]
   }
 }

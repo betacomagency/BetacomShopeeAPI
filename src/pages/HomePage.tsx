@@ -1,26 +1,20 @@
 /**
- * Home Page - Dashboard tổng quan đa kênh
- * Hiển thị thống kê từ tất cả các kênh bán hàng (Shopee, Lazada)
+ * Home Page - Dashboard tổng quan
+ * Hiển thị thống kê từ các kênh bán hàng (Shopee)
  */
 
 import { Link } from 'react-router-dom';
 import {
   Store,
   TrendingUp,
-  Clock,
-  AlertCircle,
   ArrowRight,
   Zap,
-  RefreshCw,
-  XCircle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
-import { useLazadaAuth } from '@/contexts/LazadaAuthContext';
-import { cn } from '@/lib/utils';
 import { ADMIN_EMAIL } from '@/config/menu-config';
 import { useInventorySummary } from '@/hooks/useInventorySummary';
 import { InventorySummary } from '@/components/dashboard/InventorySummary';
@@ -34,19 +28,10 @@ const ShopeeIcon = () => (
   />
 );
 
-const LazadaIcon = () => (
-  <img
-    src="https://recland.s3.ap-southeast-1.amazonaws.com/company/19a57791bf92848b511de18eaebca94a.png"
-    alt="Lazada"
-    className="w-5 h-5 object-contain"
-  />
-);
-
 // Token status alert for admin
 function TokenAlerts() {
   const { user, profile } = useAuth();
   const { shops: shopeeShops } = useShopeeAuth();
-  const { shops: lazadaShops } = useLazadaAuth();
 
   const isAdmin =
     user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() ||
@@ -54,118 +39,21 @@ function TokenAlerts() {
 
   if (!isAdmin) return null;
 
-  // Check for expiring tokens
-  const now = Date.now();
-  const expiringShops: { name: string; channel: string; daysLeft: number }[] = [];
-
   // TODO: Add token expiry check for Shopee shops
-  // For now, Lazada shops have explicit token expiry
-  lazadaShops.forEach((shop) => {
-    if (shop.access_token_expires_at) {
-      const expiry = new Date(shop.access_token_expires_at).getTime();
-      const daysLeft = Math.floor((expiry - now) / (24 * 60 * 60 * 1000));
-      if (daysLeft <= 7) {
-        expiringShops.push({
-          name: shop.shop_name || `Seller ${shop.seller_id}`,
-          channel: 'Lazada',
-          daysLeft,
-        });
-      }
-    }
-  });
-
-  if (expiringShops.length === 0) return null;
-
-  const hasExpired = expiringShops.some((s) => s.daysLeft <= 0);
-  const hasCritical = expiringShops.some((s) => s.daysLeft > 0 && s.daysLeft <= 3);
-
-  return (
-    <Card
-      className={cn(
-        'border',
-        hasExpired || hasCritical
-          ? 'border-red-200 bg-gradient-to-br from-red-50 to-rose-50'
-          : 'border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50'
-      )}
-    >
-      <CardContent className="pt-4 pb-4">
-        <div className="flex gap-3">
-          <div
-            className={cn(
-              'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
-              hasExpired || hasCritical ? 'bg-red-100' : 'bg-amber-100'
-            )}
-          >
-            {hasExpired ? (
-              <XCircle className="w-5 h-5 text-red-600" />
-            ) : hasCritical ? (
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            ) : (
-              <Clock className="w-5 h-5 text-amber-600" />
-            )}
-          </div>
-          <div className="flex-1">
-            <p
-              className={cn(
-                'font-semibold',
-                hasExpired || hasCritical ? 'text-red-800' : 'text-amber-800'
-              )}
-            >
-              {hasExpired ? 'Token đã hết hạn' : 'Cảnh báo Token'}
-            </p>
-            <div className="text-sm mt-1 space-y-1">
-              {expiringShops.map((shop, i) => (
-                <p
-                  key={i}
-                  className={cn(
-                    shop.daysLeft <= 0
-                      ? 'text-red-700'
-                      : shop.daysLeft <= 3
-                        ? 'text-red-600'
-                        : 'text-amber-700'
-                  )}
-                >
-                  [{shop.channel}] {shop.name}:{' '}
-                  {shop.daysLeft <= 0
-                    ? 'Đã hết hạn'
-                    : `Còn ${shop.daysLeft} ngày`}
-                </p>
-              ))}
-            </div>
-            <Link to="/lazada/shops">
-              <Button
-                size="sm"
-                className={cn(
-                  'mt-3 text-white',
-                  hasExpired || hasCritical
-                    ? 'bg-red-500 hover:bg-red-600'
-                    : 'bg-amber-500 hover:bg-amber-600'
-                )}
-              >
-                <RefreshCw className="w-4 h-4 mr-1.5" />
-                Gia hạn ngay
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return null;
 }
 
 export default function HomePage() {
   const { user } = useAuth();
   const { shops: shopeeShops, selectedShopId, isLoading: isShopeeLoading } = useShopeeAuth();
-  const { shops: lazadaShops, isLoading: isLazadaLoading } = useLazadaAuth();
-
   // Inventory summary
   const { summary: inventorySummary, loading: inventoryLoading } = useInventorySummary(
     selectedShopId || 0,
     user?.id || ''
   );
 
-  const isLoading = isShopeeLoading || isLazadaLoading;
-  const hasShops = shopeeShops.length > 0 || lazadaShops.length > 0;
+  const isLoading = isShopeeLoading;
+  const hasShops = shopeeShops.length > 0;
 
   if (isLoading) {
     return (
@@ -202,12 +90,6 @@ export default function HomePage() {
                     <span className="ml-2">Kết nối Shopee</span>
                   </Button>
                 </Link>
-                <Link to="/lazada/shops">
-                  <Button className="bg-blue-600 hover:bg-blue-700 cursor-pointer">
-                    <LazadaIcon />
-                    <span className="ml-2">Kết nối Lazada</span>
-                  </Button>
-                </Link>
               </div>
             </div>
           </CardContent>
@@ -235,7 +117,7 @@ function LandingContent() {
   const features = [
     {
       title: 'Quản lý đa kênh',
-      description: 'Kết nối và quản lý Shopee, Lazada trong một nền tảng',
+      description: 'Kết nối và quản lý Shopee trong một nền tảng',
       icon: Store,
       color: 'from-orange-500 to-red-500',
     },

@@ -11,6 +11,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,6 +64,7 @@ async function hmacSha256(key: string, message: string): Promise<string> {
 }
 
 async function callShopeeAPI(
+  supabaseClient: ReturnType<typeof createClient>,
   apiPath: string,
   method: 'GET' | 'POST',
   shopId: number,
@@ -72,6 +74,7 @@ async function callShopeeAPI(
   params?: Record<string, string | number>,
   body?: Record<string, unknown>
 ): Promise<unknown> {
+  const startTime = Date.now();
   const timestamp = Math.floor(Date.now() / 1000);
   const baseString = `${partnerId}${apiPath}${timestamp}${accessToken}${shopId}`;
   const sign = await hmacSha256(partnerKey, baseString);
@@ -102,7 +105,23 @@ async function callShopeeAPI(
   }
 
   const response = await fetch(url, options);
-  return await response.json();
+  const result = await response.json();
+
+  // Log API call
+  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+  logApiCall(supabaseClient, {
+    shopId,
+    edgeFunction: 'apishopee-flash-sale-sync',
+    apiEndpoint: apiPath,
+    httpMethod: method,
+    apiCategory: 'flash_sale',
+    status: apiStatus.status,
+    shopeeError: apiStatus.shopeeError,
+    shopeeMessage: apiStatus.shopeeMessage,
+    durationMs: Date.now() - startTime,
+  });
+
+  return result;
 }
 
 
@@ -111,6 +130,7 @@ async function callShopeeAPI(
  * Lấy tất cả các trạng thái: Upcoming (1), Ongoing (2), Expired (3)
  */
 async function fetchAllFlashSales(
+  supabaseClient: ReturnType<typeof createClient>,
   shopId: number,
   accessToken: string,
   partnerId: number,
@@ -130,6 +150,7 @@ async function fetchAllFlashSales(
     while (hasMore) {
       try {
         const result = await callShopeeAPI(
+          supabaseClient,
           apiPath,
           'GET',
           shopId,
@@ -262,6 +283,7 @@ async function syncShopFlashSales(
 
   // 1. Fetch tất cả Flash Sales từ Shopee API
   const { items, error: fetchError } = await fetchAllFlashSales(
+    supabase,
     shop.shop_id,
     shop.access_token,
     shop.partner_id,

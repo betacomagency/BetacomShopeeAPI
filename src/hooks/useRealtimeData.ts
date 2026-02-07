@@ -151,9 +151,9 @@ export function useRealtimeData<T>(
     };
   }, [tableName, shopId, userId, enabled, queryClient]);
 
-  const refetch = async () => {
+  const refetch = useCallback(async () => {
     await queryRefetch();
-  };
+  }, [queryRefetch]);
 
   return {
     data: data || [],
@@ -486,12 +486,7 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
     prevShopIdRef.current = shopId;
   }, [shopId, userId, queryClient]);
 
-  // Fetch sync status on mount and when shopId changes
-  useEffect(() => {
-    if (shopId && userId) {
-      fetchSyncStatus();
-    }
-  }, [shopId, userId, fetchSyncStatus]);
+  // Không tự động fetch sync status khi mount - chỉ fetch khi user bấm đồng bộ
 
   // REMOVED: Auto-sync interval - cron job handles this now
   // Realtime subscription handles UI updates when DB changes

@@ -13,13 +13,14 @@ import {
   Store,
   Zap,
   Package,
-  ShoppingCart,
+  // ShoppingCart, // [HIDDEN] Lazada feature
   Star,
-  Megaphone,
+  // Megaphone, // [HIDDEN] Ads feature
   Clock,
-  ShoppingBag,
+  // ShoppingBag, // [HIDDEN] Lazada feature
   FileText,
   Activity,
+  Monitor,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -101,28 +102,38 @@ export const menuItems: MenuItem[] = [
       { title: 'Lịch sử', icon: Clock, path: '/flash-sale/auto-setup', permissionKey: 'flash-sale' },
     ],
   },
+  // [HIDDEN] Ads feature - temporarily disabled
+  // {
+  //   title: 'Quảng cáo',
+  //   icon: Megaphone,
+  //   permissionKey: 'ads',
+  //   description: 'Quản lý quảng cáo',
+  //   children: [
+  //     { title: 'Quảng cáo tự động', icon: Zap, path: '/ads/auto', permissionKey: 'ads' },
+  //     { title: 'Lịch tự động', icon: Clock, path: '/ads/schedules', permissionKey: 'ads' },
+  //     { title: 'Lịch sử thực thi', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
+  //   ],
+  // },
+  // [HIDDEN] Lazada feature - temporarily disabled
+  // {
+  //   title: 'Lazada',
+  //   icon: ShoppingBag,
+  //   permissionKey: 'lazada',
+  //   description: 'Quản lý Lazada',
+  //   children: [
+  //     { title: 'Tổng quan', icon: Home, path: '/lazada', permissionKey: 'lazada' },
+  //     { title: 'Quản lý Shop', icon: Store, path: '/lazada/shops', permissionKey: 'lazada' },
+  //     { title: 'Đơn hàng', icon: ShoppingCart, path: '/lazada/orders', permissionKey: 'lazada' },
+  //     { title: 'Sản phẩm', icon: Package, path: '/lazada/products', permissionKey: 'lazada' },
+  //   ],
+  // },
   {
-    title: 'Quảng cáo',
-    icon: Megaphone,
-    permissionKey: 'ads',
-    description: 'Quản lý quảng cáo',
-    children: [
-      { title: 'Quảng cáo tự động', icon: Zap, path: '/ads/auto', permissionKey: 'ads' },
-      { title: 'Lịch tự động', icon: Clock, path: '/ads/schedules', permissionKey: 'ads' },
-      { title: 'Lịch sử thực thi', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
-    ],
-  },
-  {
-    title: 'Lazada',
-    icon: ShoppingBag,
-    permissionKey: 'lazada',
-    description: 'Quản lý Lazada',
-    children: [
-      { title: 'Tổng quan', icon: Home, path: '/lazada', permissionKey: 'lazada' },
-      { title: 'Quản lý Shop', icon: Store, path: '/lazada/shops', permissionKey: 'lazada' },
-      { title: 'Đơn hàng', icon: ShoppingCart, path: '/lazada/orders', permissionKey: 'lazada' },
-      { title: 'Sản phẩm', icon: Package, path: '/lazada/products', permissionKey: 'lazada' },
-    ],
+    title: 'API & Logs',
+    icon: Monitor,
+    path: '/api-logs',
+    permissionKey: 'api-logs',
+    description: 'Giám sát API Shopee và lịch sử gọi API',
+    adminOnly: true,
   },
   {
     title: 'Cài đặt',

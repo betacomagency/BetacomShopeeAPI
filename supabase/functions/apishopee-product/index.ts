@@ -13,6 +13,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -164,6 +165,9 @@ async function callShopeeAPI(
   body?: Record<string, unknown>,
   extraParams?: Record<string, string | number | boolean | number[]>
 ): Promise<unknown> {
+  const startTime = Date.now();
+  let wasTokenRefreshed = false;
+  let retryCount = 0;
   const makeRequest = async (accessToken: string) => {
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = createSignature(credentials.partnerKey, credentials.partnerId, path, timestamp, accessToken, shopId);
@@ -217,12 +221,32 @@ async function callShopeeAPI(
 
   if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
     console.log('[AUTO-RETRY] Refreshing token...');
+    wasTokenRefreshed = true;
+    retryCount++;
     const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
     if (!newToken.error) {
       await saveToken(supabase, shopId, newToken);
       result = await makeRequest(newToken.access_token);
     }
   }
+
+
+  // Log API call (non-blocking)
+  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+  logApiCall(supabase, {
+    shopId,
+    edgeFunction: 'apishopee-product',
+    apiEndpoint: path,
+    httpMethod: method,
+    apiCategory: 'product',
+    status: apiStatus.status,
+    shopeeError: apiStatus.shopeeError,
+    shopeeMessage: apiStatus.shopeeMessage,
+    durationMs: Date.now() - startTime,
+    responseSummary: createResponseSummary(result as Record<string, unknown>),
+    retryCount,
+    wasTokenRefreshed,
+  });
 
   return result;
 }

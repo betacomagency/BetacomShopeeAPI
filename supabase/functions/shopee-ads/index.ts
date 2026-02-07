@@ -11,6 +11,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -100,9 +101,11 @@ async function callShopeeAPI(
   shopId: number,
   apiPath: string,
   method: 'GET' | 'POST',
+  supabaseClient: ReturnType<typeof createClient>,
   params?: Record<string, string | number>,
   body?: Record<string, unknown>
 ) {
+  const startTime = Date.now();
   const timestamp = Math.floor(Date.now() / 1000);
   const baseString = `${partnerId}${apiPath}${timestamp}${accessToken}${shopId}`;
   const sign = await hmacSha256(partnerKey, baseString);
@@ -134,7 +137,24 @@ async function callShopeeAPI(
   }
 
   const response = await fetchWithProxy(url, fetchOptions);
-  return response.json();
+  const result = await response.json();
+
+  // Log API call (non-blocking)
+  const apiStatus = getApiCallStatus(result);
+  logApiCall(supabaseClient, {
+    shopId,
+    edgeFunction: 'shopee-ads',
+    apiEndpoint: apiPath,
+    httpMethod: method,
+    apiCategory: 'ads',
+    status: apiStatus.status,
+    shopeeError: apiStatus.shopeeError,
+    shopeeMessage: apiStatus.shopeeMessage,
+    durationMs: Date.now() - startTime,
+    responseSummary: createResponseSummary(result),
+  });
+
+  return result;
 }
 
 serve(async (req) => {
@@ -177,6 +197,7 @@ serve(async (req) => {
           shop_id,
           '/api/v2/ads/get_product_level_campaign_id_list',
           'GET',
+          supabase,
           {
             ad_type: params.ad_type || 'all',
             offset: params.offset ?? 0,
@@ -201,6 +222,7 @@ serve(async (req) => {
           shop_id,
           '/api/v2/ads/get_product_level_campaign_setting_info',
           'GET',
+          supabase,
           {
             campaign_id_list: params.campaign_id_list,
             info_type_list: params.info_type_list || '1,3',
@@ -236,6 +258,7 @@ serve(async (req) => {
           shop_id,
           '/api/v2/ads/edit_manual_product_ads',
           'POST',
+          supabase,
           undefined,
           manualBody
         );
@@ -267,6 +290,7 @@ serve(async (req) => {
           shop_id,
           '/api/v2/ads/edit_auto_product_ads',
           'POST',
+          supabase,
           undefined,
           autoBody
         );

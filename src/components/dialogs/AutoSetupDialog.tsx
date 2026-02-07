@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Clock, Calendar, Package, Play, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -467,6 +467,9 @@ export function AutoSetupDialog({
             <Zap className="h-5 w-5 text-green-600" />
             Cài đặt tự động tạo Flash Sale
           </DialogTitle>
+          <DialogDescription>
+            Chọn khung giờ và sản phẩm mẫu để tự động tạo Flash Sale
+          </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-6 py-4 max-h-[70vh] overflow-y-auto px-4 md:px-1">
           {/* Left: Time Slots */}
