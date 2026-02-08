@@ -34,11 +34,6 @@ import ProductsPage from '@/pages/ProductsPage';
 import ReviewsPage from '@/pages/ReviewsPage';
 import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
 import ApiLogsPage from '@/pages/ApiLogsPage';
-// [HIDDEN] Ads feature - temporarily disabled
-// import AutoAdsPage from '@/pages/AutoAdsPage';
-// import AdsSchedulesPage from '@/pages/AdsSchedulesPage';
-// import AdsHistoryPage from '@/pages/AdsHistoryPage';
-
 // [HIDDEN] Lazada Pages - temporarily disabled
 // import LazadaDashboardPage from '@/pages/lazada/LazadaDashboardPage';
 // import LazadaShopsPage from '@/pages/lazada/LazadaShopsPage';
@@ -92,10 +87,6 @@ function App() {
 
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
                   <Route path="/api-logs" element={<ApiLogsPage />} />
-                  {/* [HIDDEN] Ads feature - temporarily disabled */}
-                  {/* <Route path="/ads/auto" element={<AutoAdsPage />} /> */}
-                  {/* <Route path="/ads/schedules" element={<AdsSchedulesPage />} /> */}
-                  {/* <Route path="/ads/history" element={<AdsHistoryPage />} /> */}
 
                   {/* Settings Routes */}
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />

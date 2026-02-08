@@ -9,7 +9,6 @@ import {
   Zap,
   Star,
   Key,
-  Megaphone,
   Activity,
   CheckCircle,
   AlertTriangle,
@@ -44,7 +43,6 @@ const API_REGISTRY: ApiCategory[] = [
     apis: [
       { method: 'GET', endpoint: '/api/v2/shop/get_shop_info', description: 'Lấy thông tin shop', edgeFunction: 'shopee-shop' },
       { method: 'GET', endpoint: '/api/v2/shop/get_profile', description: 'Lấy profile shop', edgeFunction: 'shopee-shop' },
-      { method: 'GET', endpoint: '/api/v2/shop/get_warehouse_detail', description: 'Lấy thông tin kho hàng', edgeFunction: 'shopee-shop' },
     ],
   },
   {
@@ -56,18 +54,6 @@ const API_REGISTRY: ApiCategory[] = [
       { method: 'GET', endpoint: '/api/v2/product/get_item_list', description: 'Lấy danh sách sản phẩm', edgeFunction: 'apishopee-product' },
       { method: 'GET', endpoint: '/api/v2/product/get_item_base_info', description: 'Lấy thông tin chi tiết sản phẩm', edgeFunction: 'apishopee-product' },
       { method: 'GET', endpoint: '/api/v2/product/get_model_list', description: 'Lấy danh sách model/variant', edgeFunction: 'apishopee-product' },
-    ],
-  },
-  {
-    key: 'ads',
-    label: 'Ads',
-    icon: Megaphone,
-    color: 'text-purple-600 bg-purple-50',
-    apis: [
-      { method: 'GET', endpoint: '/api/v2/ads/get_product_level_campaign_id_list', description: 'Lấy danh sách campaign IDs', edgeFunction: 'shopee-ads' },
-      { method: 'GET', endpoint: '/api/v2/ads/get_product_level_campaign_setting_info', description: 'Lấy setting campaigns', edgeFunction: 'shopee-ads' },
-      { method: 'POST', endpoint: '/api/v2/ads/edit_manual_product_ads', description: 'Chỉnh sửa Manual Ads', edgeFunction: 'shopee-ads' },
-      { method: 'POST', endpoint: '/api/v2/ads/edit_auto_product_ads', description: 'Chỉnh sửa Auto Ads', edgeFunction: 'shopee-ads' },
     ],
   },
   {

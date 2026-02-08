@@ -6,7 +6,7 @@
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-export type ApiCategory = 'shop' | 'product' | 'ads' | 'flash_sale' | 'review' | 'auth' | 'order' | 'account_health' | 'finance';
+export type ApiCategory = 'shop' | 'product' | 'flash_sale' | 'review' | 'auth' | 'order' | 'account_health' | 'finance';
 export type ApiCallStatus = 'success' | 'failed' | 'timeout';
 
 export interface LogApiCallParams {

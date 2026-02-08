@@ -26,7 +26,6 @@ import {
   RefreshCw,
   Search,
   FileText,
-  Megaphone,
   Star,
   Zap,
   Key,
@@ -87,7 +86,6 @@ interface UserInfo {
 }
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: typeof Activity; color: string }> = {
-  ads: { label: 'Quảng cáo', icon: Megaphone, color: 'text-purple-500 bg-purple-50' },
   reviews: { label: 'Đánh giá', icon: Star, color: 'text-yellow-500 bg-yellow-50' },
   flash_sale: { label: 'Flash Sale', icon: Zap, color: 'text-orange-500 bg-orange-50' },
   orders: { label: 'Đơn hàng', icon: ShoppingCart, color: 'text-blue-500 bg-blue-50' },

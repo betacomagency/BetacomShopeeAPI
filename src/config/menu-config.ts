@@ -15,7 +15,6 @@ import {
   Package,
   // ShoppingCart, // [HIDDEN] Lazada feature
   Star,
-  // Megaphone, // [HIDDEN] Ads feature
   Clock,
   // ShoppingBag, // [HIDDEN] Lazada feature
   FileText,
@@ -102,18 +101,6 @@ export const menuItems: MenuItem[] = [
       { title: 'Lịch sử', icon: Clock, path: '/flash-sale/auto-setup', permissionKey: 'flash-sale' },
     ],
   },
-  // [HIDDEN] Ads feature - temporarily disabled
-  // {
-  //   title: 'Quảng cáo',
-  //   icon: Megaphone,
-  //   permissionKey: 'ads',
-  //   description: 'Quản lý quảng cáo',
-  //   children: [
-  //     { title: 'Quảng cáo tự động', icon: Zap, path: '/ads/auto', permissionKey: 'ads' },
-  //     { title: 'Lịch tự động', icon: Clock, path: '/ads/schedules', permissionKey: 'ads' },
-  //     { title: 'Lịch sử thực thi', icon: Zap, path: '/ads/history', permissionKey: 'ads' },
-  //   ],
-  // },
   // [HIDDEN] Lazada feature - temporarily disabled
   // {
   //   title: 'Lazada',

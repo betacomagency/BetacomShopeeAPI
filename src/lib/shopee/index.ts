@@ -47,5 +47,3 @@ export type {
   RefreshedAccessToken,
 } from './types';
 
-// Ads Client
-export * from './ads';

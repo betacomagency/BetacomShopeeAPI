@@ -33,6 +33,7 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const BATCH_SIZE_ITEM_INFO = 50;
 const DELAY_BETWEEN_CALLS_MS = 100; // Delay để tránh rate limit
 const REQUEST_TIMEOUT_MS = 15000; // 15s timeout cho mỗi request Shopee
+const MODEL_PARALLEL_BATCH = 10; // Fetch 10 models song song để tránh timeout
 
 interface PartnerCredentials {
   partnerId: number;
@@ -548,44 +549,57 @@ async function syncAllProducts(
 
     let totalModelsCount = 0;
 
-    // Gọi API get_model_list cho từng sản phẩm có variants
-    for (let idx = 0; idx < productsWithModels.length; idx++) {
-      const product = productsWithModels[idx];
-      console.log(`[SYNC] Fetching models for item ${product.item_id} (${idx + 1}/${productsWithModels.length}): ${product.item_name?.substring(0, 50)}...`);
-      
-      try {
-        const modelResult = await callShopeeAPI(
-          supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
-          shopId, token, undefined,
-          { item_id: product.item_id }
-        ) as { 
-          error?: string;
-          message?: string;
-          response?: ModelResponse 
-        };
+    // Gọi API get_model_list SONG SONG theo batch để tránh timeout
+    const totalBatches = Math.ceil(productsWithModels.length / MODEL_PARALLEL_BATCH);
+    console.log(`[SYNC] Fetching models in ${totalBatches} parallel batches (batch size=${MODEL_PARALLEL_BATCH})`);
 
-        // Lưu raw response
-        apiResponses.model_responses.push({
-          item_id: product.item_id,
-          item_name: product.item_name,
-          api_path: PRODUCT_PATHS.GET_MODEL_LIST,
-          response: modelResult,
-        });
+    for (let batchStart = 0; batchStart < productsWithModels.length; batchStart += MODEL_PARALLEL_BATCH) {
+      const batch = productsWithModels.slice(batchStart, batchStart + MODEL_PARALLEL_BATCH);
+      const batchIndex = Math.floor(batchStart / MODEL_PARALLEL_BATCH) + 1;
+      console.log(`[SYNC] Model batch ${batchIndex}/${totalBatches} (${batch.length} items)`);
 
-        if (modelResult.error) {
-          console.error(`[SYNC] Error fetching models for item ${product.item_id}:`, modelResult.error, modelResult.message);
+      const batchResults = await Promise.all(
+        batch.map(async (product) => {
+          try {
+            const modelResult = await callShopeeAPI(
+              supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
+              shopId, token, undefined,
+              { item_id: product.item_id }
+            ) as {
+              error?: string;
+              message?: string;
+              response?: ModelResponse
+            };
+
+            apiResponses.model_responses.push({
+              item_id: product.item_id,
+              item_name: product.item_name,
+              api_path: PRODUCT_PATHS.GET_MODEL_LIST,
+              response: modelResult,
+            });
+
+            return { product, modelResult };
+          } catch (err) {
+            console.error(`[SYNC] Exception fetching models for item ${product.item_id}:`, err);
+            return { product, modelResult: null };
+          }
+        })
+      );
+
+      // Process batch results
+      for (const { product, modelResult } of batchResults) {
+        if (!modelResult || modelResult.error) {
+          if (modelResult?.error) {
+            console.error(`[SYNC] Error fetching models for item ${product.item_id}:`, modelResult.error, modelResult.message);
+          }
           continue;
         }
 
         const modelResponse = modelResult?.response;
         if (!modelResponse?.model || modelResponse.model.length === 0) {
-          console.log(`[SYNC] No models found for item ${product.item_id}`);
           continue;
         }
 
-        console.log(`[SYNC] Found ${modelResponse.model.length} models for item ${product.item_id}`);
-
-        // Tính tổng tồn kho và range giá từ models
         let totalStock = 0;
         let minPrice = Infinity;
         let maxPrice = 0;
@@ -595,7 +609,7 @@ async function syncAllProducts(
         for (const model of modelResponse.model) {
           const stock = getModelStock(model);
           const price = getModelPrice(model);
-          
+
           totalStock += stock;
           if (price.current > 0) {
             minPrice = Math.min(minPrice, price.current);
@@ -618,11 +632,11 @@ async function syncAllProducts(
         });
 
         totalModelsCount += modelResponse.model.length;
+      }
 
-        // Delay để tránh rate limit
+      // Delay giữa các batch để tránh rate limit
+      if (batchStart + MODEL_PARALLEL_BATCH < productsWithModels.length) {
         await delay(DELAY_BETWEEN_CALLS_MS);
-      } catch (err) {
-        console.error(`[SYNC] Exception fetching models for item ${product.item_id}:`, err);
       }
     }
 
@@ -1030,51 +1044,64 @@ async function incrementalSyncProducts(
       maxOriginalPrice: number;
     }> = new Map();
 
-    for (const product of productsWithModels) {
-      try {
-        const modelResult = await callShopeeAPI(
-          supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
-          shopId, token, undefined,
-          { item_id: product.item_id }
-        ) as { error?: string; response?: ModelResponse };
+    // Fetch models SONG SONG theo batch
+    for (let batchStart = 0; batchStart < productsWithModels.length; batchStart += MODEL_PARALLEL_BATCH) {
+      const batch = productsWithModels.slice(batchStart, batchStart + MODEL_PARALLEL_BATCH);
 
-        if (!modelResult.error && modelResult?.response?.model) {
-          const modelResponse = modelResult.response;
-          let totalStock = 0;
-          let minPrice = Infinity;
-          let maxPrice = 0;
-          let minOriginalPrice = Infinity;
-          let maxOriginalPrice = 0;
-
-          for (const model of modelResponse.model) {
-            const stock = getModelStock(model);
-            const price = getModelPrice(model);
-
-            totalStock += stock;
-            if (price.current > 0) {
-              minPrice = Math.min(minPrice, price.current);
-              maxPrice = Math.max(maxPrice, price.current);
-            }
-            if (price.original > 0) {
-              minOriginalPrice = Math.min(minOriginalPrice, price.original);
-              maxOriginalPrice = Math.max(maxOriginalPrice, price.original);
-            }
+      const batchResults = await Promise.all(
+        batch.map(async (product) => {
+          try {
+            const modelResult = await callShopeeAPI(
+              supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
+              shopId, token, undefined,
+              { item_id: product.item_id }
+            ) as { error?: string; response?: ModelResponse };
+            return { product, modelResult };
+          } catch (err) {
+            console.error(`[INCREMENTAL] Error fetching models for item ${product.item_id}:`, err);
+            return { product, modelResult: null };
           }
+        })
+      );
 
-          productModelsMap.set(product.item_id, {
-            models: modelResponse.model,
-            tierVariations: modelResponse.tier_variation || [],
-            totalStock,
-            minPrice: minPrice === Infinity ? 0 : minPrice,
-            maxPrice,
-            minOriginalPrice: minOriginalPrice === Infinity ? 0 : minOriginalPrice,
-            maxOriginalPrice,
-          });
+      for (const { product, modelResult } of batchResults) {
+        if (!modelResult || modelResult.error || !modelResult?.response?.model) continue;
+
+        const modelResponse = modelResult.response;
+        let totalStock = 0;
+        let minPrice = Infinity;
+        let maxPrice = 0;
+        let minOriginalPrice = Infinity;
+        let maxOriginalPrice = 0;
+
+        for (const model of modelResponse.model) {
+          const stock = getModelStock(model);
+          const price = getModelPrice(model);
+
+          totalStock += stock;
+          if (price.current > 0) {
+            minPrice = Math.min(minPrice, price.current);
+            maxPrice = Math.max(maxPrice, price.current);
+          }
+          if (price.original > 0) {
+            minOriginalPrice = Math.min(minOriginalPrice, price.original);
+            maxOriginalPrice = Math.max(maxOriginalPrice, price.original);
+          }
         }
 
+        productModelsMap.set(product.item_id, {
+          models: modelResponse.model,
+          tierVariations: modelResponse.tier_variation || [],
+          totalStock,
+          minPrice: minPrice === Infinity ? 0 : minPrice,
+          maxPrice,
+          minOriginalPrice: minOriginalPrice === Infinity ? 0 : minOriginalPrice,
+          maxOriginalPrice,
+        });
+      }
+
+      if (batchStart + MODEL_PARALLEL_BATCH < productsWithModels.length) {
         await delay(DELAY_BETWEEN_CALLS_MS);
-      } catch (err) {
-        console.error(`[INCREMENTAL] Error fetching models for item ${product.item_id}:`, err);
       }
     }
 
@@ -1374,15 +1401,17 @@ serve(async (req) => {
         }
 
         // Kiểm tra xem DB đã có data chưa
-        const { count: existingCount } = await supabase
+        const { count: existingCount, error: countError } = await supabase
           .from('apishopee_products')
           .select('*', { count: 'exact', head: true })
           .eq('shop_id', shop_id)
           .eq('user_id', user_id);
 
-        // Nếu chưa có data -> full sync lần đầu
-        if (!existingCount || existingCount === 0) {
-          console.log('[CHECK] No existing data, running full sync...');
+        console.log('[CHECK] Existing products count:', existingCount, 'Count error:', countError?.message);
+
+        // Nếu chưa có data hoặc count error -> full sync lần đầu
+        if (countError || existingCount === null || existingCount === undefined || existingCount === 0) {
+          console.log('[CHECK] No existing data (count:', existingCount, '), running full sync...');
           result = await syncAllProducts(supabase, credentials, shop_id, user_id, token);
           break;
         }

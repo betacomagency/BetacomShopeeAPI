@@ -21,7 +21,6 @@ import { cn } from '@/lib/utils';
 export interface DailyActivityStats {
   date: string;
   logins: number;
-  ads: number;
   reviews: number;
   flash_sale: number;
   orders: number;
@@ -46,7 +45,6 @@ const DATE_RANGE_OPTIONS: Record<string, string> = {
 
 const LINE_COLORS = {
   logins: '#EF4444', // red
-  ads: '#A855F7', // purple
   reviews: '#EAB308', // yellow
   flash_sale: '#F97316', // orange
   orders: '#3B82F6', // blue
@@ -56,7 +54,6 @@ const LINE_COLORS = {
 
 const LINE_LABELS: Record<string, string> = {
   logins: 'Đăng nhập',
-  ads: 'Quảng cáo',
   reviews: 'Đánh giá',
   flash_sale: 'Flash Sale',
   orders: 'Đơn hàng',
@@ -174,7 +171,7 @@ export function ActivityTrendChart({
 }: ActivityTrendChartProps) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [visibleLines, setVisibleLines] = useState<Set<string>>(
-    new Set(['logins', 'ads', 'orders', 'products'])
+    new Set(['logins', 'orders', 'products'])
   );
 
   const toggleLine = (key: string) => {
@@ -343,18 +340,7 @@ export function ActivityTrendChart({
                     activeDot={{ r: 5 }}
                   />
                 )}
-                {visibleLines.has('ads') && (
-                  <Line
-                    type="monotone"
-                    dataKey="ads"
-                    name="Quảng cáo"
-                    stroke={LINE_COLORS.ads}
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: LINE_COLORS.ads }}
-                    activeDot={{ r: 5 }}
-                  />
-                )}
-                {visibleLines.has('reviews') && (
+{visibleLines.has('reviews') && (
                   <Line
                     type="monotone"
                     dataKey="reviews"

@@ -5,7 +5,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-export type ActionCategory = 'ads' | 'reviews' | 'flash_sale' | 'orders' | 'products' | 'system' | 'auth';
+export type ActionCategory = 'reviews' | 'flash_sale' | 'orders' | 'products' | 'system' | 'auth';
 export type ActionStatus = 'pending' | 'success' | 'failed' | 'cancelled';
 export type ActionSource = 'manual' | 'scheduled' | 'auto' | 'webhook' | 'api';
 

@@ -40,8 +40,7 @@ const CATEGORY_OPTIONS = [
   { value: 'all', label: 'Tất cả' },
   { value: 'shop', label: 'Shop' },
   { value: 'product', label: 'Product' },
-  { value: 'ads', label: 'Ads' },
-  { value: 'flash_sale', label: 'Flash Sale' },
+{ value: 'flash_sale', label: 'Flash Sale' },
   { value: 'review', label: 'Review' },
   { value: 'auth', label: 'Auth' },
 ];
@@ -117,7 +116,6 @@ function CategoryBadge({ category }: { category: string }) {
   const colors: Record<string, string> = {
     shop: 'bg-blue-50 text-blue-700',
     product: 'bg-green-50 text-green-700',
-    ads: 'bg-purple-50 text-purple-700',
     flash_sale: 'bg-orange-50 text-orange-700',
     review: 'bg-yellow-50 text-yellow-700',
     auth: 'bg-red-50 text-red-700',

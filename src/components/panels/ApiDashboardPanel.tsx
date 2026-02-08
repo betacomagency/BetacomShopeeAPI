@@ -71,7 +71,6 @@ function CustomTooltip({ active, payload, label }: any) {
 const CATEGORY_LABELS: Record<string, string> = {
   shop: 'Shop',
   product: 'Product',
-  ads: 'Ads',
   flash_sale: 'Flash Sale',
   review: 'Review',
   auth: 'Auth',

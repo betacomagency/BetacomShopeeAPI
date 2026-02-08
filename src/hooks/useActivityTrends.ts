@@ -65,7 +65,6 @@ export function useActivityTrends({
         dailyMap.set(dateKey, {
           date: dateKey,
           logins: 0,
-          ads: 0,
           reviews: 0,
           flash_sale: 0,
           orders: 0,
