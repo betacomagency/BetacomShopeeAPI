@@ -29,9 +29,13 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   AlertTriangle,
   Repeat,
   Shield,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 const PAGE_SIZE = 50;
@@ -427,24 +431,22 @@ export function ApiCallLogsPanel() {
                 </div>
               )}
 
-              {/* Response summary */}
+              {/* Response data */}
               {selectedLog.response_summary && Object.keys(selectedLog.response_summary).length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-slate-500 mb-1">Response Summary</p>
-                  <pre className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-x-auto max-h-48">
-                    {JSON.stringify(selectedLog.response_summary, null, 2)}
-                  </pre>
-                </div>
+                <CollapsibleJson
+                  label="Response Data"
+                  data={selectedLog.response_summary}
+                  defaultOpen={true}
+                />
               )}
 
               {/* Request params */}
               {selectedLog.request_params && Object.keys(selectedLog.request_params).length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-slate-500 mb-1">Request Params</p>
-                  <pre className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-x-auto max-h-48">
-                    {JSON.stringify(selectedLog.request_params, null, 2)}
-                  </pre>
-                </div>
+                <CollapsibleJson
+                  label="Request Params"
+                  data={selectedLog.request_params}
+                  defaultOpen={false}
+                />
               )}
             </div>
           )}
@@ -459,6 +461,67 @@ function DetailItem({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs text-slate-400">{label}</p>
       <p className="text-sm text-slate-700 font-medium">{value}</p>
+    </div>
+  );
+}
+
+function CollapsibleJson({
+  label,
+  data,
+  defaultOpen = false,
+}: {
+  label: string;
+  data: Record<string, unknown>;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [copied, setCopied] = useState(false);
+  const jsonString = JSON.stringify(data, null, 2);
+  const isTruncated = !!(data as Record<string, unknown>)._truncated;
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(jsonString);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-2">
+          {isOpen ? (
+            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          )}
+          <span className="text-xs font-medium text-slate-600">{label}</span>
+          {isTruncated && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+              Truncated
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleCopy}
+          className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer"
+          title="Copy JSON"
+        >
+          {copied ? (
+            <Check className="w-3.5 h-3.5 text-green-600" />
+          ) : (
+            <Copy className="w-3.5 h-3.5 text-slate-400" />
+          )}
+        </button>
+      </button>
+      {isOpen && (
+        <pre className="text-xs p-3 overflow-auto max-h-[400px] bg-white font-mono leading-relaxed text-slate-700">
+          {jsonString}
+        </pre>
+      )}
     </div>
   );
 }

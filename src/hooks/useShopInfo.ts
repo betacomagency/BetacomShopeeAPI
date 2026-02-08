@@ -1,7 +1,6 @@
 /**
  * Hook: useShopInfo
- * Lấy thông tin shop từ Shopee API (3 API an toàn: info, profile, holiday)
- * Auto-refresh mỗi 10 phút để boost API success rate
+ * Lấy thông tin shop từ Shopee API (get_shop_info + get_profile)
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -39,28 +38,13 @@ export interface ShopAllData {
       shop_name?: string;
     };
   } | null;
-  holidayMode: {
-    error?: string;
-    message?: string;
-    response?: {
-      holiday_mode_on?: boolean;
-      holiday_date_list?: Array<{
-        date_from: number;
-        date_to: number;
-      }>;
-    };
-  } | null;
-  _meta?: {
-    total_apis: number;
-    success: number;
-    failed: number;
-    timestamp: string;
-  };
+  cached?: boolean;
+  cached_at?: string;
 }
 
 async function fetchAllShopData(shopId: number): Promise<ShopAllData> {
   const { data, error } = await supabase.functions.invoke('shopee-shop', {
-    body: { action: 'get-all-shop-data', shop_id: shopId },
+    body: { action: 'get-full-info', shop_id: shopId },
   });
 
   if (error) {

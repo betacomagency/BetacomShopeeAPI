@@ -108,26 +108,61 @@ export function getApiCallStatus(result: Record<string, unknown>): {
   };
 }
 
+const MAX_RESPONSE_SIZE = 50 * 1024; // 50KB limit
+
 /**
- * Tạo response summary nhẹ từ Shopee API response
- * Chỉ giữ các field quan trọng, bỏ data nặng
+ * Tạo response summary đầy đủ từ Shopee API response
+ * Lưu toàn bộ response data, truncate nếu vượt quá 50KB
  */
 export function createResponseSummary(result: Record<string, unknown>): Record<string, unknown> {
-  const summary: Record<string, unknown> = {};
+  // Deep clone to avoid mutating the original
+  const fullResponse = JSON.parse(JSON.stringify(result));
 
-  if (result.error !== undefined) summary.error = result.error;
-  if (result.message !== undefined) summary.message = result.message;
-  if (result.request_id !== undefined) summary.request_id = result.request_id;
-  if (result.warning !== undefined) summary.warning = result.warning;
+  // Sanitize sensitive fields in response
+  sanitizeDeep(fullResponse);
 
-  // Item counts nếu có
-  if (result.response) {
-    const resp = result.response as Record<string, unknown>;
-    if (resp.total_count !== undefined) summary.total_count = resp.total_count;
-    if (resp.has_next_page !== undefined) summary.has_next_page = resp.has_next_page;
-    if (Array.isArray(resp.item_list)) summary.item_count = resp.item_list.length;
-    if (Array.isArray(resp.item)) summary.item_count = resp.item.length;
+  // Check size and truncate if needed
+  const json = JSON.stringify(fullResponse);
+  if (json.length > MAX_RESPONSE_SIZE) {
+    // Fallback to lightweight summary if response is too large
+    const summary: Record<string, unknown> = {
+      _truncated: true,
+      _original_size: json.length,
+    };
+    if (result.error !== undefined) summary.error = result.error;
+    if (result.message !== undefined) summary.message = result.message;
+    if (result.request_id !== undefined) summary.request_id = result.request_id;
+    if (result.warning !== undefined) summary.warning = result.warning;
+
+    if (result.response) {
+      const resp = result.response as Record<string, unknown>;
+      if (resp.total_count !== undefined) summary.total_count = resp.total_count;
+      if (resp.has_next_page !== undefined) summary.has_next_page = resp.has_next_page;
+      if (Array.isArray(resp.item_list)) summary.item_count = resp.item_list.length;
+      if (Array.isArray(resp.item)) summary.item_count = resp.item.length;
+    }
+    return summary;
   }
 
-  return summary;
+  return fullResponse;
+}
+
+/**
+ * Recursively sanitize sensitive fields in response data
+ */
+function sanitizeDeep(obj: unknown): void {
+  if (!obj || typeof obj !== 'object') return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) sanitizeDeep(item);
+    return;
+  }
+  const sensitiveKeys = ['access_token', 'refresh_token', 'partner_key', 'sign', 'signature'];
+  const record = obj as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (sensitiveKeys.includes(key.toLowerCase())) {
+      record[key] = '***';
+    } else if (typeof record[key] === 'object' && record[key] !== null) {
+      sanitizeDeep(record[key]);
+    }
+  }
 }
