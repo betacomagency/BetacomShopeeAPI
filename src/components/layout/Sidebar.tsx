@@ -152,7 +152,6 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
           collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
         )}>
           <h1 className="font-bold text-xl text-red-500">BETACOM</h1>
-          <p className="text-xs text-slate-500">Quản lý Shop đa nền tảng</p>
         </div>
       </Link>
 

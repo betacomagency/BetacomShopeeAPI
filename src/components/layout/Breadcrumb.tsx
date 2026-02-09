@@ -1,130 +1,15 @@
 /**
- * Breadcrumb Component - Hiển thị đường dẫn trang hiện tại
+ * Header Bar - Mobile menu toggle + Shop Selector
  */
 
-import { useLocation, Link } from 'react-router-dom';
-import { ChevronRight, Home, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import ShopSelector from './ShopSelector';
-
-// Map route path to display name
-const routeNames: Record<string, string> = {
-  '': 'Trang chủ',
-  'dashboard': 'Dashboard',
-  'shop-info': 'Thông tin Shop',
-  'account-health': 'Hiệu quả hoạt động',
-  'products': 'Sản phẩm',
-  'reviews': 'Đánh giá',
-  'auto-reply': 'Đánh giá tự động',
-  'flash-sale': 'Flash Sale',
-  'auto-setup': 'Tự động cài FS',
-  'auto-history': 'Lịch sử',
-  'detail': 'Chi tiết',
-  'settings': 'Cài đặt',
-  'profile': 'Hồ sơ',
-  'shops': 'Quản lý Shop',
-  'users': 'Quản lý người dùng',
-  'advanced': 'Quản lý nâng cao',
-};
-
-// Parent route names for nested routes
-const parentRouteNames: Record<string, string> = {
-  'products': 'Sản phẩm',
-  'reviews': 'Đánh giá',
-  'flash-sale': 'Flash Sale',
-  'settings': 'Cài đặt',
-};
-
-// Child route display names (when showing as last item)
-const childRouteNames: Record<string, Record<string, string>> = {
-  'products': {
-    '': 'Danh sách sản phẩm',
-  },
-  'reviews': {
-    '': 'Quản lý đánh giá',
-    'auto-reply': 'Đánh giá tự động',
-  },
-  'flash-sale': {
-    '': 'Danh sách',
-    'auto-setup': 'Tự động cài FS',
-    'detail': 'Chi tiết',
-  },
-};
-
-// Check if segment is a dynamic ID (numeric or order SN like "260121KA117CKD")
-function isDynamicSegment(segment: string): boolean {
-  // Pure numeric IDs
-  if (/^\d+$/.test(segment)) return true;
-  // Order SN format: starts with digits, contains letters (e.g., 260121KA117CKD)
-  if (/^\d{6}[A-Z0-9]+$/i.test(segment)) return true;
-  return false;
-}
-
-// Get display name for segment
-function getSegmentName(segment: string, prevSegment?: string, isLast?: boolean, allSegments?: string[]): string {
-  // If it's a dynamic ID, show contextual name
-  if (isDynamicSegment(segment)) {
-    if (prevSegment === 'detail') {
-      return `#${segment}`;
-    }
-    return `#${segment}`;
-  }
-
-  // Check if this is a child route that needs special naming
-  if (prevSegment && childRouteNames[prevSegment]) {
-    return childRouteNames[prevSegment][segment] || routeNames[segment] || segment;
-  }
-
-  // For parent routes that have children, show parent name when not last
-  if (!isLast && parentRouteNames[segment]) {
-    return parentRouteNames[segment];
-  }
-
-  // For parent routes when they ARE the last item (e.g., /reviews)
-  if (isLast && childRouteNames[segment]) {
-    return childRouteNames[segment][''] || routeNames[segment] || segment;
-  }
-
-  return routeNames[segment] || segment;
-}
-
-// Routes that need a virtual parent in breadcrumb
-// e.g., /reviews should show: Trang chủ > Đánh giá > Quản lý đánh giá
-const virtualParentRoutes: Record<string, { parentName: string; childName: string }> = {
-  'products': { parentName: 'Sản phẩm', childName: 'Danh sách sản phẩm' },
-  'reviews': { parentName: 'Đánh giá', childName: 'Quản lý đánh giá' },
-  'flash-sale': { parentName: 'Flash Sale', childName: 'Danh sách' },
-};
 
 interface BreadcrumbProps {
   onMobileMenuClick?: () => void;
 }
 
 export default function Breadcrumb({ onMobileMenuClick }: BreadcrumbProps) {
-  const location = useLocation();
-
-  // Parse path segments
-  const pathSegments = location.pathname.split('/').filter(Boolean);
-
-  // Build breadcrumb items
-  let breadcrumbItems = pathSegments.map((segment, index) => {
-    const path = '/' + pathSegments.slice(0, index + 1).join('/');
-    const prevSegment = index > 0 ? pathSegments[index - 1] : undefined;
-    const isLast = index === pathSegments.length - 1;
-    const name = getSegmentName(segment, prevSegment, isLast, pathSegments);
-
-    return { path, name, isLast, segment };
-  });
-
-  // Inject virtual parent for single-segment routes that need it
-  // e.g., /reviews -> [{ Đánh giá }, { Quản lý đánh giá }]
-  if (pathSegments.length === 1 && virtualParentRoutes[pathSegments[0]]) {
-    const config = virtualParentRoutes[pathSegments[0]];
-    breadcrumbItems = [
-      { path: '/' + pathSegments[0], name: config.parentName, isLast: false, segment: pathSegments[0] },
-      { path: '/' + pathSegments[0], name: config.childName, isLast: true, segment: '' },
-    ];
-  }
-
   return (
     <div className="bg-white border-b border-slate-200 px-6 h-[73px] flex items-center sticky top-0 z-30">
       <div className="flex items-center justify-between w-full">
@@ -136,32 +21,8 @@ export default function Breadcrumb({ onMobileMenuClick }: BreadcrumbProps) {
           <Menu className="h-5 w-5" />
         </button>
 
-        {/* Breadcrumb Navigation - Hidden on mobile */}
-        <nav className="hidden md:flex items-center gap-2 text-sm flex-1 min-w-0 mr-4 overflow-hidden">
-          <Link
-            to="/"
-            className="flex items-center gap-1 text-slate-500 hover:text-orange-500 transition-colors flex-shrink-0"
-          >
-            <Home className="h-4 w-4" />
-            <span>Trang chủ</span>
-          </Link>
-
-          {breadcrumbItems.map((item, index) => (
-            <div key={`${location.pathname}-${index}`} className="flex items-center gap-2 min-w-0">
-              <ChevronRight className="h-4 w-4 text-slate-400 flex-shrink-0" />
-              {item.isLast ? (
-                <span className="text-slate-800 font-medium truncate">{item.name}</span>
-              ) : (
-                <Link
-                  to={item.path}
-                  className="text-slate-500 hover:text-orange-500 transition-colors whitespace-nowrap"
-                >
-                  {item.name}
-                </Link>
-              )}
-            </div>
-          ))}
-        </nav>
+        {/* Spacer for desktop */}
+        <div className="hidden md:block flex-1" />
 
         {/* Shop Selector */}
         <div className="md:w-64 flex-shrink-0">

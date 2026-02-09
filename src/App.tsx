@@ -25,15 +25,15 @@ import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
 import AdvancedSettingsPage from '@/pages/settings/AdvancedSettingsPage';
 
 // Feature Pages
-import ShopInfoPage from '@/pages/ShopInfoPage';
-import AccountHealthPage from '@/pages/AccountHealthPage';
 import FlashSalePage from '@/pages/FlashSalePage';
 import FlashSaleDetailPage from '@/pages/FlashSaleDetailPage';
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
 import ProductsPage from '@/pages/ProductsPage';
-import ReviewsPage from '@/pages/ReviewsPage';
-import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
-import ApiLogsPage from '@/pages/ApiLogsPage';
+// [HIDDEN] Reviews feature - temporarily disabled
+// import ReviewsPage from '@/pages/ReviewsPage';
+// import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
+// [HIDDEN] API & Logs - temporarily disabled
+// import ApiLogsPage from '@/pages/ApiLogsPage';
 // [HIDDEN] Lazada Pages - temporarily disabled
 // import LazadaDashboardPage from '@/pages/lazada/LazadaDashboardPage';
 // import LazadaShopsPage from '@/pages/lazada/LazadaShopsPage';
@@ -76,17 +76,17 @@ function App() {
                 {/* Protected routes with MainLayout */}
                 <Route element={<MainLayout />}>
                   <Route path="/dashboard" element={<HomePage />} />
-                  <Route path="/shop-info" element={<ShopInfoPage />} />
-                  <Route path="/account-health" element={<AccountHealthPage />} />
                   {/* Feature Routes */}
                   <Route path="/products" element={<ProductsPage />} />
-                  <Route path="/reviews" element={<ReviewsPage />} />
-                  <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} />
+                  {/* [HIDDEN] Reviews feature - temporarily disabled */}
+                  {/* <Route path="/reviews" element={<ReviewsPage />} /> */}
+                  {/* <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} /> */}
                   <Route path="/flash-sale" element={<FlashSalePage />} />
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
 
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
-                  <Route path="/api-logs" element={<ApiLogsPage />} />
+                  {/* [HIDDEN] API & Logs - temporarily disabled */}
+                  {/* <Route path="/api-logs" element={<ApiLogsPage />} /> */}
 
                   {/* Settings Routes */}
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />

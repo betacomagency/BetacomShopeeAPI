@@ -260,6 +260,17 @@ export function SimpleDataTable<TData>({
 // TanStack DataTable (Advanced features)
 // ============================================
 
+export interface DataTablePaginationInfo {
+  pageIndex: number;
+  pageCount: number;
+  canPreviousPage: boolean;
+  canNextPage: boolean;
+  previousPage: () => void;
+  nextPage: () => void;
+  setPageIndex: (index: number) => void;
+  totalRows: number;
+}
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -272,6 +283,8 @@ interface DataTableProps<TData, TValue> {
   emptyMessage?: string;
   loading?: boolean;
   loadingMessage?: string;
+  /** Callback to expose pagination info externally */
+  onPaginationChange?: (info: DataTablePaginationInfo) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -286,6 +299,7 @@ export function DataTable<TData, TValue>({
   emptyMessage = "Không có dữ liệu",
   loading = false,
   loadingMessage = "Đang tải...",
+  onPaginationChange,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
@@ -315,6 +329,33 @@ export function DataTable<TData, TValue>({
       },
     },
   });
+
+  // Expose pagination info to parent - use ref to avoid infinite loops
+  const tableRef = React.useRef(table);
+  tableRef.current = table;
+
+  const stablePreviousPage = React.useCallback(() => tableRef.current.previousPage(), []);
+  const stableNextPage = React.useCallback(() => tableRef.current.nextPage(), []);
+  const stableSetPageIndex = React.useCallback((index: number) => tableRef.current.setPageIndex(index), []);
+
+  const pageIndex = table.getState().pagination.pageIndex;
+  const pageCount = table.getPageCount();
+  const totalRows = table.getFilteredRowModel().rows.length;
+
+  React.useEffect(() => {
+    if (onPaginationChange) {
+      onPaginationChange({
+        pageIndex,
+        pageCount,
+        canPreviousPage: pageIndex > 0,
+        canNextPage: pageIndex < pageCount - 1,
+        previousPage: stablePreviousPage,
+        nextPage: stableNextPage,
+        setPageIndex: stableSetPageIndex,
+        totalRows,
+      });
+    }
+  }, [pageIndex, pageCount, totalRows, onPaginationChange, stablePreviousPage, stableNextPage, stableSetPageIndex]);
 
   return (
     <div className="w-full">

@@ -75,7 +75,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   review: 'Review',
   auth: 'Auth',
   order: 'Order',
-  account_health: 'Account Health',
   finance: 'Finance',
 };
 

@@ -5,7 +5,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Trash2, Eye, Clock, Calendar, Copy } from 'lucide-react';
+import { RefreshCw, Trash2, Eye, Clock, Calendar, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ColumnDef } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -26,7 +26,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTable, DataTablePaginationInfo } from '@/components/ui/data-table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useSyncData } from '@/hooks/useSyncData';
 import { useFlashSaleData } from '@/hooks/useRealtimeData';
@@ -43,7 +44,9 @@ import {
   withDynamicType,
   deduplicateByTimeslot,
 } from '@/lib/shopee/flash-sale/utils';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { CreateFlashSalePanel } from './CreateFlashSalePanel';
+import { FlashSaleDetailPanel } from './FlashSaleDetailPanel';
 import { AutoSetupDialog } from '@/components/dialogs/AutoSetupDialog';
 import { cn } from '@/lib/utils';
 
@@ -72,6 +75,23 @@ function formatDateTime(timestamp: number): string {
   });
 }
 
+function formatTime(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatDate(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
 // Check if flash sale can be deleted (only upcoming)
 function canDelete(sale: FlashSale): boolean {
   return sale.type === 1;
@@ -82,9 +102,11 @@ function canToggle(sale: FlashSale): boolean {
   return sale.type === 1 || sale.type === 2;
 }
 
-// Get error message
-function getErrorMessage(error: string): string {
-  return ERROR_MESSAGES[error] || error;
+// Get error message with optional Shopee message for context
+function getErrorMessage(error: string, message?: string): string {
+  const mapped = ERROR_MESSAGES[error];
+  if (mapped) return mapped;
+  return message || error;
 }
 
 // Auto sync interval: 30 minutes in milliseconds
@@ -107,6 +129,12 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
   // Auto setup dialog state
   const [showAutoSetupDialog, setShowAutoSetupDialog] = useState(false);
   const [copyFromFlashSaleId, setCopyFromFlashSaleId] = useState<number | null>(null);
+
+  // Detail modal state
+  const [detailFlashSale, setDetailFlashSale] = useState<FlashSale | null>(null);
+
+  // Desktop pagination info (from DataTable)
+  const [paginationInfo, setPaginationInfo] = useState<DataTablePaginationInfo | null>(null);
 
   // Mobile pagination
   const [mobilePage, setMobilePage] = useState(1);
@@ -217,7 +245,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
       });
 
       if (error) throw error;
-      if (data?.error) throw new Error(getErrorMessage(data.error));
+      if (data?.error) throw new Error(getErrorMessage(data.error, data.message));
 
       // Update local DB
       await supabase
@@ -304,7 +332,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
       });
 
       if (error) throw error;
-      if (data?.error) throw new Error(getErrorMessage(data.error));
+      if (data?.error) throw new Error(getErrorMessage(data.error, data.message));
 
       await supabase
         .from('apishopee_flash_sale_data')
@@ -358,9 +386,9 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
     }
   };
 
-  // Handle view detail - navigate to detail page
+  // Handle view detail - open modal
   const handleViewDetail = (sale: FlashSale) => {
-    navigate(`/flash-sale/detail/${sale.flash_sale_id}`);
+    setDetailFlashSale(sale);
   };
 
   // Handle back to list
@@ -383,57 +411,52 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
     }
   };
 
-  // Handle auto setup success
-  const handleAutoSetupSuccess = () => {
-    refetch();
+  // Handle auto setup success - sync lại dữ liệu từ Shopee để hiển thị FS mới tạo
+  const handleAutoSetupSuccess = async () => {
+    await triggerSync(true);
+    await refetch();
   };
 
-  // Table columns - theo yêu cầu: ID, Tên chương trình, Bắt đầu, Kết thúc, Số lượng SP
+  // Table columns: Khung giờ, Trạng thái, Số lượng SP, Thao tác
   const columns: ColumnDef<FlashSale>[] = [
     {
-      accessorKey: 'flash_sale_id',
-      header: 'ID',
-      size: 120,
-      cell: ({ row }) => (
-        <div className="text-sm font-mono text-slate-600 whitespace-nowrap">
-          {row.original.flash_sale_id}
-        </div>
-      ),
-    },
-    {
-      accessorKey: 'name',
-      header: 'Tên chương trình',
-      size: 180,
-      cell: ({ row }) => (
-        <div className="text-sm whitespace-nowrap">
-          <div className="font-medium text-slate-700">
-            Flash Sale {TYPE_LABELS[row.original.type]}
-          </div>
-          <div className="text-xs text-slate-400">
-            Timeslot: {row.original.timeslot_id}
-          </div>
-        </div>
-      ),
-    },
-    {
       accessorKey: 'start_time',
-      header: 'Bắt đầu',
-      size: 150,
-      cell: ({ row }) => (
-        <div className="text-sm text-slate-600 whitespace-nowrap">
-          {formatDateTime(row.original.start_time)}
-        </div>
-      ),
+      header: 'Khung giờ',
+      size: 200,
+      cell: ({ row }) => {
+        const { start_time, end_time, flash_sale_id } = row.original;
+        const sameDay = formatDate(start_time) === formatDate(end_time);
+        return (
+          <div className="text-sm whitespace-nowrap">
+            <div className="font-medium text-slate-700">
+              {formatTime(start_time)} {formatDate(start_time)} - {sameDay ? formatTime(end_time) : formatDateTime(end_time)}
+            </div>
+            <div className="text-xs text-slate-400">
+              {flash_sale_id}
+            </div>
+          </div>
+        );
+      },
     },
     {
-      accessorKey: 'end_time',
-      header: 'Kết thúc',
-      size: 150,
-      cell: ({ row }) => (
-        <div className="text-sm text-slate-600 whitespace-nowrap">
-          {formatDateTime(row.original.end_time)}
-        </div>
-      ),
+      accessorKey: 'type',
+      header: 'Trạng thái',
+      size: 120,
+      cell: ({ row }) => {
+        const type = row.original.type;
+        const config = {
+          2: { label: 'Đang chạy', bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
+          1: { label: 'Sắp tới', bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+          3: { label: 'Kết thúc', bg: 'bg-slate-100', text: 'text-slate-500', dot: 'bg-slate-400' },
+        }[type] || { label: 'Không rõ', bg: 'bg-slate-100', text: 'text-slate-500', dot: 'bg-slate-400' };
+
+        return (
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+            {config.label}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'items',
@@ -445,27 +468,6 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
           <span className="text-slate-400">/{row.original.item_count}</span>
         </div>
       ),
-    },
-
-    {
-      accessorKey: 'toggle',
-      header: 'Bật/Tắt',
-      size: 80,
-      cell: ({ row }) => {
-        // Status: 1 = Enabled (bật), 2 = Disabled (tắt)
-        // Handle cả string và number để đảm bảo tương thích
-        const isEnabled = Number(row.original.status) === 1;
-        return (
-          <div className="flex justify-center">
-            <Switch
-              checked={isEnabled}
-              onCheckedChange={() => handleToggleStatus(row.original)}
-              disabled={!canToggle(row.original) || togglingId === row.original.flash_sale_id}
-              className="data-[state=checked]:bg-green-500"
-            />
-          </div>
-        );
-      },
     },
     {
       accessorKey: 'actions',
@@ -545,47 +547,92 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
       <CardContent className="p-0 flex flex-col h-full overflow-hidden">
         {/* Sticky Header Section */}
         <div className="flex-shrink-0 border-b">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
-            <div className="flex w-full md:w-auto overflow-x-auto no-scrollbar pl-4 md:pl-0">
-              {TABS.map((tab) => {
-                const count = tab.value === '0' ? counts.all
-                  : tab.value === '2' ? counts.ongoing
-                    : tab.value === '1' ? counts.upcoming
-                      : counts.expired;
-
-                return (
-                  <button
-                    key={tab.value}
-                    onClick={() => setActiveTab(tab.value)}
-                    className={cn(
-                      "px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                      activeTab === tab.value
-                        ? "border-orange-500 text-orange-600"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
-                    )}
+          <div className="flex items-center justify-between px-4 py-3">
+            {/* Pagination - left side */}
+            <div className="hidden md:flex items-center gap-1">
+              {paginationInfo && paginationInfo.pageCount > 1 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={paginationInfo.previousPage}
+                    disabled={!paginationInfo.canPreviousPage}
+                    className="h-8 w-8 p-0"
                   >
-                    {tab.label}
-                    {count > 0 && (
-                      <span className="ml-1 text-xs text-slate-400">({count})</span>
-                    )}
-                  </button>
-                );
-              })}
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  {Array.from({ length: Math.min(5, paginationInfo.pageCount) }, (_, i) => {
+                    const pageIndex = paginationInfo.pageIndex;
+                    const pageCount = paginationInfo.pageCount;
+                    let pageNum: number;
+
+                    if (pageCount <= 5) {
+                      pageNum = i;
+                    } else if (pageIndex < 3) {
+                      pageNum = i;
+                    } else if (pageIndex > pageCount - 4) {
+                      pageNum = pageCount - 5 + i;
+                    } else {
+                      pageNum = pageIndex - 2 + i;
+                    }
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={pageIndex === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => paginationInfo.setPageIndex(pageNum)}
+                        className={cn(
+                          "h-8 w-8 p-0",
+                          pageIndex === pageNum && "bg-orange-500 hover:bg-orange-600"
+                        )}
+                      >
+                        {pageNum + 1}
+                      </Button>
+                    );
+                  })}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={paginationInfo.nextPage}
+                    disabled={!paginationInfo.canNextPage}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
 
-            {/* Refresh Button */}
-            <div className="flex items-center gap-2 w-full md:w-auto justify-end px-4 md:px-0 md:pr-4 pb-3 md:pb-0">
+            {/* Filter + Sync - right side */}
+            <div className="flex items-center gap-2 ml-auto">
+              <Select value={activeTab} onValueChange={(v) => setActiveTab(v as FilterType)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TABS.map((tab) => {
+                    const count = tab.value === '0' ? counts.all
+                      : tab.value === '2' ? counts.ongoing
+                        : tab.value === '1' ? counts.upcoming
+                          : counts.expired;
+                    return (
+                      <SelectItem key={tab.value} value={tab.value}>
+                        {tab.label}{count > 0 ? ` (${count})` : ''}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  // Sync từ Shopee API
                   await triggerSync(true);
-                  // Refetch data từ database để hiển thị UI
                   await refetch();
                 }}
                 disabled={isSyncing || loading}
-                className="bg-orange-50 border-orange-200 hover:bg-orange-100 text-orange-600 flex-1 md:flex-none"
+                className="bg-orange-50 border-orange-200 hover:bg-orange-100 text-orange-600"
               >
                 <RefreshCw className={cn("h-4 w-4 mr-2", (isSyncing || loading) && "animate-spin")} />
                 {isSyncing ? 'Đang đồng bộ...' : 'Lấy dữ liệu'}
@@ -637,7 +684,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                       />
                     </div>
 
-                    {/* Row 2: Badge + ID */}
+                    {/* Row 2: Badge + ID + Product count */}
                     <div className="mt-2 flex items-center gap-2">
                       <span className={cn(
                         "px-2 py-0.5 rounded-full text-xs font-medium",
@@ -649,6 +696,15 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                       </span>
                       <span className="text-xs text-slate-400 font-mono">
                         #{sale.flash_sale_id}
+                      </span>
+                      <span className="text-xs text-slate-500 ml-auto">
+                        <span className={cn(
+                          "font-medium",
+                          sale.enabled_item_count > 0 ? "text-orange-600" : "text-slate-400"
+                        )}>
+                          {sale.enabled_item_count}
+                        </span>
+                        <span className="text-slate-400">/{sale.item_count} SP</span>
                       </span>
                     </div>
 
@@ -670,16 +726,15 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                       >
                         <Copy className="w-3 h-3 mr-1" /> Sao chép
                       </Button>
-                      {canDelete(sale) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs text-red-600"
-                          onClick={() => handleDeleteClick(sale)}
-                        >
-                          <Trash2 className="w-3 h-3 mr-1" /> Xóa
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-red-600"
+                        onClick={() => handleDeleteClick(sale)}
+                        disabled={!canDelete(sale)}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" /> Xóa
+                      </Button>
                     </div>
                   </div>
                 );
@@ -728,7 +783,8 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                   : 'Không có Flash Sale nào phù hợp với bộ lọc.'
               }
               pageSize={20}
-              showPagination={true}
+              showPagination={false}
+              onPaginationChange={setPaginationInfo}
             />
           </div>
 
@@ -783,6 +839,19 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
         copyFromFlashSaleId={copyFromFlashSaleId}
         onSuccess={handleAutoSetupSuccess}
       />
+
+      {/* Detail Modal */}
+      <Dialog open={!!detailFlashSale} onOpenChange={(open) => !open && setDetailFlashSale(null)}>
+        <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
+          {detailFlashSale && (
+            <FlashSaleDetailPanel
+              shopId={shopId}
+              flashSale={detailFlashSale}
+              onBack={() => setDetailFlashSale(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

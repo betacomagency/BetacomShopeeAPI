@@ -18,7 +18,6 @@ import {
   Clock,
   // ShoppingBag, // [HIDDEN] Lazada feature
   FileText,
-  Activity,
   Monitor,
   type LucideIcon,
 } from 'lucide-react';
@@ -59,20 +58,6 @@ export const menuItems: MenuItem[] = [
     description: 'Xem tổng quan hệ thống',
   },
   {
-    title: 'Thông tin Shop',
-    icon: Store,
-    path: '/shop-info',
-    permissionKey: 'shop-info',
-    description: 'Xem thông tin chi tiết shop Shopee',
-  },
-  {
-    title: 'Hiệu quả hoạt động',
-    icon: Activity,
-    path: '/account-health',
-    permissionKey: 'account-health',
-    description: 'Xem hiệu quả hoạt động shop',
-  },
-  {
     title: 'Sản phẩm',
     icon: Package,
     permissionKey: 'products',
@@ -81,16 +66,17 @@ export const menuItems: MenuItem[] = [
       { title: 'Danh sách sản phẩm', icon: Package, path: '/products', permissionKey: 'products' },
     ],
   },
-  {
-    title: 'Đánh giá',
-    icon: Star,
-    permissionKey: 'reviews',
-    description: 'Quản lý đánh giá',
-    children: [
-      { title: 'Quản lý đánh giá', icon: Star, path: '/reviews', permissionKey: 'reviews' },
-      { title: 'Đánh giá tự động', icon: Zap, path: '/reviews/auto-reply', permissionKey: 'reviews' },
-    ],
-  },
+  // [HIDDEN] Reviews feature - temporarily disabled
+  // {
+  //   title: 'Đánh giá',
+  //   icon: Star,
+  //   permissionKey: 'reviews',
+  //   description: 'Quản lý đánh giá',
+  //   children: [
+  //     { title: 'Quản lý đánh giá', icon: Star, path: '/reviews', permissionKey: 'reviews' },
+  //     { title: 'Đánh giá tự động', icon: Zap, path: '/reviews/auto-reply', permissionKey: 'reviews' },
+  //   ],
+  // },
   {
     title: 'Flash Sale',
     icon: Zap,
@@ -114,14 +100,15 @@ export const menuItems: MenuItem[] = [
   //     { title: 'Sản phẩm', icon: Package, path: '/lazada/products', permissionKey: 'lazada' },
   //   ],
   // },
-  {
-    title: 'API & Logs',
-    icon: Monitor,
-    path: '/api-logs',
-    permissionKey: 'api-logs',
-    description: 'Giám sát API Shopee và lịch sử gọi API',
-    adminOnly: true,
-  },
+  // [HIDDEN] API & Logs - temporarily disabled
+  // {
+  //   title: 'API & Logs',
+  //   icon: Monitor,
+  //   path: '/api-logs',
+  //   permissionKey: 'api-logs',
+  //   description: 'Giám sát API Shopee và lịch sử gọi API',
+  //   adminOnly: true,
+  // },
   {
     title: 'Cài đặt',
     icon: Settings,

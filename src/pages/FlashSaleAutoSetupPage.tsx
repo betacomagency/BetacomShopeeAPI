@@ -26,12 +26,23 @@ import { Spinner } from '@/components/ui/spinner';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
+import { useSyncData } from '@/hooks/useSyncData';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
@@ -123,6 +134,13 @@ export default function FlashSaleAutoSetupPage() {
   const { shops, selectedShopId, isLoading: shopsLoading } = useShopeeAuth();
   const isRunningRef = useRef(false);
 
+  // Sync flash sale data after successful creation
+  const { triggerSync } = useSyncData({
+    shopId: selectedShopId || 0,
+    userId: user?.id || '',
+    autoSyncOnMount: false,
+  });
+
   // Time slots state
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -150,6 +168,10 @@ export default function FlashSaleAutoSetupPage() {
   const [history, setHistory] = useState<AutoHistoryRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Confirm dialog state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
 
   const location = useLocation();
 
@@ -386,8 +408,7 @@ export default function FlashSaleAutoSetupPage() {
 
   // Clear all history (xóa cả flash sale trên Shopee)
   const clearAllHistory = async () => {
-    if (!confirm('Bạn có chắc muốn xóa toàn bộ lịch sử? Các Flash Sale đã tạo trên Shopee cũng sẽ bị xóa.')) return;
-
+    setShowClearAllConfirm(false);
     try {
       // Xóa từng flash sale trên Shopee
       const recordsWithFlashSale = history.filter(h => h.flash_sale_id);
@@ -738,6 +759,12 @@ export default function FlashSaleAutoSetupPage() {
     setIsRunning(false);
     fetchHistory(); // Refresh history after completion
     fetchTimeSlots(); // Refresh time slots để loại bỏ các slot vừa tạo FS
+
+    // Sync flash sale data từ Shopee để cập nhật trang Danh sách
+    if (successCount > 0) {
+      await triggerSync(true);
+    }
+
     toast({
       title: 'Hoàn tất',
       description: `Thành công: ${successCount}, Lỗi: ${errorCount}`,
@@ -792,45 +819,38 @@ export default function FlashSaleAutoSetupPage() {
           <div className="flex-shrink-0">
             {/* Header with Filter and Actions */}
             <div className="border-b">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
-                {/* Filter Tabs */}
-                <div className="flex w-full md:w-auto overflow-x-auto no-scrollbar pl-4 md:pl-0">
-                  {[
-                    { value: 'all', label: 'Tất cả', count: stats.total },
-                    { value: 'success', label: 'Thành công', count: stats.success },
-                    { value: 'error', label: 'Lỗi', count: stats.error },
-                    { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
-                  ].map((tab) => (
-                    <button
-                      key={tab.value}
-                      onClick={() => setStatusFilter(tab.value)}
-                      className={cn(
-                        "px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                        statusFilter === tab.value
-                          ? "border-orange-500 text-orange-600"
-                          : "border-transparent text-slate-500 hover:text-slate-700"
-                      )}
-                    >
-                      {tab.label}
-                      {tab.count > 0 && (
-                        <span className="ml-1 text-xs text-slate-400">({tab.count})</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center justify-between px-4 py-3">
+                {/* Filter Dropdown - left side */}
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: 'all', label: 'Tất cả', count: stats.total },
+                      { value: 'success', label: 'Thành công', count: stats.success },
+                      { value: 'error', label: 'Lỗi', count: stats.error },
+                      { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
+                    ].map((tab) => (
+                      <SelectItem key={tab.value} value={tab.value}>
+                        {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2 w-full md:w-auto justify-end px-4 md:px-0 md:pr-4 pb-3 md:pb-0">
-                  <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory} className="h-8 md:h-9">
+                {/* Action Buttons - right side */}
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory}>
                     <RefreshCw className={cn("h-4 w-4 mr-2", loadingHistory && "animate-spin")} />
                     Làm mới
                   </Button>
-                  <Button variant="outline" size="sm" onClick={clearAllHistory} disabled={history.length === 0} className="h-8 md:h-9 text-red-600 hover:text-red-700 hover:bg-red-50">
+                  <Button variant="outline" size="sm" onClick={() => setShowClearAllConfirm(true)} disabled={history.length === 0} className="text-red-600 hover:text-red-700 hover:bg-red-50">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Xóa hết
                   </Button>
                   {isRunning ? (
-                    <Button variant="destructive" size="sm" onClick={stopAutoSetup} className="h-8 md:h-9">
+                    <Button variant="destructive" size="sm" onClick={stopAutoSetup}>
                       <Square className="h-4 w-4 mr-2" />
                       Dừng
                     </Button>
@@ -838,7 +858,7 @@ export default function FlashSaleAutoSetupPage() {
                     <Button
                       size="sm"
                       onClick={handleStartClick}
-                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 h-8 md:h-9"
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
                     >
                       <Play className="h-4 w-4 mr-2" />
                       Tạo mới
@@ -956,7 +976,7 @@ export default function FlashSaleAutoSetupPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => deleteRecord(record.id)}
+                          onClick={() => setDeleteConfirmId(record.id)}
                           className="text-slate-400 hover:text-red-500 h-7 w-7 p-0"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1056,7 +1076,7 @@ export default function FlashSaleAutoSetupPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => deleteRecord(record.id)}
+                              onClick={() => setDeleteConfirmId(record.id)}
                               className="text-slate-400 hover:text-red-500 h-8 w-8 p-0"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1236,6 +1256,60 @@ export default function FlashSaleAutoSetupPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm delete single record */}
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const record = history.find(h => h.id === deleteConfirmId);
+                if (record?.flash_sale_id) {
+                  return `Flash Sale #${record.flash_sale_id} trên Shopee cũng sẽ bị xóa. Bạn có chắc chắn?`;
+                }
+                return 'Bạn có chắc muốn xóa bản ghi này?';
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { if (deleteConfirmId) deleteRecord(deleteConfirmId); setDeleteConfirmId(null); }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Xóa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm clear all history */}
+      <AlertDialog open={showClearAllConfirm} onOpenChange={setShowClearAllConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa toàn bộ lịch sử</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const fsCount = history.filter(h => h.flash_sale_id).length;
+                if (fsCount > 0) {
+                  return `${fsCount} Flash Sale đã tạo trên Shopee cũng sẽ bị xóa. Hành động này không thể hoàn tác.`;
+                }
+                return 'Toàn bộ lịch sử sẽ bị xóa. Hành động này không thể hoàn tác.';
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={clearAllHistory}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Xóa tất cả
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

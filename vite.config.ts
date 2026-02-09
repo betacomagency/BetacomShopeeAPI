@@ -11,6 +11,9 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  server: {
+    host: true,
+  },
   optimizeDeps: {
     include: ['react', 'react-dom', '@tanstack/react-table', '@tanstack/react-query'],
   },

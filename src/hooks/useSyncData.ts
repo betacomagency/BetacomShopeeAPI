@@ -123,57 +123,33 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
     setIsSyncing(true);
     setLastError(null);
 
-    const PAGE_SIZE = 100;
+    const SYNC_LIMIT = 50; // Chỉ lấy 50 flash sale gần nhất
 
     try {
-      // Pagination: fetch tất cả flash sales
-      let allFlashSales: ShopeeFlashSale[] = [];
-      let offset = 0;
-      let totalCount = 0;
-      let pagesFetched = 0;
+      console.log(`[useSyncData] Fetching ${SYNC_LIMIT} latest flash sales from Shopee API...`);
 
-      console.log('[useSyncData] Fetching flash sales from Shopee API (paginated)...');
+      const { data: apiResult, error: apiError } = await supabase.functions.invoke('apishopee-flash-sale', {
+        body: {
+          action: 'get-flash-sale-list',
+          shop_id: shopId,
+          type: 0, // 0 = All
+          offset: 0,
+          limit: SYNC_LIMIT,
+        },
+      });
 
-      do {
-        const { data: apiResult, error: apiError } = await supabase.functions.invoke('apishopee-flash-sale', {
-          body: {
-            action: 'get-flash-sale-list',
-            shop_id: shopId,
-            type: 0, // 0 = All
-            offset,
-            limit: PAGE_SIZE,
-          },
-        });
+      if (apiError) {
+        throw new Error(apiError.message);
+      }
 
-        if (apiError) {
-          // Nếu đã fetch được một số trang, giữ data đã có thay vì throw
-          if (allFlashSales.length > 0) {
-            console.warn(`[useSyncData] API error at page ${pagesFetched + 1}, keeping ${allFlashSales.length} fetched items:`, apiError.message);
-            break;
-          }
-          throw new Error(apiError.message);
-        }
+      if (apiResult?.error) {
+        throw new Error(apiResult.error);
+      }
 
-        if (apiResult?.error) {
-          if (allFlashSales.length > 0) {
-            console.warn(`[useSyncData] API error at page ${pagesFetched + 1}, keeping ${allFlashSales.length} fetched items:`, apiResult.error);
-            break;
-          }
-          throw new Error(apiResult.error);
-        }
+      const allFlashSales: ShopeeFlashSale[] = apiResult?.response?.flash_sale_list || [];
+      const totalCount = apiResult?.response?.total_count || 0;
 
-        const pageList: ShopeeFlashSale[] = apiResult?.response?.flash_sale_list || [];
-        totalCount = apiResult?.response?.total_count || 0;
-        allFlashSales = allFlashSales.concat(pageList);
-        pagesFetched++;
-        offset += PAGE_SIZE;
-
-        console.log(`[useSyncData] Page ${pagesFetched}: ${pageList.length} items (total fetched: ${allFlashSales.length}/${totalCount})`);
-
-        // Dừng khi đã lấy hết hoặc page trống
-      } while (offset < totalCount && allFlashSales.length < totalCount);
-
-      console.log(`[useSyncData] Done: ${allFlashSales.length} flash sales in ${pagesFetched} API calls`);
+      console.log(`[useSyncData] Done: ${allFlashSales.length}/${totalCount} flash sales in 1 API call`);
 
       if (allFlashSales.length > 0) {
         const syncedAt = new Date().toISOString();
@@ -216,18 +192,7 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
           syncedIds.push(...batch.map(s => s.flash_sale_id));
         }
 
-        // Xóa flash sales không còn tồn tại trên Shopee (chỉ khi fetch đủ tất cả)
-        if (allFlashSales.length >= totalCount && syncedIds.length > 0) {
-          const { error: cleanupError } = await supabase
-            .from('apishopee_flash_sale_data')
-            .delete()
-            .eq('shop_id', shopId)
-            .lt('synced_at', syncedAt);
-
-          if (cleanupError) {
-            console.warn('[useSyncData] Cleanup stale data error:', cleanupError);
-          }
-        }
+        // Không cleanup vì chỉ fetch 50 gần nhất, không phải toàn bộ
       }
 
       // Update sync status
@@ -255,7 +220,7 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
 
       toast({
         title: 'Đồng bộ thành công',
-        description: `Đã đồng bộ ${allFlashSales.length} Flash Sales (${pagesFetched} lần gọi API)`,
+        description: `Đã đồng bộ ${allFlashSales.length}/${totalCount} Flash Sales`,
       });
 
       // Log activity
@@ -270,7 +235,7 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
         responseData: {
           synced_count: allFlashSales.length,
           total_count: totalCount,
-          api_calls: pagesFetched,
+          api_calls: 1,
         },
       });
     } catch (error) {

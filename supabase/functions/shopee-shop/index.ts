@@ -500,7 +500,7 @@ serve(async (req) => {
         break;
       }
 
-      // Action: lấy tất cả dữ liệu shop (info + profile + holiday mode)
+      // Action: lấy tất cả dữ liệu shop (info + profile)
       case 'get-all-shop-data': {
         const credentials = await getPartnerCredentials(supabase, shop_id);
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
@@ -508,7 +508,6 @@ serve(async (req) => {
         const apiCalls = [
           { name: 'info', path: '/api/v2/shop/get_shop_info' },
           { name: 'profile', path: '/api/v2/shop/get_profile' },
-          { name: 'holidayMode', path: '/api/v2/shop/get_shop_holiday' },
         ];
 
         const results = await Promise.allSettled(
@@ -581,32 +580,6 @@ serve(async (req) => {
           'GET',
           shop_id,
           token
-        );
-        break;
-      }
-
-      case 'get-notification': {
-        const { cursor, page_size } = body;
-        const credentials = await getPartnerCredentials(supabase, shop_id);
-        const token = await getTokenWithAutoRefresh(supabase, shop_id);
-
-        const extraParams: Record<string, number> = {};
-        if (cursor !== undefined && cursor !== null) {
-          extraParams.cursor = cursor;
-        }
-        if (page_size !== undefined && page_size !== null) {
-          extraParams.page_size = page_size;
-        }
-
-        result = await callShopeeAPIWithRetry(
-          supabase,
-          credentials,
-          '/api/v2/shop/get_shop_notification',
-          'GET',
-          shop_id,
-          token,
-          undefined,
-          extraParams
         );
         break;
       }

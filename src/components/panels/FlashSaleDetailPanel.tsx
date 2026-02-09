@@ -160,55 +160,32 @@ export function FlashSaleDetailPanel({
   return (
     <Card className="border-0 shadow-sm">
       <CardContent className="p-0">
-        {/* Header */}
-        <div className="p-4 border-b flex items-center justify-end">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={fetchItems} disabled={loading}>
-              <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-              Làm mới
-            </Button>
-            <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-              <Plus className="h-4 w-4 mr-2" />
-              Thêm sản phẩm
-            </Button>
-          </div>
-        </div>
-
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b sticky top-0 z-10">
+        <div>
+          <table className="w-full table-fixed">
+            <thead className="bg-slate-50 border-b">
               <tr>
-                <th className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap min-w-[200px]">
+                <th className="h-11 px-3 text-left align-middle font-medium text-slate-600 text-sm w-[35%]">
                   Phân loại hàng
                 </th>
-                <th className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  Giá gốc
+                <th className="h-11 px-3 text-left align-middle font-medium text-slate-600 text-sm w-[25%]">
+                  Giá
                 </th>
-                <th className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  Giá đã giảm
+                <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-sm w-[15%]">
+                  KM / Kho
                 </th>
-                <th className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  Khuyến Mãi
+                <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-sm w-[15%]">
+                  Giới hạn
                 </th>
-                <th className="h-11 px-4 text-center align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  SL sản phẩm khuyến mãi
-                </th>
-                <th className="h-11 px-4 text-center align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  Kho hàng
-                </th>
-                <th className="h-11 px-4 text-center align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  Giới hạn đặt hàng
-                </th>
-                <th className="h-11 px-4 text-center align-middle font-medium text-slate-600 text-sm whitespace-nowrap">
-                  Bật / Tắt
+                <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-sm w-[10%]">
+                  Bật/Tắt
                 </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="h-48">
+                  <td colSpan={5} className="h-48">
                     <div className="flex items-center justify-center">
                       <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
                     </div>
@@ -216,7 +193,7 @@ export function FlashSaleDetailPanel({
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="h-32 text-center text-slate-500">
+                  <td colSpan={5} className="h-32 text-center text-slate-500">
                     Chưa có sản phẩm nào trong Flash Sale này
                   </td>
                 </tr>
@@ -254,7 +231,7 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
     <>
       {/* Item Header Row */}
       <tr className="border-b bg-slate-50/50">
-        <td colSpan={7} className="px-4 py-3">
+        <td colSpan={4} className="px-3 py-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
               {itemImage ? (
@@ -268,12 +245,12 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
                 <div className="w-6 h-6 bg-slate-200 rounded" />
               )}
             </div>
-            <span className="text-sm font-medium text-slate-700 truncate max-w-[300px]">
+            <span className="text-sm font-medium text-slate-700 truncate">
               {item.item_name || `Item #${item.item_id}`}
             </span>
           </div>
         </td>
-        <td className="px-4 py-3 text-center">
+        <td className="px-3 py-3 text-center">
           <Switch checked={item.status === 1} disabled />
         </td>
       </tr>
@@ -295,34 +272,30 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
             const modelStatus = model.status ?? 1;
             return (
               <tr key={model.model_id} className="border-b hover:bg-slate-50/50">
-                <td className="px-4 py-3">
-                  <span className="text-sm text-slate-600 truncate block max-w-[180px]">
+                <td className="px-3 py-2">
+                  <span className="text-sm text-slate-600 truncate block">
                     {model.model_name || `Model #${model.model_id}`}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                  {formatPrice(model.original_price)}
+                <td className="px-3 py-2">
+                  <div className="text-sm">
+                    <span className="text-slate-400 line-through">{formatPrice(model.original_price)}</span>
+                    <span className="text-slate-700 ml-1">{formatPrice(promoPrice)}</span>
+                    {discount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
+                        -{discount}%
+                      </span>
+                    )}
+                  </div>
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                  {formatPrice(promoPrice)}
+                <td className="px-3 py-2 text-sm text-center">
+                  <span className="text-orange-600 font-medium">{campaignStock}</span>
+                  <span className="text-slate-400">/{actualStock}</span>
                 </td>
-                <td className="px-4 py-3">
-                  {discount > 0 && (
-                    <span className="inline-block px-2 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
-                      {discount}%GIẢM
-                    </span>
-                  )}
+                <td className="px-3 py-2 text-sm text-slate-600 text-center">
+                  {modelPurchaseLimit > 0 ? modelPurchaseLimit : '-'}
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-600 text-center whitespace-nowrap">
-                  {campaignStock}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-600 text-center whitespace-nowrap">
-                  {actualStock}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-600 text-center whitespace-nowrap">
-                  {modelPurchaseLimit > 0 ? modelPurchaseLimit : 'Không hạn mức'}
-                </td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-3 py-2 text-center">
                   <Switch checked={modelStatus === 1} disabled />
                 </td>
               </tr>
@@ -331,7 +304,7 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
           {/* Expand/Collapse button */}
           {item.models && item.models.length > 5 && (
             <tr className="border-b">
-              <td colSpan={8} className="px-4 py-2">
+              <td colSpan={5} className="px-3 py-2">
                 <button
                   onClick={onToggleExpand}
                   className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
@@ -348,32 +321,28 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
         </>
       ) : (
         <tr className="border-b hover:bg-slate-50/50">
-          <td className="px-4 py-3">
+          <td className="px-3 py-2">
             <span className="text-sm text-slate-600">-</span>
           </td>
-          <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-            {formatPrice(item.original_price)}
+          <td className="px-3 py-2">
+            <div className="text-sm">
+              <span className="text-slate-400 line-through">{formatPrice(item.original_price)}</span>
+              <span className="text-slate-700 ml-1">{formatPrice(item.input_promotion_price || item.promotion_price_with_tax)}</span>
+              {calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax) > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
+                  -{calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax)}%
+                </span>
+              )}
+            </div>
           </td>
-          <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-            {formatPrice(item.input_promotion_price || item.promotion_price_with_tax)}
+          <td className="px-3 py-2 text-sm text-center">
+            <span className="text-orange-600 font-medium">{item.campaign_stock ?? 0}</span>
+            <span className="text-slate-400">/{item.stock ?? 0}</span>
           </td>
-          <td className="px-4 py-3">
-            {calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax) > 0 && (
-              <span className="inline-block px-2 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
-                {calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax)}%GIẢM
-              </span>
-            )}
+          <td className="px-3 py-2 text-sm text-slate-600 text-center">
+            {item.purchase_limit > 0 ? item.purchase_limit : '-'}
           </td>
-          <td className="px-4 py-3 text-sm text-slate-600 text-center whitespace-nowrap">
-            {item.campaign_stock ?? 0}
-          </td>
-          <td className="px-4 py-3 text-sm text-slate-600 text-center whitespace-nowrap">
-            {item.stock ?? 0}
-          </td>
-          <td className="px-4 py-3 text-sm text-slate-600 text-center whitespace-nowrap">
-            {item.purchase_limit > 0 ? item.purchase_limit : 'Không hạn mức'}
-          </td>
-          <td className="px-4 py-3 text-center">
+          <td className="px-3 py-2 text-center">
             <Switch checked={item.status === 1} disabled />
           </td>
         </tr>

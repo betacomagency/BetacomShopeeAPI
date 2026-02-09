@@ -430,14 +430,13 @@ async function processJob(
   console.log(`[SCHEDULER] Processing job ${job.id} for shop ${job.shop_id}, timeslot ${job.timeslot_id}`);
 
   try {
-    // Kiểm tra xem timeslot đã qua chưa (thêm buffer 5 phút)
+    // Chỉ skip khi slot đã KẾT THÚC - nếu slot đang chạy vẫn thử tạo FS
     const nowUnix = Math.floor(Date.now() / 1000);
-    const bufferSeconds = 5 * 60; // 5 phút buffer
-    
-    if (job.slot_start_time && (nowUnix + bufferSeconds) >= job.slot_start_time) {
-      const errorMsg = `Khung giờ đã qua hoặc sắp bắt đầu (${new Date(job.slot_start_time * 1000).toLocaleString('vi-VN')})`;
+
+    if (job.slot_end_time && nowUnix >= job.slot_end_time) {
+      const errorMsg = `Khung giờ đã kết thúc (${new Date(job.slot_end_time * 1000).toLocaleString('vi-VN')})`;
       console.log(`[SCHEDULER] ${errorMsg}`);
-      
+
       await supabase
         .from('apishopee_flash_sale_auto_history')
         .update({
@@ -583,6 +582,79 @@ async function processJob(
   }
 }
 
+/**
+ * Sync flash sale list từ Shopee vào apishopee_flash_sale_data
+ * Gọi sau khi tạo FS thành công để trang /flash-sale hiển thị dữ liệu mới
+ */
+async function syncFlashSaleData(
+  supabase: ReturnType<typeof createClient>,
+  credentials: PartnerCredentials,
+  shopId: number,
+  token: { access_token: string; refresh_token: string },
+  userId: string
+): Promise<number> {
+  console.log(`[SCHEDULER] Syncing flash sale data for shop ${shopId}`);
+
+  const result = await callShopeeAPI(
+    supabase,
+    credentials,
+    '/api/v2/shop_flash_sale/get_shop_flash_sale_list',
+    'GET',
+    shopId,
+    token,
+    undefined,
+    { type: 0, offset: 0, limit: 50 }
+  ) as { response?: { flash_sale_list?: Array<Record<string, unknown>>; total_count?: number }; error?: string };
+
+  if (result.error || !result.response?.flash_sale_list) {
+    console.error(`[SCHEDULER] Sync failed for shop ${shopId}:`, result.error);
+    return 0;
+  }
+
+  const flashSaleList = result.response.flash_sale_list;
+  const syncedAt = new Date().toISOString();
+
+  const upsertData = flashSaleList.map(sale => ({
+    shop_id: shopId,
+    user_id: null,
+    synced_by: userId,
+    flash_sale_id: sale.flash_sale_id,
+    timeslot_id: sale.timeslot_id,
+    status: sale.status,
+    start_time: sale.start_time,
+    end_time: sale.end_time,
+    enabled_item_count: sale.enabled_item_count || 0,
+    item_count: sale.item_count || 0,
+    type: sale.type,
+    remindme_count: sale.remindme_count || 0,
+    click_count: sale.click_count || 0,
+    raw_response: sale,
+    synced_at: syncedAt,
+  }));
+
+  const { error: upsertError } = await supabase
+    .from('apishopee_flash_sale_data')
+    .upsert(upsertData, { onConflict: 'shop_id,flash_sale_id' });
+
+  if (upsertError) {
+    console.error(`[SCHEDULER] Upsert error for shop ${shopId}:`, upsertError);
+    return 0;
+  }
+
+  // Update sync status
+  await supabase
+    .from('apishopee_sync_status')
+    .upsert({
+      shop_id: shopId,
+      user_id: userId,
+      flash_sales_synced_at: syncedAt,
+      updated_at: syncedAt,
+    }, { onConflict: 'shop_id,user_id' });
+
+  console.log(`[SCHEDULER] Synced ${flashSaleList.length} flash sales for shop ${shopId}`);
+  return flashSaleList.length;
+}
+
 // ==================== MAIN HANDLER ====================
 
 serve(async (req) => {
@@ -603,7 +675,7 @@ serve(async (req) => {
       .eq('status', 'scheduled')
       .lte('scheduled_at', now)
       .order('scheduled_at', { ascending: true })
-      .limit(10); // Xử lý tối đa 10 jobs mỗi lần
+      .limit(200); // Xử lý tối đa 200 jobs mỗi lần
 
     if (queryError) {
       throw new Error(`Query error: ${queryError.message}`);
@@ -622,25 +694,76 @@ serve(async (req) => {
 
     console.log(`[SCHEDULER] Found ${pendingJobs.length} pending jobs`);
 
-    // Xử lý từng job
-    const results = [];
+    // Nhóm jobs theo shop_id để xử lý song song giữa các shop
+    const jobsByShop = new Map<number, typeof pendingJobs>();
     for (const job of pendingJobs) {
-      const result = await processJob(supabase, job as ScheduledJob);
-      results.push({
-        jobId: job.id,
-        shopId: job.shop_id,
-        timeslotId: job.timeslot_id,
-        ...result,
-      });
+      const shopId = job.shop_id as number;
+      if (!jobsByShop.has(shopId)) {
+        jobsByShop.set(shopId, []);
+      }
+      jobsByShop.get(shopId)!.push(job);
+    }
 
-      // Delay giữa các jobs để tránh rate limit
-      await new Promise(resolve => setTimeout(resolve, 500));
+    console.log(`[SCHEDULER] ${pendingJobs.length} jobs across ${jobsByShop.size} shops`);
+
+    // Xử lý các shop song song (tối đa 10 shop cùng lúc)
+    const MAX_CONCURRENT_SHOPS = 10;
+    const shopEntries = Array.from(jobsByShop.entries());
+    const results: Array<{ jobId: string; shopId: number; timeslotId: number; success: boolean; message: string; flashSaleId?: number }> = [];
+
+    for (let i = 0; i < shopEntries.length; i += MAX_CONCURRENT_SHOPS) {
+      const batch = shopEntries.slice(i, i + MAX_CONCURRENT_SHOPS);
+
+      const batchResults = await Promise.allSettled(
+        batch.map(async ([shopId, jobs]) => {
+          const shopResults = [];
+          // Trong cùng 1 shop, xử lý tuần tự để tránh Shopee rate limit
+          for (const job of jobs) {
+            const result = await processJob(supabase, job as ScheduledJob);
+            shopResults.push({
+              jobId: job.id as string,
+              shopId,
+              timeslotId: job.timeslot_id as number,
+              ...result,
+            });
+            // Delay giữa các jobs cùng shop
+            if (jobs.length > 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          return shopResults;
+        })
+      );
+
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled') {
+          results.push(...result.value);
+        }
+      }
     }
 
     const successCount = results.filter(r => r.success).length;
     const errorCount = results.filter(r => !r.success).length;
 
     console.log(`[SCHEDULER] Completed: ${successCount} success, ${errorCount} errors`);
+
+    // Sync flash sale data cho các shop có tạo FS thành công
+    if (successCount > 0) {
+      const successShopIds = [...new Set(results.filter(r => r.success).map(r => r.shopId))];
+      console.log(`[SCHEDULER] Syncing flash sale data for ${successShopIds.length} shops`);
+
+      for (const shopId of successShopIds) {
+        try {
+          const credentials = await getPartnerCredentials(supabase, shopId);
+          const token = await getTokenWithAutoRefresh(supabase, shopId);
+          const job = pendingJobs.find(j => j.shop_id === shopId);
+          const userId = (job?.user_id as string) || '';
+          await syncFlashSaleData(supabase, credentials, shopId, token, userId);
+        } catch (err) {
+          console.error(`[SCHEDULER] Sync failed for shop ${shopId}:`, (err as Error).message);
+        }
+      }
+    }
 
     return new Response(JSON.stringify({
       success: true,

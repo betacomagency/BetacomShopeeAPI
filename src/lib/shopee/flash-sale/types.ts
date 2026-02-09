@@ -271,6 +271,10 @@ export const SHOPEE_ERROR_CODES = {
   HOLIDAY_MODE: 'shop_flash_sale_in_holiday_mode',
   AUTH_ERROR: 'error_auth',
   INVALID_TOKEN: 'Invalid access_token',
+  SERVER_ERROR: 'error_server',
+  NOT_FOUND: 'error_not_found',
+  PARAM_ERROR: 'error_param',
+  PERMISSION_ERROR: 'error_permission',
 } as const;
 
 /**
@@ -284,4 +288,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   [SHOPEE_ERROR_CODES.HOLIDAY_MODE]: 'Shop đang ở chế độ nghỉ. Vui lòng tắt holiday mode.',
   [SHOPEE_ERROR_CODES.AUTH_ERROR]: 'Token hết hạn. Đang tự động refresh...',
   [SHOPEE_ERROR_CODES.INVALID_TOKEN]: 'Token không hợp lệ. Đang tự động refresh...',
+  [SHOPEE_ERROR_CODES.SERVER_ERROR]: 'Lỗi máy chủ Shopee. Vui lòng thử lại sau.',
+  [SHOPEE_ERROR_CODES.NOT_FOUND]: 'Flash Sale không tồn tại hoặc đã bị xóa.',
+  [SHOPEE_ERROR_CODES.PARAM_ERROR]: 'Dữ liệu gửi đi không hợp lệ. Vui lòng kiểm tra lại.',
+  [SHOPEE_ERROR_CODES.PERMISSION_ERROR]: 'Không có quyền thực hiện thao tác này.',
 };
