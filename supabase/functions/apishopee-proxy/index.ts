@@ -13,6 +13,19 @@ const corsHeaders = {
 };
 
 const SHOPEE_HOST = 'https://partner.shopeemobile.com';
+const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
+
+/**
+ * Gọi API qua VPS proxy hoặc trực tiếp
+ */
+async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
+  if (PROXY_URL) {
+    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+    console.log('[API Proxy] Calling via proxy:', PROXY_URL);
+    return await fetch(proxyUrl, options);
+  }
+  return await fetch(targetUrl, options);
+}
 
 // HMAC-SHA256 using Web Crypto API
 async function hmacSha256(key: string, message: string): Promise<string> {
@@ -178,7 +191,7 @@ serve(async (req) => {
     }
 
     const startTime = Date.now();
-    const response = await fetch(url, fetchOptions);
+    const response = await fetchWithProxy(url, fetchOptions);
     const endTime = Date.now();
 
     const responseData = await response.json();
