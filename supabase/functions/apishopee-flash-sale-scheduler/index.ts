@@ -271,54 +271,17 @@ async function checkTimeslotHasFlashSale(
 /**
  * Lấy template items từ Flash Sale gần nhất
  */
-async function getTemplateItems(
-  supabase: ReturnType<typeof createClient>,
-  credentials: PartnerCredentials,
-  shopId: number,
-  token: { access_token: string; refresh_token: string }
-): Promise<Array<Record<string, unknown>>> {
-  // Lấy Flash Sale gần nhất từ DB - ưu tiên đang chạy hoặc sắp tới
-  let { data: fsData } = await supabase
-    .from('apishopee_flash_sale_data')
-    .select('flash_sale_id, type')
-    .eq('shop_id', shopId)
-    .in('type', [1, 2]) // Sắp tới hoặc đang chạy
-    .order('start_time', { ascending: false })
-    .limit(1)
-    .single();
-
-  // Nếu không có FS đang chạy/sắp tới, lấy FS mới nhất bất kỳ (bao gồm đã kết thúc)
-  if (!fsData?.flash_sale_id) {
-    console.log('[SCHEDULER] No running/upcoming flash sale found, trying to get latest ended flash sale');
-    const { data: latestFs } = await supabase
-      .from('apishopee_flash_sale_data')
-      .select('flash_sale_id, type')
-      .eq('shop_id', shopId)
-      .order('start_time', { ascending: false })
-      .limit(1)
-      .single();
-
-    fsData = latestFs;
-  }
-
-  if (!fsData?.flash_sale_id) {
-    console.log('[SCHEDULER] No template flash sale found at all');
+/**
+ * Parse items từ Shopee API response thành format để add vào FS mới
+ */
+function parseFlashSaleItems(
+  result: { response?: { item_info?: FlashSaleItem[]; models?: FlashSaleModel[] }; error?: string; message?: string }
+): Array<Record<string, unknown>> {
+  // Kiểm tra lỗi từ Shopee (VD: flash_sale_not_exist)
+  if (result.error) {
+    console.log(`[SCHEDULER] Shopee API error: ${result.error} - ${result.message}`);
     return [];
   }
-
-  console.log(`[SCHEDULER] Using flash sale ${fsData.flash_sale_id} (type ${fsData.type}) as template`);
-
-  // Lấy items từ Flash Sale template
-  const result = await callShopeeAPI(
-    supabase,
-    credentials,
-    '/api/v2/shop_flash_sale/get_shop_flash_sale_items',
-    'GET',
-    shopId,
-    token,
-    undefined,
-    { flash_sale_id: fsData.flash_sale_id, offset: 0, limit: 100 }
-  ) as { response?: { item_info?: FlashSaleItem[]; models?: FlashSaleModel[] } };
 
   const itemInfoList = result?.response?.item_info || [];
   const modelsList = result?.response?.models || [];
@@ -333,62 +296,107 @@ async function getTemplateItems(
   const enabledItems = itemsWithModels.filter((item: FlashSaleItem) => item.status === 1);
 
   // Convert sang format để add vào FS mới
-  const items = enabledItems.map((item: FlashSaleItem) => {
-    const enabledModels = item.models?.filter(m => m.status === 1) || [];
+  const items: Array<Record<string, unknown>> = [];
+  for (const item of enabledItems) {
+    const enabledModels = (item as FlashSaleItem).models?.filter(m => m.status === 1) || [];
     const isNonVariantWithModel = enabledModels.length === 1 && enabledModels[0].model_id === 0;
 
     if (isNonVariantWithModel) {
       const model = enabledModels[0];
-      if (!model.input_promotion_price || model.input_promotion_price <= 0) return null;
-      return {
+      if (!model.input_promotion_price || model.input_promotion_price <= 0) continue;
+      items.push({
         item_id: item.item_id,
         purchase_limit: item.purchase_limit || 0,
         item_input_promo_price: model.input_promotion_price,
         item_stock: model.campaign_stock || 0,
-      };
+      });
+      continue;
     }
 
     if (enabledModels.length === 0 && item.input_promotion_price && item.input_promotion_price > 0) {
-      return {
+      items.push({
         item_id: item.item_id,
         purchase_limit: item.purchase_limit || 0,
         item_input_promo_price: item.input_promotion_price,
         item_stock: item.campaign_stock || 0,
-      };
+      });
+      continue;
     }
 
-    if (enabledModels.length === 0) return null;
+    if (enabledModels.length === 0) continue;
 
-    return {
-      item_id: item.item_id,
-      purchase_limit: item.purchase_limit || 0,
-      models: enabledModels.map(m => ({
-        model_id: m.model_id,
-        input_promo_price: m.input_promotion_price || 0,
-        stock: m.campaign_stock || 0,
-      })),
-    };
-  }).filter((item): item is Record<string, unknown> => {
-    if (!item) return false;
-    if ('models' in item && Array.isArray(item.models)) {
-      return item.models.length > 0 && item.models.every((m: { input_promo_price: number }) => m.input_promo_price > 0);
-    }
-    if ('item_input_promo_price' in item) {
-      return (item.item_input_promo_price as number) > 0;
-    }
-    return false;
-  });
-
-  // Fallback: Nếu không lấy được items từ API, thử lấy từ history thành công
-  if (items.length === 0) {
-    console.log('[SCHEDULER] No items from API, trying fallback from successful history');
-    const historyItems = await getItemsFromSuccessfulHistory(supabase, shopId);
-    if (historyItems.length > 0) {
-      return historyItems;
+    const modelData = enabledModels.map(m => ({
+      model_id: m.model_id,
+      input_promo_price: m.input_promotion_price || 0,
+      stock: m.campaign_stock || 0,
+    }));
+    if (modelData.length > 0 && modelData.every(m => m.input_promo_price > 0)) {
+      items.push({
+        item_id: item.item_id,
+        purchase_limit: item.purchase_limit || 0,
+        models: modelData,
+      });
     }
   }
 
   return items;
+}
+
+async function getTemplateItems(
+  supabase: ReturnType<typeof createClient>,
+  credentials: PartnerCredentials,
+  shopId: number,
+  token: { access_token: string; refresh_token: string }
+): Promise<Array<Record<string, unknown>>> {
+  // Lấy nhiều Flash Sale candidates từ DB - ưu tiên đang chạy/sắp tới, rồi đến đã kết thúc
+  const { data: fsCandidates } = await supabase
+    .from('apishopee_flash_sale_data')
+    .select('flash_sale_id, type, item_count')
+    .eq('shop_id', shopId)
+    .gt('item_count', 0)
+    .order('type', { ascending: true }) // type 1 (upcoming) trước, rồi 2 (running), rồi 3 (ended)
+    .order('start_time', { ascending: false })
+    .limit(10);
+
+  const candidates = fsCandidates || [];
+
+  if (candidates.length === 0) {
+    console.log('[SCHEDULER] No template flash sale found in DB');
+  }
+
+  // Thử từng template FS cho đến khi lấy được items
+  for (const fs of candidates) {
+    console.log(`[SCHEDULER] Trying template FS ${fs.flash_sale_id} (type ${fs.type}, ${fs.item_count} items)`);
+
+    const result = await callShopeeAPI(
+      supabase,
+      credentials,
+      '/api/v2/shop_flash_sale/get_shop_flash_sale_items',
+      'GET',
+      shopId,
+      token,
+      undefined,
+      { flash_sale_id: fs.flash_sale_id, offset: 0, limit: 100 }
+    ) as { response?: { item_info?: FlashSaleItem[]; models?: FlashSaleModel[] }; error?: string; message?: string };
+
+    const items = parseFlashSaleItems(result);
+
+    if (items.length > 0) {
+      console.log(`[SCHEDULER] Got ${items.length} items from FS ${fs.flash_sale_id}`);
+      return items;
+    }
+
+    console.log(`[SCHEDULER] FS ${fs.flash_sale_id} returned 0 valid items, trying next...`);
+  }
+
+  // Fallback: lấy từ history thành công
+  console.log('[SCHEDULER] No items from any template FS, trying fallback from successful history');
+  const historyItems = await getItemsFromSuccessfulHistory(supabase, shopId);
+  if (historyItems.length > 0) {
+    return historyItems;
+  }
+
+  return [];
 }
 
 /**

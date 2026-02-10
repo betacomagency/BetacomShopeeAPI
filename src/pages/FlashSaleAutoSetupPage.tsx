@@ -460,6 +460,40 @@ export default function FlashSaleAutoSetupPage() {
     }
   }, [selectedShopId, statusFilter]);
 
+  // Realtime subscription: auto-refresh khi scheduler hoàn thành jobs
+  useEffect(() => {
+    if (!selectedShopId) return;
+
+    const channel = supabase
+      .channel(`auto_history_${selectedShopId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'apishopee_flash_sale_auto_history',
+          filter: `shop_id=eq.${selectedShopId}`,
+        },
+        (payload) => {
+          const newStatus = (payload.new as AutoHistoryRecord).status;
+          const oldStatus = (payload.old as { status?: string }).status;
+
+          // Khi scheduler chuyển status sang success/error → refresh history + sync
+          if (oldStatus !== newStatus && (newStatus === 'success' || newStatus === 'error')) {
+            fetchHistory();
+            if (newStatus === 'success') {
+              triggerSync(true);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedShopId, triggerSync]);
+
   // Group time slots by date
   const groupedSlots = useMemo((): Record<string, TimeSlot[]> => {
     const groups: Record<string, TimeSlot[]> = {};
