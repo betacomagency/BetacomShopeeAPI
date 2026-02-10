@@ -1,7 +1,8 @@
 /**
  * Supabase Edge Function: Shopee Authentication
  * Xử lý OAuth flow với Shopee API
- * Partner credentials được lưu trực tiếp trong bảng apishopee_shops
+ * - Legacy flow: partner credentials lưu trong bảng apishopee_shops
+ * - Multi-app flow: partner credentials từ apishopee_partner_apps, tokens vào apishopee_shop_app_tokens
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -344,6 +345,83 @@ async function getToken(supabase: ReturnType<typeof createClient>, shopId: numbe
   return data;
 }
 
+/**
+ * Lấy partner credentials từ partner_apps table (multi-app flow)
+ */
+async function getPartnerAppCredentials(
+  supabase: ReturnType<typeof createClient>,
+  partnerAppId: string
+): Promise<{ credentials: PartnerCredentials; appCategory: string } | null> {
+  const { data: app, error } = await supabase
+    .from('apishopee_partner_apps')
+    .select('partner_id, partner_key, partner_name, app_category')
+    .eq('id', partnerAppId)
+    .eq('is_active', true)
+    .single();
+
+  if (error || !app) {
+    console.error('[APP-AUTH] Partner app not found:', partnerAppId, error);
+    return null;
+  }
+
+  return {
+    credentials: {
+      partnerId: app.partner_id,
+      partnerKey: app.partner_key,
+      partnerName: app.partner_name,
+    },
+    appCategory: app.app_category,
+  };
+}
+
+/**
+ * Lưu token vào apishopee_shop_app_tokens (multi-app flow)
+ * Hỗ trợ cả shop-level và merchant-level (shop_id_list)
+ */
+async function saveAppToken(
+  supabase: ReturnType<typeof createClient>,
+  token: Record<string, unknown>,
+  partnerAppId: string
+) {
+  const now = Date.now();
+  const accessTokenExpiredAt = now + (token.expire_in as number) * 1000;
+
+  const shopIds = (token.shop_id_list as number[] | undefined)
+    || (token.shop_id ? [token.shop_id as number] : []);
+
+  if (shopIds.length === 0) {
+    console.error('[APP-AUTH] No shop_id to save token for');
+    return;
+  }
+
+  for (const shopId of shopIds) {
+    const tokenData: Record<string, unknown> = {
+      shop_id: shopId,
+      partner_app_id: partnerAppId,
+      access_token: token.access_token,
+      refresh_token: token.refresh_token,
+      expire_in: token.expire_in,
+      expired_at: accessTokenExpiredAt,
+      access_token_expired_at: accessTokenExpiredAt,
+      token_updated_at: new Date().toISOString(),
+    };
+
+    if (token.auth_time) tokenData.auth_time = token.auth_time;
+    if (token.expire_time) tokenData.expire_time = token.expire_time;
+    if (token.merchant_id) tokenData.merchant_id = token.merchant_id;
+
+    const { error } = await supabase
+      .from('apishopee_shop_app_tokens')
+      .upsert(tokenData, { onConflict: 'shop_id,partner_app_id' });
+
+    if (error) {
+      console.error(`[APP-AUTH] Failed to save app token for shop ${shopId}:`, error);
+    } else {
+      console.log(`[APP-AUTH] App token saved for shop ${shopId}, app ${partnerAppId}`);
+    }
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -514,6 +592,150 @@ serve(async (req) => {
         const token = await getToken(supabase, shopId);
 
         return new Response(JSON.stringify(token || { error: 'Token not found' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ============================================
+      // Multi-App Actions (partner_apps + shop_app_tokens)
+      // ============================================
+
+      case 'get-app-auth-url': {
+        const redirectUri = body.redirect_uri || '';
+        const partnerAppId = body.partner_app_id as string;
+
+        if (!partnerAppId) {
+          return new Response(JSON.stringify({ error: 'partner_app_id is required', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const appResult = await getPartnerAppCredentials(supabase, partnerAppId);
+        if (!appResult) {
+          return new Response(JSON.stringify({ error: 'Partner app not found or inactive', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const authUrl = getAuthUrl(appResult.credentials, redirectUri);
+
+        return new Response(JSON.stringify({
+          auth_url: authUrl,
+          partner_id: appResult.credentials.partnerId,
+          partner_app_id: partnerAppId,
+          app_category: appResult.appCategory,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-app-token': {
+        const code = body.code || '';
+        const shopId = body.shop_id ? Number(body.shop_id) : undefined;
+        const mainAccountId = body.main_account_id ? Number(body.main_account_id) : undefined;
+        const partnerAppId = body.partner_app_id as string;
+
+        if (!partnerAppId) {
+          return new Response(JSON.stringify({ error: 'partner_app_id is required', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const appResult = await getPartnerAppCredentials(supabase, partnerAppId);
+        if (!appResult) {
+          return new Response(JSON.stringify({ error: 'Partner app not found or inactive', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log('[APP-AUTH] get-app-token:', { partnerId: appResult.credentials.partnerId, category: appResult.appCategory, shopId });
+
+        const getTokenStart = Date.now();
+        const token = await getAccessToken(appResult.credentials, code, shopId, mainAccountId);
+
+        // Log API call
+        const tokenStatus = getApiCallStatus(token);
+        logApiCall(supabase, {
+          shopId: shopId || token.shop_id,
+          edgeFunction: 'apishopee-auth',
+          apiEndpoint: '/api/v2/auth/token/get',
+          httpMethod: 'POST',
+          apiCategory: appResult.appCategory,
+          status: tokenStatus.status,
+          shopeeError: tokenStatus.shopeeError,
+          shopeeMessage: tokenStatus.shopeeMessage,
+          durationMs: Date.now() - getTokenStart,
+        });
+
+        if (token.error) {
+          return new Response(JSON.stringify({ error: token.error, message: token.message, success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Save token to shop_app_tokens (NOT apishopee_shops)
+        await saveAppToken(supabase, token, partnerAppId);
+
+        return new Response(JSON.stringify({
+          ...token,
+          partner_app_id: partnerAppId,
+          app_category: appResult.appCategory,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'refresh-app-token': {
+        const { refresh_token, shop_id, merchant_id, partner_app_id } = body;
+
+        if (!partner_app_id) {
+          return new Response(JSON.stringify({ error: 'partner_app_id is required', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const appResult = await getPartnerAppCredentials(supabase, partner_app_id);
+        if (!appResult) {
+          return new Response(JSON.stringify({ error: 'Partner app not found or inactive', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const refreshStart = Date.now();
+        const token = await refreshAccessToken(appResult.credentials, refresh_token, shop_id, merchant_id);
+
+        // Log API call
+        const refreshStatus = getApiCallStatus(token);
+        logApiCall(supabase, {
+          shopId: shop_id,
+          edgeFunction: 'apishopee-auth',
+          apiEndpoint: '/api/v2/auth/access_token/get',
+          httpMethod: 'POST',
+          apiCategory: appResult.appCategory,
+          status: refreshStatus.status,
+          shopeeError: refreshStatus.shopeeError,
+          shopeeMessage: refreshStatus.shopeeMessage,
+          durationMs: Date.now() - refreshStart,
+        });
+
+        if (token.error) {
+          return new Response(JSON.stringify({ error: token.error, message: token.message, success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Save to shop_app_tokens
+        await saveAppToken(supabase, { ...token, shop_id }, partner_app_id);
+
+        return new Response(JSON.stringify(token), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

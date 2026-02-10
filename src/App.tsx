@@ -29,6 +29,7 @@ import FlashSalePage from '@/pages/FlashSalePage';
 import FlashSaleDetailPage from '@/pages/FlashSaleDetailPage';
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
 import ProductsPage from '@/pages/ProductsPage';
+import AdsPage from '@/pages/AdsPage';
 // [HIDDEN] Reviews feature - temporarily disabled
 // import ReviewsPage from '@/pages/ReviewsPage';
 // import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
@@ -85,6 +86,8 @@ function App() {
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
 
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
+                  {/* Ads Routes */}
+                  <Route path="/ads" element={<AdsPage />} />
                   {/* [HIDDEN] API & Logs - temporarily disabled */}
                   {/* <Route path="/api-logs" element={<ApiLogsPage />} /> */}
 

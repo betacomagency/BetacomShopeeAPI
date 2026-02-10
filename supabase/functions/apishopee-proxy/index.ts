@@ -46,6 +46,7 @@ serve(async (req) => {
       params = {},   // Query params
       body = null,   // Request body for POST
       shop_id,
+      app_category,  // Optional: 'ads' | 'erp' - dùng credentials từ shop_app_tokens
     } = await req.json();
 
     if (!api_path) {
@@ -67,34 +68,72 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get shop credentials - chỉ cần shop_id
-    const { data: shop, error: shopError } = await supabase
-      .from('apishopee_shops')
-      .select('access_token, partner_id, partner_key')
-      .eq('shop_id', shop_id)
-      .single();
+    // Get credentials - từ shop_app_tokens (nếu có app_category) hoặc apishopee_shops (legacy)
+    let access_token: string;
+    let partner_id: number;
+    let partner_key: string;
 
-    if (shopError || !shop) {
-      return new Response(
-        JSON.stringify({ error: 'Shop not found', details: shopError?.message }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    if (app_category) {
+      // Multi-app flow: lookup từ shop_app_tokens JOIN partner_apps
+      const { data: appToken, error: appError } = await supabase
+        .from('apishopee_shop_app_tokens')
+        .select('access_token, apishopee_partner_apps!inner(partner_id, partner_key, app_category)')
+        .eq('shop_id', shop_id)
+        .eq('apishopee_partner_apps.app_category', app_category)
+        .single();
 
-    const { access_token, partner_id, partner_key } = shop;
+      if (appError || !appToken) {
+        return new Response(
+          JSON.stringify({ error: `Chưa kết nối app "${app_category}" cho shop này. Vui lòng ủy quyền app trước.` }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    if (!access_token) {
-      return new Response(
-        JSON.stringify({ error: 'Shop access_token not found. Please re-authorize.' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+      if (!appToken.access_token) {
+        return new Response(
+          JSON.stringify({ error: `Access token cho app "${app_category}" không tồn tại. Vui lòng ủy quyền lại.` }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    if (!partner_id || !partner_key) {
-      return new Response(
-        JSON.stringify({ error: 'Partner credentials not found for this shop.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      const appInfo = appToken.apishopee_partner_apps as unknown as { partner_id: number; partner_key: string };
+      access_token = appToken.access_token;
+      partner_id = appInfo.partner_id;
+      partner_key = appInfo.partner_key;
+
+      console.log(`[API Proxy] Using ${app_category} app credentials, partner_id: ${partner_id}`);
+    } else {
+      // Legacy flow: đọc từ apishopee_shops
+      const { data: shop, error: shopError } = await supabase
+        .from('apishopee_shops')
+        .select('access_token, partner_id, partner_key')
+        .eq('shop_id', shop_id)
+        .single();
+
+      if (shopError || !shop) {
+        return new Response(
+          JSON.stringify({ error: 'Shop not found', details: shopError?.message }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!shop.access_token) {
+        return new Response(
+          JSON.stringify({ error: 'Shop access_token not found. Please re-authorize.' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!shop.partner_id || !shop.partner_key) {
+        return new Response(
+          JSON.stringify({ error: 'Partner credentials not found for this shop.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      access_token = shop.access_token;
+      partner_id = shop.partner_id;
+      partner_key = shop.partner_key;
     }
 
     // Build timestamp

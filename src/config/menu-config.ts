@@ -19,6 +19,7 @@ import {
   // ShoppingBag, // [HIDDEN] Lazada feature
   FileText,
   Monitor,
+  Megaphone,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -85,6 +86,15 @@ export const menuItems: MenuItem[] = [
     children: [
       { title: 'Danh sách', icon: Zap, path: '/flash-sale', permissionKey: 'flash-sale' },
       { title: 'Lịch sử', icon: Clock, path: '/flash-sale/auto-setup', permissionKey: 'flash-sale' },
+    ],
+  },
+  {
+    title: 'Quảng cáo',
+    icon: Megaphone,
+    permissionKey: 'ads',
+    description: 'Quản lý quảng cáo Shopee Ads',
+    children: [
+      { title: 'Chiến dịch', icon: Megaphone, path: '/ads', permissionKey: 'ads' },
     ],
   },
   // [HIDDEN] Lazada feature - temporarily disabled

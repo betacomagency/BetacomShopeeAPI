@@ -32,7 +32,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Users, Trash2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Users, Trash2, ChevronLeft, ChevronRight, Search, Puzzle, Link2 } from 'lucide-react';
+import { ShopAppAuthPanel } from '@/components/profile/ShopAppAuthPanel';
+import { getPartnerApps, getAppAuthUrl } from '@/lib/shopee/app-auth-client';
+import type { PartnerApp } from '@/lib/shopee/partner-apps';
+import { APP_CATEGORY_LABELS, APP_CATEGORY_COLORS } from '@/lib/shopee/partner-apps';
 
 // Số shop mỗi trang
 const SHOPS_PER_PAGE = 30;
@@ -131,6 +135,16 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [allShopMembers, setAllShopMembers] = useState<Record<string, ShopMember[]>>({});
+
+  // App auth dialog (per-shop)
+  const [appAuthDialogOpen, setAppAuthDialogOpen] = useState(false);
+  const [selectedShopForAppAuth, setSelectedShopForAppAuth] = useState<ShopWithRole | null>(null);
+
+  // Bulk app auth dialog (all shops)
+  const [bulkAppAuthDialogOpen, setBulkAppAuthDialogOpen] = useState(false);
+  const [partnerApps, setPartnerApps] = useState<PartnerApp[]>([]);
+  const [loadingPartnerApps, setLoadingPartnerApps] = useState(false);
+  const [connectingBulkAppId, setConnectingBulkAppId] = useState<string | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -622,6 +636,45 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     setConnectDialogOpen(true);
   };
 
+  // Mở dialog ủy quyền apps cho tất cả shops
+  const handleOpenBulkAppAuth = async () => {
+    setBulkAppAuthDialogOpen(true);
+    setLoadingPartnerApps(true);
+    try {
+      const apps = await getPartnerApps();
+      setPartnerApps(apps);
+    } catch (err) {
+      toast({
+        title: 'Lỗi',
+        description: 'Không thể tải danh sách Partner Apps',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingPartnerApps(false);
+    }
+  };
+
+  // Ủy quyền tất cả shops cho một app (qua main account OAuth)
+  const handleBulkConnect = async (app: PartnerApp) => {
+    setConnectingBulkAppId(app.id);
+    try {
+      const callbackUrl = `${window.location.origin}/auth/callback`;
+      sessionStorage.setItem('shopee_partner_app_id', app.id);
+      sessionStorage.setItem('shopee_partner_app_name', app.partner_name);
+      const authUrl = await getAppAuthUrl(app.id, callbackUrl);
+      window.location.href = authUrl;
+    } catch (err) {
+      sessionStorage.removeItem('shopee_partner_app_id');
+      sessionStorage.removeItem('shopee_partner_app_name');
+      toast({
+        title: 'Lỗi',
+        description: (err as Error).message,
+        variant: 'destructive',
+      });
+      setConnectingBulkAppId(null);
+    }
+  };
+
   const handleSubmitConnect = async () => {
     if (!partnerIdInput || !partnerKeyInput) {
       toast({
@@ -1085,6 +1138,20 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
               </svg>
             )}
           </Button>
+          {/* Ủy quyền Apps */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-purple-600 hover:text-purple-800 hover:bg-purple-50 h-7 w-7 p-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedShopForAppAuth(shop);
+              setAppAuthDialogOpen(true);
+            }}
+            title="Ủy quyền Apps"
+          >
+            <Puzzle className="w-4 h-4" />
+          </Button>
           {/* Kết nối lại shop */}
           <Button
             variant="ghost"
@@ -1213,6 +1280,16 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                   <span className="hidden sm:inline">Phân quyền</span>
                 </Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-purple-600 hover:text-purple-800 hover:bg-purple-50 h-8 md:h-9"
+                  onClick={handleOpenBulkAppAuth}
+                >
+                  <Puzzle className="w-4 h-4 mr-1.5" />
+                  <span className="hidden sm:inline">Ủy quyền Apps</span>
+                  <span className="sm:hidden">Apps</span>
+                </Button>
+                <Button
                   size="sm"
                   className="bg-orange-500 hover:bg-orange-600 h-8 md:h-9"
                   onClick={handleConnectNewShop}
@@ -1318,6 +1395,18 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                               )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-purple-600 h-7 w-7 p-0"
+                              onClick={() => {
+                                setSelectedShopForAppAuth(shop);
+                                setAppAuthDialogOpen(true);
+                              }}
+                              title="Ủy quyền Apps"
+                            >
+                              <Puzzle className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -1798,6 +1887,107 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setMembersDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* App Authorization Dialog */}
+      <Dialog open={appAuthDialogOpen} onOpenChange={setAppAuthDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Puzzle className="w-5 h-5 text-purple-600" />
+              Ủy quyền Apps
+            </DialogTitle>
+            <DialogDescription>
+              Quản lý kết nối giữa shop và các ứng dụng Shopee Partner
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedShopForAppAuth && (
+            <div className="py-2">
+              <ShopAppAuthPanel
+                shopId={selectedShopForAppAuth.shop_id}
+                shopName={selectedShopForAppAuth.shop_name || undefined}
+              />
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAppAuthDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk App Authorization Dialog - Ủy quyền tất cả shops */}
+      <Dialog open={bulkAppAuthDialogOpen} onOpenChange={setBulkAppAuthDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Puzzle className="w-5 h-5 text-purple-600" />
+              Ủy quyền Apps cho tất cả Shop
+            </DialogTitle>
+            <DialogDescription>
+              Đăng nhập bằng tài khoản chính (Main Account) để ủy quyền tất cả shop cùng lúc cho từng ứng dụng.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            {loadingPartnerApps ? (
+              <div className="flex items-center justify-center py-6">
+                <Spinner size="lg" />
+              </div>
+            ) : partnerApps.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4">
+                Chưa có Partner App nào. Liên hệ admin để thêm trong Settings &gt; Nâng cao.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {partnerApps.map((app) => (
+                  <div
+                    key={app.id}
+                    className="flex items-center justify-between p-3 rounded-lg border bg-white hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-700">{app.partner_name}</span>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${APP_CATEGORY_COLORS[app.app_category]}`}>
+                          {APP_CATEGORY_LABELS[app.app_category]}
+                        </span>
+                      </div>
+                      {app.description && (
+                        <p className="text-xs text-slate-500">{app.description}</p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs cursor-pointer text-purple-600 hover:text-purple-800 hover:bg-purple-50 border-purple-200"
+                      onClick={() => handleBulkConnect(app)}
+                      disabled={connectingBulkAppId === app.id}
+                    >
+                      {connectingBulkAppId === app.id ? (
+                        <Spinner className="h-3 w-3 mr-1.5" />
+                      ) : (
+                        <Link2 className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      Kết nối tất cả
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Shopee sẽ yêu cầu đăng nhập Main Account. Sau khi ủy quyền, token sẽ được lưu cho tất cả shop trong tài khoản.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkAppAuthDialogOpen(false)}>
               Đóng
             </Button>
           </DialogFooter>

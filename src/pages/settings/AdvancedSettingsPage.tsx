@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import { ActivityTrendChart } from '@/components/settings/ActivityTrendChart';
 import { useActivityTrends } from '@/hooks/useActivityTrends';
+import { PartnerAppsPanel } from '@/components/profile/PartnerAppsPanel';
 
 // Types
 interface ActivityLog {
@@ -430,6 +431,11 @@ export default function AdvancedSettingsPage() {
           </div>
           <p className="text-lg font-bold text-slate-700 mt-1">{totalCount}</p>
         </div>
+      </div>
+
+      {/* Partner Apps Management */}
+      <div className="px-4 sm:px-6">
+        <PartnerAppsPanel />
       </div>
 
       {/* Activity Trend Chart */}

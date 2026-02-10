@@ -613,18 +613,144 @@ serve(async (req) => {
       }
     }
 
-    const successCount = results.filter(r => r.status === 'success').length;
-    const failedCount = results.filter(r => r.status === 'failed').length;
-    const skippedCount = results.filter(r => r.status === 'skipped').length;
+    // === Pass 2: Refresh shop_app_tokens (multi-app tokens) ===
+    const appTokenResults: typeof results = [];
+    try {
+      const now = Date.now();
+      const thresholdTime = now + REFRESH_THRESHOLD_HOURS * 60 * 60 * 1000;
+
+      const { data: appTokens, error: appTokenError } = await supabase
+        .from('apishopee_shop_app_tokens')
+        .select('id, shop_id, partner_app_id, access_token, refresh_token, expired_at, merchant_id, apishopee_partner_apps!inner(partner_id, partner_key, partner_name, app_category)')
+        .not('refresh_token', 'is', null)
+        .or(`expired_at.lt.${thresholdTime},expired_at.is.null`);
+
+      if (!appTokenError && appTokens && appTokens.length > 0) {
+        console.log(`[TOKEN-REFRESH] Found ${appTokens.length} app tokens needing refresh`);
+
+        // Group by merchant_id for efficiency
+        const appMerchantGroups = new Map<number, typeof appTokens>();
+        const appStandalone: typeof appTokens = [];
+
+        for (const at of appTokens) {
+          if (at.merchant_id) {
+            const group = appMerchantGroups.get(at.merchant_id) || [];
+            group.push(at);
+            appMerchantGroups.set(at.merchant_id, group);
+          } else {
+            appStandalone.push(at);
+          }
+        }
+
+        // Process merchant groups
+        for (const [merchantId, groupTokens] of appMerchantGroups) {
+          const rep = groupTokens[0];
+          const appInfo = rep.apishopee_partner_apps as unknown as { partner_id: number; partner_key: string; partner_name: string; app_category: string };
+
+          const refreshResult = await refreshAccessToken(
+            appInfo.partner_id, appInfo.partner_key,
+            rep.refresh_token, 0, merchantId
+          );
+
+          if (refreshResult.success && refreshResult.data) {
+            const newToken = refreshResult.data;
+            const newExpiredAt = Date.now() + (newToken.expire_in as number) * 1000;
+
+            // Update all tokens in this merchant group for same partner_app_id
+            for (const at of groupTokens) {
+              const { error: updateError } = await supabase
+                .from('apishopee_shop_app_tokens')
+                .update({
+                  access_token: newToken.access_token,
+                  refresh_token: newToken.refresh_token,
+                  expire_in: newToken.expire_in,
+                  expired_at: newExpiredAt,
+                  access_token_expired_at: newExpiredAt,
+                  token_updated_at: new Date().toISOString(),
+                })
+                .eq('id', at.id);
+
+              appTokenResults.push({
+                shop_id: at.shop_id,
+                shop_name: `[${appInfo.app_category}] ${appInfo.partner_name}`,
+                status: updateError ? 'failed' : 'success',
+                error: updateError?.message,
+                new_expiry: updateError ? undefined : new Date(newExpiredAt).toISOString(),
+              });
+            }
+          } else {
+            for (const at of groupTokens) {
+              appTokenResults.push({
+                shop_id: at.shop_id,
+                shop_name: `[${appInfo.app_category}] ${appInfo.partner_name}`,
+                status: 'failed',
+                error: refreshResult.error,
+              });
+            }
+          }
+        }
+
+        // Process standalone app tokens
+        for (const at of appStandalone) {
+          const appInfo = at.apishopee_partner_apps as unknown as { partner_id: number; partner_key: string; partner_name: string; app_category: string };
+
+          const refreshResult = await refreshAccessToken(
+            appInfo.partner_id, appInfo.partner_key,
+            at.refresh_token, at.shop_id
+          );
+
+          if (refreshResult.success && refreshResult.data) {
+            const newToken = refreshResult.data;
+            const newExpiredAt = Date.now() + (newToken.expire_in as number) * 1000;
+
+            const { error: updateError } = await supabase
+              .from('apishopee_shop_app_tokens')
+              .update({
+                access_token: newToken.access_token,
+                refresh_token: newToken.refresh_token,
+                expire_in: newToken.expire_in,
+                expired_at: newExpiredAt,
+                access_token_expired_at: newExpiredAt,
+                token_updated_at: new Date().toISOString(),
+              })
+              .eq('id', at.id);
+
+            appTokenResults.push({
+              shop_id: at.shop_id,
+              shop_name: `[${appInfo.app_category}] ${appInfo.partner_name}`,
+              status: updateError ? 'failed' : 'success',
+              error: updateError?.message,
+              new_expiry: updateError ? undefined : new Date(newExpiredAt).toISOString(),
+            });
+          } else {
+            appTokenResults.push({
+              shop_id: at.shop_id,
+              shop_name: `[${appInfo.app_category}] ${appInfo.partner_name}`,
+              status: 'failed',
+              error: refreshResult.error,
+            });
+          }
+        }
+      }
+    } catch (appRefreshError) {
+      console.error('[TOKEN-REFRESH] Error refreshing app tokens:', appRefreshError);
+    }
+
+    // Combine results
+    const allResults = [...results, ...appTokenResults];
+    const successCount = allResults.filter(r => r.status === 'success').length;
+    const failedCount = allResults.filter(r => r.status === 'failed').length;
+    const skippedCount = allResults.filter(r => r.status === 'skipped').length;
 
     return new Response(JSON.stringify({
       success: true,
-      message: `Processed ${results.length} shops: ${successCount} success, ${failedCount} failed, ${skippedCount} skipped`,
-      processed: results.length,
+      message: `Processed ${allResults.length} tokens: ${successCount} success, ${failedCount} failed, ${skippedCount} skipped (${appTokenResults.length} app tokens)`,
+      processed: allResults.length,
       success_count: successCount,
       failed_count: failedCount,
       skipped_count: skippedCount,
-      results,
+      app_token_count: appTokenResults.length,
+      results: allResults,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
