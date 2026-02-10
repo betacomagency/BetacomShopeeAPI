@@ -20,12 +20,12 @@ export interface LogActivityParams {
   shopName?: string;
 
   // What action
-  actionType: string; // e.g., 'ads_budget_update', 'auto_reply_send', 'flash_sale_register'
+  actionType: string; // e.g., 'auto_reply_send', 'flash_sale_register'
   actionCategory: ActionCategory;
   actionDescription: string; // Human readable, e.g., "Cập nhật ngân sách chiến dịch ABC từ 100k lên 200k"
 
   // Target details
-  targetType?: string; // e.g., 'campaign', 'review', 'flash_sale', 'order'
+  targetType?: string; // e.g., 'review', 'flash_sale', 'order'
   targetId?: string;
   targetName?: string;
 

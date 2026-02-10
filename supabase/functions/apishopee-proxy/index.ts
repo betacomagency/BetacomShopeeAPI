@@ -59,7 +59,7 @@ serve(async (req) => {
       params = {},   // Query params
       body = null,   // Request body for POST
       shop_id,
-      app_category,  // Optional: 'ads' | 'erp' - dùng credentials từ shop_app_tokens
+      app_category,  // Optional: 'erp' - dùng credentials từ shop_app_tokens
     } = await req.json();
 
     if (!api_path) {

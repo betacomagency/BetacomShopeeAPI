@@ -7,7 +7,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { authenticateApp } from '@/lib/shopee/app-auth-client';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -69,32 +68,6 @@ export default function AuthCallback() {
       setIsProcessing(true);
 
       try {
-        // Check nếu đây là app-specific auth (multi-app flow)
-        const partnerAppId = sessionStorage.getItem('shopee_partner_app_id');
-        const partnerAppName = sessionStorage.getItem('shopee_partner_app_name');
-
-        if (partnerAppId) {
-          // Multi-app flow: save token to shop_app_tokens
-          sessionStorage.removeItem('shopee_partner_app_id');
-          sessionStorage.removeItem('shopee_partner_app_name');
-
-          await authenticateApp(
-            code,
-            partnerAppId,
-            shopId ? Number(shopId) : undefined,
-            mainAccountId ? Number(mainAccountId) : undefined
-          );
-
-          toast({
-            title: "Kết nối app thành công!",
-            description: `App "${partnerAppName || 'Partner'}" đã được ủy quyền cho shop.`,
-          });
-
-          navigate('/settings/shops?refresh=' + Date.now(), { replace: true });
-          return;
-        }
-
-        // Legacy flow: save token to apishopee_shops
         await handleCallback(
           code,
           shopId ? Number(shopId) : undefined,
