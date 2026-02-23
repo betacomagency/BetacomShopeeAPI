@@ -23,6 +23,8 @@ import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
 import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
 import AdvancedSettingsPage from '@/pages/settings/AdvancedSettingsPage';
+import ShopeeIpRangesPage from '@/pages/settings/ShopeeIpRangesPage';
+import ShopInfoPage from '@/pages/settings/ShopInfoPage';
 
 // Feature Pages
 import FlashSalePage from '@/pages/FlashSalePage';
@@ -94,6 +96,8 @@ function App() {
                   <Route path="/settings/shops" element={<ShopsSettingsPage />} />
                   <Route path="/settings/users" element={<UsersSettingsPage />} />
                   <Route path="/settings/advanced" element={<AdvancedSettingsPage />} />
+                  <Route path="/settings/ip-ranges" element={<ShopeeIpRangesPage />} />
+                  <Route path="/settings/shops/:shopId" element={<ShopInfoPage />} />
 
                   {/* [HIDDEN] Lazada Routes - temporarily disabled */}
                   {/* <Route path="/lazada" element={<LazadaDashboardPage />} /> */}

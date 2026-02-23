@@ -110,4 +110,19 @@ export interface GetShopProfileResponse {
   response?: ShopProfile;
 }
 
+// GET /api/v2/public/get_shops_by_partner Response
+export interface AuthedShop {
+  shop_id: number;
+  region: string;
+  auth_time: number;
+  expire_time: number;
+  sip_affi_shops?: SipAffiShop[];
+}
+
+export interface GetShopsByPartnerResponse {
+  authed_shop_list: AuthedShop[];
+  request_id: string;
+  more: boolean;
+}
+
 

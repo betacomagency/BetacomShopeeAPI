@@ -18,6 +18,7 @@ import {
   Clock,
   // ShoppingBag, // [HIDDEN] Lazada feature
   FileText,
+  Shield,
   Monitor,
   type LucideIcon,
 } from 'lucide-react';
@@ -137,6 +138,13 @@ export const menuItems: MenuItem[] = [
         title: 'Quản lý nâng cao',
         icon: FileText,
         path: '/settings/advanced',
+        permissionKey: 'settings/advanced',
+        adminOnly: true
+      },
+      {
+        title: 'Shopee IP Ranges',
+        icon: Shield,
+        path: '/settings/ip-ranges',
         permissionKey: 'settings/advanced',
         adminOnly: true
       },

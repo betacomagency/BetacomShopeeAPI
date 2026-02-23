@@ -4,7 +4,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from '../supabase';
-import type { AccessToken } from './types';
+import type { AccessToken, GetShopInfoResponse, GetShopsByPartnerResponse } from './types';
 
 export { isSupabaseConfigured };
 
@@ -177,4 +177,91 @@ export async function getStoredTokenFromDB(shopId: number): Promise<AccessToken 
   }
 
   return data as AccessToken;
+}
+
+/**
+ * Lấy danh sách shop đã ủy quyền cho partner app
+ * Gọi Shopee API: GET /api/v2/public/get_shops_by_partner
+ * @param partnerAppId - UUID từ bảng apishopee_partner_apps
+ * @param pageSize - Số shop trên mỗi trang (mặc định 100)
+ * @param pageNo - Số trang (bắt đầu từ 1)
+ */
+export async function getShopsByPartner(
+  partnerAppId: string,
+  pageSize = 100,
+  pageNo = 1
+): Promise<GetShopsByPartnerResponse> {
+  const { data, error } = await supabase.functions.invoke('apishopee-proxy', {
+    body: {
+      api_path: '/api/v2/public/get_shops_by_partner',
+      method: 'GET',
+      partner_app_id: partnerAppId,
+      params: {
+        page_size: pageSize,
+        page_no: pageNo,
+      },
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to get shops by partner');
+  }
+
+  const responseData = data?.response?.data;
+
+  if (responseData?.error) {
+    throw new Error(responseData.message || responseData.error);
+  }
+
+  return responseData as GetShopsByPartnerResponse;
+}
+
+/**
+ * Lấy TẤT CẢ shop đã ủy quyền cho partner app (tự động phân trang)
+ * @param partnerAppId - UUID từ bảng apishopee_partner_apps
+ * @param pageSize - Số shop trên mỗi trang (mặc định 100)
+ */
+export async function getAllShopsByPartner(
+  partnerAppId: string,
+  pageSize = 100
+): Promise<GetShopsByPartnerResponse['authed_shop_list']> {
+  const allShops: GetShopsByPartnerResponse['authed_shop_list'] = [];
+  let pageNo = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const result = await getShopsByPartner(partnerAppId, pageSize, pageNo);
+    allShops.push(...result.authed_shop_list);
+    hasMore = result.more;
+    pageNo++;
+  }
+
+  return allShops;
+}
+
+/**
+ * Lấy thông tin shop từ Shopee API
+ * GET /api/v2/shop/get_shop_info
+ * @param shopId - Shop ID cần lấy thông tin
+ */
+export async function getShopInfo(shopId: number): Promise<GetShopInfoResponse> {
+  const { data, error } = await supabase.functions.invoke('apishopee-proxy', {
+    body: {
+      api_path: '/api/v2/shop/get_shop_info',
+      method: 'GET',
+      shop_id: shopId,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to get shop info');
+  }
+
+  const responseData = data?.response?.data;
+
+  if (responseData?.error) {
+    throw new Error(responseData.message || responseData.error);
+  }
+
+  return responseData as GetShopInfoResponse;
 }

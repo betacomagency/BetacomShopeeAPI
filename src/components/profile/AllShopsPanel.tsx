@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,7 +32,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Users, Trash2, Store } from 'lucide-react';
+import { Users, Trash2, Store, RefreshCw } from 'lucide-react';
+import { getAllShopsByPartner } from '@/lib/shopee/supabase-client';
+import type { AuthedShop } from '@/lib/shopee/types';
 
 const ADMIN_EMAIL = 'betacom.work@gmail.com';
 
@@ -72,6 +75,14 @@ interface ShopMember {
   role: Role;
 }
 
+interface PartnerApp {
+  id: string;
+  partner_id: number;
+  partner_name: string;
+  app_category: string;
+  is_active: boolean;
+}
+
 export function AllShopsPanel() {
   const { toast } = useToast();
   const { user: authUser } = useAuth();
@@ -84,6 +95,8 @@ export function AllShopsPanel() {
 
   const isSystemAdmin = authUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
+  const navigate = useNavigate();
+
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [shopToDelete, setShopToDelete] = useState<Shop | null>(null);
@@ -95,6 +108,15 @@ export function AllShopsPanel() {
   const [partnerKeyInput, setPartnerKeyInput] = useState('');
   const [partnerNameInput, setPartnerNameInput] = useState('');
   const [connecting, setConnecting] = useState(false);
+
+  // Sync dialog - Đồng bộ từ Shopee
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [partnerApps, setPartnerApps] = useState<PartnerApp[]>([]);
+  const [selectedPartnerAppId, setSelectedPartnerAppId] = useState<string>('');
+  const [shopeeShops, setShopeeShops] = useState<AuthedShop[]>([]);
+  const [loadingSync, setLoadingSync] = useState(false);
+  const [loadingPartnerApps, setLoadingPartnerApps] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Members dialog
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
@@ -284,6 +306,76 @@ export function AllShopsPanel() {
       });
       setConnecting(false);
     }
+  };
+
+  // Mở dialog đồng bộ từ Shopee
+  const handleOpenSyncDialog = async () => {
+    setSyncDialogOpen(true);
+    setShopeeShops([]);
+    setSyncError(null);
+    setSelectedPartnerAppId('');
+    setLoadingPartnerApps(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('apishopee_partner_apps')
+        .select('id, partner_id, partner_name, app_category, is_active')
+        .eq('is_active', true)
+        .order('partner_name');
+
+      if (error) throw error;
+      setPartnerApps(data || []);
+
+      // Tự động chọn partner app đầu tiên
+      if (data && data.length > 0) {
+        setSelectedPartnerAppId(data[0].id);
+      }
+    } catch (err) {
+      toast({
+        title: 'Lỗi',
+        description: 'Không thể tải danh sách partner apps',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingPartnerApps(false);
+    }
+  };
+
+  // Gọi API Shopee để lấy danh sách shop đã authorize
+  const handleCheckShopeeShops = async () => {
+    if (!selectedPartnerAppId) return;
+
+    setLoadingSync(true);
+    setSyncError(null);
+    setShopeeShops([]);
+
+    try {
+      const allShops = await getAllShopsByPartner(selectedPartnerAppId);
+      setShopeeShops(allShops);
+    } catch (err) {
+      setSyncError((err as Error).message);
+      toast({
+        title: 'Lỗi',
+        description: (err as Error).message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingSync(false);
+    }
+  };
+
+  // Kiểm tra trạng thái shop từ Shopee so với DB
+  const getShopSyncStatus = (shopeeShop: AuthedShop): { label: string; variant: 'success' | 'warning' | 'destructive' } => {
+    const now = Math.floor(Date.now() / 1000);
+    const inDb = shops.some(s => s.shop_id === shopeeShop.shop_id);
+
+    if (shopeeShop.expire_time && shopeeShop.expire_time < now) {
+      return { label: 'Hết hạn UQ', variant: 'destructive' };
+    }
+    if (inDb) {
+      return { label: 'Đã có', variant: 'success' };
+    }
+    return { label: 'Chưa có', variant: 'warning' };
   };
 
   // Load members của shop
@@ -499,14 +591,20 @@ export function AllShopsPanel() {
       header: 'Shop',
       width: '280px',
       render: (shop: Shop) => (
-        <CellShopInfo
-          logo={shop.shop_logo}
-          name={shop.shop_name || `Shop ${shop.shop_id}`}
-          shopId={shop.shop_id}
-          region={shop.region || 'VN'}
-          onRefresh={() => handleRefreshShopName(shop.shop_id)}
-          refreshing={refreshingShop === shop.shop_id}
-        />
+        <div
+          className="cursor-pointer"
+          onClick={() => navigate(`/settings/shops/${shop.shop_id}`)}
+          title="Xem chi tiết shop"
+        >
+          <CellShopInfo
+            logo={shop.shop_logo}
+            name={shop.shop_name || `Shop ${shop.shop_id}`}
+            shopId={shop.shop_id}
+            region={shop.region || 'VN'}
+            onRefresh={() => handleRefreshShopName(shop.shop_id)}
+            refreshing={refreshingShop === shop.shop_id}
+          />
+        </div>
       ),
     },
     {
@@ -630,15 +728,25 @@ export function AllShopsPanel() {
               <Store className="w-5 h-5" />
               <span>Tất cả Shop ({shops.length})</span>
             </div>
-            <Button
-              className="bg-orange-500 hover:bg-orange-600"
-              onClick={handleConnectNewShop}
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Kết nối Shop
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="text-green-600 hover:text-green-800 hover:bg-green-50"
+                onClick={handleOpenSyncDialog}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Đồng bộ Shopee
+              </Button>
+              <Button
+                className="bg-orange-500 hover:bg-orange-600"
+                onClick={handleConnectNewShop}
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Kết nối Shop
+              </Button>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -916,6 +1024,165 @@ export function AllShopsPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Sync Dialog - Đồng bộ từ Shopee */}
+      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5" />
+              Đồng bộ từ Shopee
+            </DialogTitle>
+            <DialogDescription>
+              Kiểm tra danh sách shop đã ủy quyền trên Shopee và so sánh với hệ thống
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Partner App Selection */}
+          <div className="flex items-end gap-3 py-2">
+            <div className="flex-1 space-y-1.5">
+              <Label className="text-sm">Partner App</Label>
+              {loadingPartnerApps ? (
+                <div className="flex items-center gap-2 h-9 px-3 border rounded-md">
+                  <Spinner size="sm" />
+                  <span className="text-sm text-slate-500">Đang tải...</span>
+                </div>
+              ) : (
+                <Select value={selectedPartnerAppId} onValueChange={setSelectedPartnerAppId}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Chọn partner app" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {partnerApps.map((app) => (
+                      <SelectItem key={app.id} value={app.id}>
+                        {app.partner_name} ({app.app_category}) - ID: {app.partner_id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <Button
+              onClick={handleCheckShopeeShops}
+              disabled={!selectedPartnerAppId || loadingSync}
+              className="bg-green-600 hover:bg-green-700 h-9"
+            >
+              {loadingSync ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  Đang kiểm tra...
+                </>
+              ) : (
+                'Kiểm tra'
+              )}
+            </Button>
+          </div>
+
+          {/* Error */}
+          {syncError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              {syncError}
+            </div>
+          )}
+
+          {/* Results */}
+          {shopeeShops.length > 0 && (
+            <div className="space-y-3">
+              {/* Summary */}
+              {(() => {
+                const now = Math.floor(Date.now() / 1000);
+                const inDbCount = shopeeShops.filter(s => shops.some(db => db.shop_id === s.shop_id)).length;
+                const notInDbCount = shopeeShops.filter(s => !shops.some(db => db.shop_id === s.shop_id)).length;
+                const expiredCount = shopeeShops.filter(s => s.expire_time && s.expire_time < now).length;
+                return (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-sm font-medium text-slate-700">
+                      Shopee: <span className="text-blue-600">{shopeeShops.length}</span> shop
+                    </span>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-sm">
+                      Đã có: <span className="text-green-600 font-medium">{inDbCount}</span>
+                    </span>
+                    <span className="text-sm">
+                      Chưa có: <span className="text-yellow-600 font-medium">{notInDbCount}</span>
+                    </span>
+                    {expiredCount > 0 && (
+                      <span className="text-sm">
+                        Hết hạn: <span className="text-red-600 font-medium">{expiredCount}</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Table */}
+              <ScrollArea className="max-h-[400px]">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Shop ID</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Region</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Auth Time</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Hết hạn UQ</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {shopeeShops.map((shopeeShop) => {
+                      const status = getShopSyncStatus(shopeeShop);
+                      const dbShop = shops.find(s => s.shop_id === shopeeShop.shop_id);
+                      const authDate = shopeeShop.auth_time
+                        ? new Date(shopeeShop.auth_time * 1000).toLocaleDateString('vi-VN')
+                        : '-';
+                      const expireDate = shopeeShop.expire_time
+                        ? new Date(shopeeShop.expire_time * 1000).toLocaleDateString('vi-VN')
+                        : '-';
+                      return (
+                        <tr key={shopeeShop.shop_id} className="hover:bg-slate-50/50">
+                          <td className="px-3 py-2">
+                            <div>
+                              <span className="font-mono">{shopeeShop.shop_id}</span>
+                              {dbShop?.shop_name && (
+                                <p className="text-xs text-slate-500 truncate max-w-[150px]">{dbShop.shop_name}</p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">{shopeeShop.region}</td>
+                          <td className="px-3 py-2 text-slate-500">{authDate}</td>
+                          <td className="px-3 py-2 text-slate-500">{expireDate}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium ${
+                              status.variant === 'success' ? 'bg-green-100 text-green-700' :
+                              status.variant === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {status.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </div>
+          )}
+
+          {/* Empty state after check */}
+          {!loadingSync && shopeeShops.length === 0 && !syncError && selectedPartnerAppId && (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              Nhấn "Kiểm tra" để xem danh sách shop từ Shopee
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
