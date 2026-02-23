@@ -14,6 +14,13 @@ const corsHeaders = {
 
 const SHOPEE_HOST = 'https://partner.shopeemobile.com';
 const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
+const ADMIN_EMAIL = 'betacom.work@gmail.com';
+
+// Partner-level API chỉ cho phép các endpoint này
+const PARTNER_LEVEL_ALLOWED_PATHS = [
+  '/api/v2/public/get_shops_by_partner',
+  '/api/v2/public/get_shopee_ip_ranges',
+];
 
 /**
  * Gọi API qua VPS proxy hoặc trực tiếp
@@ -60,6 +67,7 @@ serve(async (req) => {
       body = null,   // Request body for POST
       shop_id,
       app_category,  // Optional: 'erp' - dùng credentials từ shop_app_tokens
+      partner_app_id, // Optional: UUID từ apishopee_partner_apps - dùng cho partner-level API (không cần shop_id)
     } = await req.json();
 
     if (!api_path) {
@@ -69,24 +77,86 @@ serve(async (req) => {
       );
     }
 
-    if (!shop_id) {
-      return new Response(
-        JSON.stringify({ error: 'shop_id is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Get Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get credentials - từ shop_app_tokens (nếu có app_category) hoặc apishopee_shops (legacy)
-    let access_token: string;
+    // Determine if this is a partner-level API call (no shop_id/access_token needed)
+    const isPartnerLevel = !shop_id && partner_app_id;
+
+    let access_token = '';
     let partner_id: number;
     let partner_key: string;
 
-    if (app_category) {
+    if (isPartnerLevel) {
+      // Partner-level API: chỉ admin mới được gọi
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        return new Response(
+          JSON.stringify({ error: 'Authorization header is required for partner-level API' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser(
+        authHeader.replace('Bearer ', '')
+      );
+
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid or expired token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        console.warn(`[API Proxy] Partner-level access denied for: ${user.email}`);
+        return new Response(
+          JSON.stringify({ error: 'Forbidden: admin access required for partner-level API calls' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Kiểm tra api_path có trong allowlist không
+      if (!PARTNER_LEVEL_ALLOWED_PATHS.includes(api_path)) {
+        return new Response(
+          JSON.stringify({ error: `API path "${api_path}" is not allowed for partner-level calls` }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Partner-level API: lookup credentials from apishopee_partner_apps
+      const { data: partnerApp, error: partnerError } = await supabase
+        .from('apishopee_partner_apps')
+        .select('partner_id, partner_key, partner_name, is_active')
+        .eq('id', partner_app_id)
+        .single();
+
+      if (partnerError || !partnerApp) {
+        return new Response(
+          JSON.stringify({ error: 'Partner app not found', details: partnerError?.message }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!partnerApp.is_active) {
+        return new Response(
+          JSON.stringify({ error: 'Partner app is inactive' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      partner_id = partnerApp.partner_id;
+      partner_key = partnerApp.partner_key;
+
+      console.log(`[API Proxy] Partner-level call, partner: ${partnerApp.partner_name} (${partner_id})`);
+    } else if (!shop_id) {
+      return new Response(
+        JSON.stringify({ error: 'shop_id or partner_app_id is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else if (app_category) {
       // Multi-app flow: lookup từ shop_app_tokens JOIN partner_apps
       const { data: appToken, error: appError } = await supabase
         .from('apishopee_shop_app_tokens')
@@ -153,16 +223,23 @@ serve(async (req) => {
     const timestamp = Math.floor(Date.now() / 1000);
 
     // Build base string for signature
-    const baseString = `${partner_id}${api_path}${timestamp}${access_token}${shop_id}`;
+    // Partner-level: partnerId + apiPath + timestamp
+    // Shop-level: partnerId + apiPath + timestamp + accessToken + shopId
+    const baseString = isPartnerLevel
+      ? `${partner_id}${api_path}${timestamp}`
+      : `${partner_id}${api_path}${timestamp}${access_token}${shop_id}`;
     const sign = await hmacSha256(partner_key, baseString);
 
     // Build query params
     const queryParams = new URLSearchParams();
     queryParams.set('partner_id', partner_id.toString());
     queryParams.set('timestamp', timestamp.toString());
-    queryParams.set('access_token', access_token);
-    queryParams.set('shop_id', shop_id.toString());
     queryParams.set('sign', sign);
+
+    if (!isPartnerLevel) {
+      queryParams.set('access_token', access_token);
+      queryParams.set('shop_id', shop_id.toString());
+    }
 
     // Add custom params
     if (params && typeof params === 'object') {
@@ -175,7 +252,7 @@ serve(async (req) => {
 
     const url = `${SHOPEE_HOST}${api_path}?${queryParams.toString()}`;
 
-    console.log(`[API Proxy] ${method} ${api_path}`);
+    console.log(`[API Proxy] ${method} ${api_path} ${isPartnerLevel ? '(partner-level)' : `(shop: ${shop_id})`}`);
     console.log(`[API Proxy] Request body:`, body ? JSON.stringify(body) : 'null');
 
     // Make request to Shopee
@@ -201,7 +278,7 @@ serve(async (req) => {
         request: {
           method,
           url: `${SHOPEE_HOST}${api_path}`,
-          params: { ...params, shop_id, partner_id },
+          params: { ...params, ...(shop_id ? { shop_id } : {}), partner_id },
           body,
         },
         response: {
