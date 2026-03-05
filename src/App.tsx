@@ -6,11 +6,10 @@ import { Toaster as Sonner } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ShopeeAuthProvider } from '@/contexts/ShopeeAuthContext';
-// [HIDDEN] Lazada feature - temporarily disabled
-// import { LazadaAuthProvider } from '@/contexts/LazadaAuthContext';
-
+import { PermissionsProvider } from '@/contexts/PermissionsContext';
 // Layout
 import MainLayout from '@/components/layout/MainLayout';
+import AdminLayout from '@/components/layout/AdminLayout';
 
 // Pages
 import AuthPage from '@/pages/AuthPage';
@@ -22,26 +21,30 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
 import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
-import AdvancedSettingsPage from '@/pages/settings/AdvancedSettingsPage';
-import ShopeeIpRangesPage from '@/pages/settings/ShopeeIpRangesPage';
+import PushLogsPage from '@/pages/settings/PushLogsPage';
+import ApiCallLogsPage from '@/pages/settings/ApiCallLogsPage';
+import ApiRegistryPage from '@/pages/admin/ApiRegistryPage';
+import ApiRegistryDetailPage from '@/pages/admin/ApiRegistryDetailPage';
+
 import ShopInfoPage from '@/pages/settings/ShopInfoPage';
 
 // Feature Pages
 import FlashSalePage from '@/pages/FlashSalePage';
 import FlashSaleDetailPage from '@/pages/FlashSaleDetailPage';
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
+import FlashSaleOverviewPage from '@/pages/FlashSaleOverviewPage';
 import ProductsPage from '@/pages/ProductsPage';
-// [HIDDEN] Reviews feature - temporarily disabled
-// import ReviewsPage from '@/pages/ReviewsPage';
-// import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
-// [HIDDEN] API & Logs - temporarily disabled
-// import ApiLogsPage from '@/pages/ApiLogsPage';
-// [HIDDEN] Lazada Pages - temporarily disabled
-// import LazadaDashboardPage from '@/pages/lazada/LazadaDashboardPage';
-// import LazadaShopsPage from '@/pages/lazada/LazadaShopsPage';
-// import LazadaOrdersPage from '@/pages/lazada/LazadaOrdersPage';
-// import LazadaProductsPage from '@/pages/lazada/LazadaProductsPage';
-// import LazadaCallbackPage from '@/pages/lazada/LazadaCallbackPage';
+import DocsPage from '@/pages/DocsPage';
+
+// Admin Pages
+import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
+import AdminActivityPage from '@/pages/admin/AdminActivityPage';
+
+// Notification Pages
+import PenaltyPage from '@/pages/notifications/PenaltyPage';
+
+// Shop Performance Page
+import ShopPerformancePage from '@/pages/ShopPerformancePage';
 
 function App() {
   const [queryClient] = useState(
@@ -62,6 +65,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <PermissionsProvider>
         <ShopeeAuthProvider>
             <TooltipProvider>
             <Toaster />
@@ -72,39 +76,42 @@ function App() {
                 <Route path="/" element={<Navigate to="/auth" replace />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
-                {/* [HIDDEN] Lazada callback - temporarily disabled */}
-                {/* <Route path="/lazada/callback" element={<LazadaCallbackPage />} /> */}
+                {/* Standalone protected route - no MainLayout */}
+                <Route path="/docs" element={<DocsPage />} />
 
-                {/* Protected routes with MainLayout */}
+                {/* Protected routes with MainLayout (user pages) */}
                 <Route element={<MainLayout />}>
                   <Route path="/dashboard" element={<HomePage />} />
-                  {/* Feature Routes */}
                   <Route path="/products" element={<ProductsPage />} />
-                  {/* [HIDDEN] Reviews feature - temporarily disabled */}
-                  {/* <Route path="/reviews" element={<ReviewsPage />} /> */}
-                  {/* <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} /> */}
                   <Route path="/flash-sale" element={<FlashSalePage />} />
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
-
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
-                  {/* [HIDDEN] API & Logs - temporarily disabled */}
-                  {/* <Route path="/api-logs" element={<ApiLogsPage />} /> */}
-
-                  {/* Settings Routes */}
+                  <Route path="/notifications/penalties" element={<PenaltyPage />} />
+                  <Route path="/shop-performance" element={<ShopPerformancePage />} />
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />
-                  <Route path="/settings/shops" element={<ShopsSettingsPage />} />
-                  <Route path="/settings/users" element={<UsersSettingsPage />} />
-                  <Route path="/settings/advanced" element={<AdvancedSettingsPage />} />
-                  <Route path="/settings/ip-ranges" element={<ShopeeIpRangesPage />} />
-                  <Route path="/settings/shops/:shopId" element={<ShopInfoPage />} />
-
-                  {/* [HIDDEN] Lazada Routes - temporarily disabled */}
-                  {/* <Route path="/lazada" element={<LazadaDashboardPage />} /> */}
-                  {/* <Route path="/lazada/shops" element={<LazadaShopsPage />} /> */}
-                  {/* <Route path="/lazada/orders" element={<LazadaOrdersPage />} /> */}
-                  {/* <Route path="/lazada/products" element={<LazadaProductsPage />} /> */}
                 </Route>
+
+                {/* Admin Panel with AdminLayout */}
+                <Route element={<AdminLayout />}>
+                  <Route path="/admin" element={<AdminDashboardPage />} />
+                  <Route path="/admin/flash-sale" element={<FlashSaleOverviewPage />} />
+                  <Route path="/admin/api-logs" element={<ApiCallLogsPage />} />
+                  <Route path="/admin/api-registry" element={<ApiRegistryPage />} />
+                  <Route path="/admin/api-registry/detail" element={<ApiRegistryDetailPage />} />
+                  <Route path="/admin/push-logs" element={<PushLogsPage />} />
+                  <Route path="/admin/activity" element={<AdminActivityPage />} />
+                  <Route path="/admin/shops" element={<ShopsSettingsPage />} />
+                  <Route path="/admin/shops/:shopId" element={<ShopInfoPage />} />
+                  <Route path="/admin/users" element={<UsersSettingsPage />} />
+                </Route>
+
+                {/* Backwards compat redirects */}
+                <Route path="/settings/api-logs" element={<Navigate to="/admin/api-logs" replace />} />
+                <Route path="/settings/push-logs" element={<Navigate to="/admin/push-logs" replace />} />
+                <Route path="/settings/shops" element={<Navigate to="/admin/shops" replace />} />
+                <Route path="/settings/users" element={<Navigate to="/admin/users" replace />} />
+                <Route path="/flash-sale/overview" element={<Navigate to="/admin/flash-sale" replace />} />
 
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />
@@ -112,6 +119,7 @@ function App() {
             </BrowserRouter>
             </TooltipProvider>
         </ShopeeAuthProvider>
+        </PermissionsProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

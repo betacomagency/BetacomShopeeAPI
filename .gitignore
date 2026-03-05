@@ -31,8 +31,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# Migration scripts (contain sensitive keys)
-import-data-to-target.sql
-migrate-data.mjs
-migration-to-target.sql
+# Build artifacts
+tsconfig.tsbuildinfo
+
 .vercel

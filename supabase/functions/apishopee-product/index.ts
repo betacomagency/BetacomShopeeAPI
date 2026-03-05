@@ -13,7 +13,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
-import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -164,11 +164,38 @@ async function callShopeeAPI(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   body?: Record<string, unknown>,
-  extraParams?: Record<string, string | number | boolean | number[]>
+  extraParams?: Record<string, string | number | boolean | number[]>,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
   let retryCount = 0;
+
+  const logCall = (status: 'success' | 'failed' | 'timeout', duration: number, opts?: {
+    shopeeError?: string; shopeeMessage?: string; responseSummary?: Record<string, unknown>;
+    retry?: number; tokenRefreshed?: boolean;
+  }) => {
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'apishopee-product',
+      apiEndpoint: path,
+      httpMethod: method,
+      apiCategory: 'product',
+      status,
+      shopeeError: opts?.shopeeError,
+      shopeeMessage: opts?.shopeeMessage,
+      durationMs: duration,
+      responseSummary: opts?.responseSummary,
+      retryCount: opts?.retry ?? retryCount,
+      wasTokenRefreshed: opts?.tokenRefreshed ?? wasTokenRefreshed,
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+  };
+
   const makeRequest = async (accessToken: string) => {
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = createSignature(credentials.partnerKey, credentials.partnerId, path, timestamp, accessToken, shopId);
@@ -214,42 +241,60 @@ async function callShopeeAPI(
         console.error(`[PRODUCT] Request timeout for ${path} after ${REQUEST_TIMEOUT_MS}ms`);
         return { error: 'timeout', message: `Request timeout after ${REQUEST_TIMEOUT_MS}ms` };
       }
-      throw fetchError;
+      return { error: 'network_error', message: err.message || 'Network request failed' };
     }
   };
 
-  let result = await makeRequest(token.access_token);
+  try {
+    let result = await makeRequest(token.access_token);
 
-  if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
-    console.log('[AUTO-RETRY] Refreshing token...');
-    wasTokenRefreshed = true;
-    retryCount++;
-    const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
-    if (!newToken.error) {
-      await saveToken(supabase, shopId, newToken);
-      result = await makeRequest(newToken.access_token);
+    if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
+      // Log the initial failed call before retrying
+      const firstCallStatus = getApiCallStatus(result as Record<string, unknown>);
+      logCall(firstCallStatus.status, Date.now() - startTime, {
+        shopeeError: firstCallStatus.shopeeError,
+        shopeeMessage: firstCallStatus.shopeeMessage,
+        responseSummary: createResponseSummary(result as Record<string, unknown>),
+      });
+
+      console.log('[AUTO-RETRY] Refreshing token...');
+      wasTokenRefreshed = true;
+      retryCount++;
+      const retryStartTime = Date.now();
+      const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+      if (!newToken.error) {
+        await saveToken(supabase, shopId, newToken);
+        result = await makeRequest(newToken.access_token);
+      }
+      const retryStatus = getApiCallStatus(result as Record<string, unknown>);
+      logCall(retryStatus.status, Date.now() - retryStartTime, {
+        shopeeError: retryStatus.shopeeError,
+        shopeeMessage: retryStatus.shopeeMessage,
+        responseSummary: createResponseSummary(result as Record<string, unknown>),
+        retry: retryCount,
+        tokenRefreshed: true,
+      });
+
+      return result;
     }
+
+    // Log API call (non-blocking)
+    const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+    logCall(apiStatus.status, Date.now() - startTime, {
+      shopeeError: apiStatus.shopeeError,
+      shopeeMessage: apiStatus.shopeeMessage,
+      responseSummary: createResponseSummary(result as Record<string, unknown>),
+    });
+
+    return result;
+  } catch (err) {
+    // Log crash/unexpected errors so no call is ever missed
+    logCall('failed', Date.now() - startTime, {
+      shopeeError: 'edge_function_error',
+      shopeeMessage: (err as Error).message || 'Unexpected error in callShopeeAPI',
+    });
+    throw err;
   }
-
-
-  // Log API call (non-blocking)
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
-  logApiCall(supabase, {
-    shopId,
-    edgeFunction: 'apishopee-product',
-    apiEndpoint: path,
-    httpMethod: method,
-    apiCategory: 'product',
-    status: apiStatus.status,
-    shopeeError: apiStatus.shopeeError,
-    shopeeMessage: apiStatus.shopeeMessage,
-    durationMs: Date.now() - startTime,
-    responseSummary: createResponseSummary(result as Record<string, unknown>),
-    retryCount,
-    wasTokenRefreshed,
-  });
-
-  return result;
 }
 
 
@@ -418,7 +463,10 @@ async function syncAllProducts(
   credentials: PartnerCredentials,
   shopId: number,
   userId: string,
-  token: { access_token: string; refresh_token: string }
+  token: { access_token: string; refresh_token: string },
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<SyncResult> {
   // Lưu trữ tất cả API responses
   const apiResponses = {
@@ -442,15 +490,16 @@ async function syncAllProducts(
         const result = await callShopeeAPI(
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
           shopId, token, undefined,
-          { offset, page_size: 100, item_status: status }
-        ) as { 
+          { offset, page_size: 100, item_status: status },
+          callerUserId, callerUserEmail, triggeredBy
+        ) as {
           error?: string;
-          response?: { 
+          response?: {
             item?: ShopeeItemBasic[];
             total_count?: number;
             has_next_page?: boolean;
             next_offset?: number;
-          } 
+          }
         };
 
         // Lưu raw response
@@ -496,11 +545,12 @@ async function syncAllProducts(
       const result = await callShopeeAPI(
         supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
         shopId, token, undefined,
-        { item_id_list: batchIds }
-      ) as { 
+        { item_id_list: batchIds },
+        callerUserId, callerUserEmail, triggeredBy
+      ) as {
         error?: string;
         warning?: string;
-        response?: { item_list?: ShopeeProduct[] } 
+        response?: { item_list?: ShopeeProduct[] }
       };
 
       // Lưu raw response
@@ -564,7 +614,8 @@ async function syncAllProducts(
             const modelResult = await callShopeeAPI(
               supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
               shopId, token, undefined,
-              { item_id: product.item_id }
+              { item_id: product.item_id },
+              callerUserId, callerUserEmail, triggeredBy
             ) as {
               error?: string;
               message?: string;
@@ -907,7 +958,10 @@ async function incrementalSyncProducts(
   shopId: number,
   userId: string,
   token: { access_token: string; refresh_token: string },
-  changedItemIds: number[]
+  changedItemIds: number[],
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ success: boolean; updated_count: number; inserted_count: number; deleted_count: number; history_logs_created?: number; error?: string }> {
   try {
     console.log(`[INCREMENTAL] Starting incremental sync for ${changedItemIds.length} changed items`);
@@ -927,7 +981,8 @@ async function incrementalSyncProducts(
         const result = await callShopeeAPI(
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
           shopId, token, undefined,
-          { offset, page_size: 100, item_status: status }
+          { offset, page_size: 100, item_status: status },
+          callerUserId, callerUserEmail, triggeredBy
         ) as {
           error?: string;
           response?: {
@@ -1020,7 +1075,8 @@ async function incrementalSyncProducts(
       const result = await callShopeeAPI(
         supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
         shopId, token, undefined,
-        { item_id_list: batchIds }
+        { item_id_list: batchIds },
+        callerUserId, callerUserEmail, triggeredBy
       ) as { error?: string; response?: { item_list?: ShopeeProduct[] } };
 
       if (!result.error) {
@@ -1054,7 +1110,8 @@ async function incrementalSyncProducts(
             const modelResult = await callShopeeAPI(
               supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
               shopId, token, undefined,
-              { item_id: product.item_id }
+              { item_id: product.item_id },
+              callerUserId, callerUserEmail, triggeredBy
             ) as { error?: string; response?: ModelResponse };
             return { product, modelResult };
           } catch (err) {
@@ -1328,6 +1385,17 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    // If JWT didn't include email, look it up from auth.users using the verified userId
+    let effectiveEmail = callerUserEmail;
+    if (callerUserId && !effectiveEmail) {
+      const { data: authUser } = await supabase.auth.admin.getUserById(callerUserId);
+      effectiveEmail = authUser?.user?.email;
+    }
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: effectiveEmail }, 'cron');
+
     const credentials = await getPartnerCredentials(supabase, shop_id);
     const token = await getTokenWithAutoRefresh(supabase, shop_id);
 
@@ -1340,7 +1408,8 @@ serve(async (req) => {
         result = await callShopeeAPI(
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
           shop_id, token, undefined,
-          { offset, page_size, item_status: Array.isArray(item_status) ? item_status.join(',') : item_status }
+          { offset, page_size, item_status: Array.isArray(item_status) ? item_status.join(',') : item_status },
+          callerUserId, effectiveEmail, triggeredBy
         );
         break;
       }
@@ -1357,7 +1426,8 @@ serve(async (req) => {
         result = await callShopeeAPI(
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
           shop_id, token, undefined,
-          { item_id_list }
+          { item_id_list },
+          callerUserId, effectiveEmail, triggeredBy
         );
         break;
       }
@@ -1374,7 +1444,8 @@ serve(async (req) => {
         result = await callShopeeAPI(
           supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
           shop_id, token, undefined,
-          { item_id }
+          { item_id },
+          callerUserId, effectiveEmail, triggeredBy
         );
         break;
       }
@@ -1387,7 +1458,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        result = await syncAllProducts(supabase, credentials, shop_id, user_id, token);
+        result = await syncAllProducts(supabase, credentials, shop_id, user_id, token, callerUserId, effectiveEmail, triggeredBy);
         break;
       }
 
@@ -1412,7 +1483,7 @@ serve(async (req) => {
         // Nếu chưa có data hoặc count error -> full sync lần đầu
         if (countError || existingCount === null || existingCount === undefined || existingCount === 0) {
           console.log('[CHECK] No existing data (count:', existingCount, '), running full sync...');
-          result = await syncAllProducts(supabase, credentials, shop_id, user_id, token);
+          result = await syncAllProducts(supabase, credentials, shop_id, user_id, token, callerUserId, effectiveEmail, triggeredBy);
           break;
         }
 
@@ -1440,7 +1511,8 @@ serve(async (req) => {
             const apiResult = await callShopeeAPI(
               supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
               shop_id, token, undefined,
-              { offset, page_size: 100, item_status: status, update_time_from: lastUpdateTime + 1 }
+              { offset, page_size: 100, item_status: status, update_time_from: lastUpdateTime + 1 },
+              callerUserId, effectiveEmail, triggeredBy
             ) as { response?: { item?: Array<{ item_id: number; update_time: number }>; has_next_page?: boolean; next_offset?: number } };
 
             const items = apiResult?.response?.item || [];
@@ -1456,7 +1528,7 @@ serve(async (req) => {
         if (changedItemIds.length > 0) {
           // Có thay đổi -> incremental sync
           console.log(`[CHECK] Found ${changedItemIds.length} changed items, running incremental sync...`);
-          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, changedItemIds);
+          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, changedItemIds, callerUserId, effectiveEmail, triggeredBy);
           result = {
             success: incrementalResult.success,
             has_changes: true,
@@ -1468,7 +1540,7 @@ serve(async (req) => {
           };
         } else {
           // Không có thay đổi từ update_time, nhưng vẫn check xem có products bị xóa không
-          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, []);
+          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, [], callerUserId, effectiveEmail, triggeredBy);
           if (incrementalResult.deleted_count > 0) {
             result = {
               success: true,

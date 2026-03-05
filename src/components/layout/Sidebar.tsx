@@ -3,12 +3,12 @@
  */
 
 import { useState, useEffect } from 'react';
-import { NavLink, useLocation, Link } from 'react-router-dom';
+import { NavLink, useLocation, Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
-import { ChevronLeft, ChevronDown, LogOut } from 'lucide-react';
-import { menuItems, ADMIN_EMAIL, type MenuItem } from '@/config/menu-config';
+import { ChevronLeft, ChevronDown, LogOut, Monitor } from 'lucide-react';
+import { menuItems, type MenuItem } from '@/config/menu-config';
+import { usePermissionsContext } from '@/contexts/PermissionsContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -19,10 +19,11 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();
+  const { hasFeature } = usePermissionsContext();
   // Mặc định đóng tất cả dropdown - chỉ lưu 1 menu đang mở
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
-  const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
   const handleLeafClick = () => {
     if (window.innerWidth < 768 && onMobileClose) {
@@ -43,71 +44,23 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
   }, [mobileOpen]);
 
 
-  // Kiểm tra user hiện tại có phải admin không
-  const isSystemAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-
-  // Fetch global permissions (áp dụng cho tất cả user)
-  useEffect(() => {
-    const fetchGlobalPermissions = async () => {
-      if (!user?.id) return;
-
-      try {
-        const { data, error } = await supabase
-          .from('sys_settings')
-          .select('value')
-          .eq('key', 'global_permissions')
-          .single();
-
-        if (error && error.code !== 'PGRST116') {
-          console.error('Error fetching global permissions:', error);
-          return;
-        }
-
-        // Lưu global permissions từ database
-        if (data?.value) {
-          setUserPermissions(data.value as string[]);
-        }
-      } catch (error) {
-        console.error('Error fetching global permissions:', error);
-      }
-    };
-
-    fetchGlobalPermissions();
-  }, [user?.id]);
-
-  // Check if user has permission for a feature
-  // Admin có full quyền, user thường check global permissions
-  const hasPermission = (permissionKey?: string) => {
-    if (!permissionKey) return true;
-    if (isSystemAdmin) return true; // Admin email có full quyền
-    if (profile?.system_role === 'admin') return true; // Admin role có full quyền
-    // User thường: check trong global permissions
-    return userPermissions.includes(permissionKey);
-  };
-
-  // Filter menu items theo quyền
+  // Filter menu items theo quyền (dùng usePermissionsContext)
   const filteredMenuItems = menuItems
     .filter(item => {
-      // Check adminOnly
-      if (item.adminOnly && !isSystemAdmin) return false;
-      // Check permission
-      if (!hasPermission(item.permissionKey)) return false;
+      if (item.permissionKey && !hasFeature(item.permissionKey)) return false;
       return true;
     })
     .map(item => {
       if (item.children) {
         return {
           ...item,
-          children: item.children.filter(child => {
-            if (child.adminOnly && !isSystemAdmin) return false;
-            if (!hasPermission(child.permissionKey)) return false;
-            return true;
-          }),
+          children: item.children.filter(child =>
+            !child.permissionKey || hasFeature(child.permissionKey)
+          ),
         };
       }
       return item;
     })
-    // Loại bỏ menu cha nếu không còn children nào
     .filter(item => !item.children || item.children.length > 0);
 
   const toggleMenu = (title: string) => {
@@ -230,6 +183,33 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
             );
           }
 
+          // Items that should open in new tab
+          if (item.openInNewTab && item.path) {
+            return (
+              <a
+                key={item.path}
+                href={item.path}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  'flex items-center rounded-lg transition-all duration-200 overflow-hidden',
+                  'text-slate-600 hover:bg-slate-100',
+                  collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
+                )}
+                onClick={handleLeafClick}
+              >
+                <Icon className={cn('w-5 h-5 flex-shrink-0', 'text-slate-500')} />
+                <span className={cn(
+                  'font-semibold text-sm whitespace-nowrap transition-all duration-300',
+                  'text-slate-700',
+                  collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+                )}>
+                  {item.title}
+                </span>
+              </a>
+            );
+          }
+
           return (
             <NavLink
               key={item.path}
@@ -255,6 +235,31 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
           );
         })}
       </nav>
+
+      {/* Admin Panel Switch - chỉ hiển thị cho admin */}
+      {hasFeature('admin-panel') && (
+        <div className="border-t border-slate-200 p-3">
+          <button
+            onClick={() => {
+              handleLeafClick();
+              navigate('/admin');
+            }}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors overflow-hidden cursor-pointer',
+              collapsed ? 'justify-center' : ''
+            )}
+            title="Admin Panel"
+          >
+            <Monitor className="w-5 h-5 flex-shrink-0" />
+            <span className={cn(
+              'font-medium text-sm whitespace-nowrap transition-all duration-300',
+              collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+            )}>
+              Admin Panel
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* Toggle Collapse Button - Ẩn trên mobile */}
       <div className="hidden md:block border-t border-slate-200 p-3">

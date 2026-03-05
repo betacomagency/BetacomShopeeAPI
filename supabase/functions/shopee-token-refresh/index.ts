@@ -9,7 +9,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 import { logActivity, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
-import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -196,7 +196,7 @@ async function logRefreshResult(
       actionType: 'token_refresh',
       actionCategory: 'auth' as ActionCategory,
       actionDescription: success
-        ? `Làm mới token thành công${newExpiredAt ? `, hết hạn lúc ${new Date(newExpiredAt * 1000).toLocaleString('vi-VN')}` : ''}`
+        ? `Làm mới token thành công${newExpiredAt ? `, hết hạn lúc ${new Date(newExpiredAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}` : ''}`
         : `Làm mới token thất bại: ${errorMessage || 'Unknown error'}`,
       targetType: 'shop',
       targetId: shopeeShopId.toString(),
@@ -225,7 +225,10 @@ serve(async (req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-    // Parse request body (optional - có thể chỉ định shop_id cụ thể)
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'cron');
+
     let specificShopId: number | undefined;
     try {
       const body = await req.json();
@@ -347,6 +350,10 @@ serve(async (req) => {
           status: refreshResult.success ? 'success' : 'failed',
           shopeeError: refreshResult.success ? undefined : refreshResult.error,
           durationMs: Date.now() - refreshStartTime,
+          responseSummary: createResponseSummary(refreshResult.data || { error: refreshResult.error }),
+          userId: callerUserId,
+          userEmail: callerUserEmail,
+          triggeredBy,
         });
 
         if (!refreshResult.success || !refreshResult.data) {
@@ -510,6 +517,10 @@ serve(async (req) => {
           status: refreshResult.success ? 'success' : 'failed',
           shopeeError: refreshResult.success ? undefined : refreshResult.error,
           durationMs: Date.now() - refreshStartTime,
+          responseSummary: createResponseSummary(refreshResult.data || { error: refreshResult.error }),
+          userId: callerUserId,
+          userEmail: callerUserEmail,
+          triggeredBy,
         });
 
         if (!refreshResult.success || !refreshResult.data) {
@@ -647,10 +658,27 @@ serve(async (req) => {
           const rep = groupTokens[0];
           const appInfo = rep.apishopee_partner_apps as unknown as { partner_id: number; partner_key: string; partner_name: string; app_category: string };
 
+          const appRefreshStart = Date.now();
           const refreshResult = await refreshAccessToken(
             appInfo.partner_id, appInfo.partner_key,
             rep.refresh_token, 0, merchantId
           );
+
+          // Log API call for app token refresh
+          logApiCall(supabase, {
+            shopId: rep.shop_id,
+            edgeFunction: 'shopee-token-refresh',
+            apiEndpoint: '/api/v2/auth/access_token/get',
+            httpMethod: 'POST',
+            apiCategory: 'auth',
+            status: refreshResult.success ? 'success' : 'failed',
+            shopeeError: refreshResult.success ? undefined : refreshResult.error,
+            durationMs: Date.now() - appRefreshStart,
+            responseSummary: createResponseSummary(refreshResult.data || { error: refreshResult.error }),
+            userId: callerUserId,
+            userEmail: callerUserEmail,
+            triggeredBy,
+          });
 
           if (refreshResult.success && refreshResult.data) {
             const newToken = refreshResult.data;
@@ -694,10 +722,27 @@ serve(async (req) => {
         for (const at of appStandalone) {
           const appInfo = at.apishopee_partner_apps as unknown as { partner_id: number; partner_key: string; partner_name: string; app_category: string };
 
+          const appRefreshStart = Date.now();
           const refreshResult = await refreshAccessToken(
             appInfo.partner_id, appInfo.partner_key,
             at.refresh_token, at.shop_id
           );
+
+          // Log API call for standalone app token refresh
+          logApiCall(supabase, {
+            shopId: at.shop_id,
+            edgeFunction: 'shopee-token-refresh',
+            apiEndpoint: '/api/v2/auth/access_token/get',
+            httpMethod: 'POST',
+            apiCategory: 'auth',
+            status: refreshResult.success ? 'success' : 'failed',
+            shopeeError: refreshResult.success ? undefined : refreshResult.error,
+            durationMs: Date.now() - appRefreshStart,
+            responseSummary: createResponseSummary(refreshResult.data || { error: refreshResult.error }),
+            userId: callerUserId,
+            userEmail: callerUserEmail,
+            triggeredBy,
+          });
 
           if (refreshResult.success && refreshResult.data) {
             const newToken = refreshResult.data;

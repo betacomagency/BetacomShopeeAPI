@@ -7,7 +7,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
-import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -158,7 +158,10 @@ async function callShopeeAPIWithRetry(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   body?: Record<string, unknown>,
-  extraParams?: Record<string, string | number | boolean>
+  extraParams?: Record<string, string | number | boolean>,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
@@ -195,51 +198,77 @@ async function callShopeeAPIWithRetry(
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetchWithProxy(url, options);
-    return await response.json();
+    try {
+      const response = await fetchWithProxy(url, options);
+      return await response.json();
+    } catch (fetchError) {
+      const err = fetchError as Error;
+      return { error: 'network_error', message: err.message || 'Network request failed' };
+    }
   };
 
-  let result = await makeRequest(token.access_token);
+  const logCall = (status: 'success' | 'failed' | 'timeout', duration: number, opts?: {
+    shopeeError?: string; shopeeMessage?: string; responseSummary?: Record<string, unknown>;
+  }) => {
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'shopee-shop',
+      apiEndpoint: path,
+      httpMethod: method,
+      apiCategory: 'shop',
+      status,
+      shopeeError: opts?.shopeeError,
+      shopeeMessage: opts?.shopeeMessage,
+      durationMs: duration,
+      responseSummary: opts?.responseSummary,
+      retryCount,
+      wasTokenRefreshed,
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+  };
 
-  if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
-    const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+  try {
+    let result = await makeRequest(token.access_token);
 
-    if (!newToken.error) {
-      await saveToken(supabase, shopId, newToken);
-      wasTokenRefreshed = true;
-      retryCount = 1;
+    if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
+      const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
 
-      // Cập nhật bảng shops
-      await supabase.from('apishopee_shops').upsert({
-        shop_id: shopId,
-        access_token: newToken.access_token,
-        refresh_token: newToken.refresh_token,
-        expired_at: Date.now() + newToken.expire_in * 1000,
-        token_updated_at: new Date().toISOString(),
-      }, { onConflict: 'shop_id' });
+      if (!newToken.error) {
+        await saveToken(supabase, shopId, newToken);
+        wasTokenRefreshed = true;
+        retryCount = 1;
 
-      result = await makeRequest(newToken.access_token);
+        // Cập nhật bảng shops
+        await supabase.from('apishopee_shops').upsert({
+          shop_id: shopId,
+          access_token: newToken.access_token,
+          refresh_token: newToken.refresh_token,
+          expired_at: Date.now() + newToken.expire_in * 1000,
+          token_updated_at: new Date().toISOString(),
+        }, { onConflict: 'shop_id' });
+
+        result = await makeRequest(newToken.access_token);
+      }
     }
+
+    // Log API call (non-blocking)
+    const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+    logCall(apiStatus.status, Date.now() - startTime, {
+      shopeeError: apiStatus.shopeeError,
+      shopeeMessage: apiStatus.shopeeMessage,
+      responseSummary: createResponseSummary(result as Record<string, unknown>),
+    });
+
+    return result;
+  } catch (err) {
+    logCall('failed', Date.now() - startTime, {
+      shopeeError: 'edge_function_error',
+      shopeeMessage: (err as Error).message || 'Unexpected error in callShopeeAPIWithRetry',
+    });
+    throw err;
   }
-
-  // Log API call (non-blocking)
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
-  logApiCall(supabase, {
-    shopId,
-    edgeFunction: 'shopee-shop',
-    apiEndpoint: path,
-    httpMethod: method,
-    apiCategory: 'shop',
-    status: apiStatus.status,
-    shopeeError: apiStatus.shopeeError,
-    shopeeMessage: apiStatus.shopeeMessage,
-    durationMs: Date.now() - startTime,
-    responseSummary: createResponseSummary(result as Record<string, unknown>),
-    retryCount,
-    wasTokenRefreshed,
-  });
-
-  return result;
 }
 
 
@@ -444,6 +473,10 @@ serve(async (req) => {
       },
     });
 
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'user');
+
     let result;
 
     switch (action) {
@@ -464,8 +497,8 @@ serve(async (req) => {
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
 
         const [shopInfo, shopProfile] = await Promise.all([
-          callShopeeAPIWithRetry(supabase, credentials, '/api/v2/shop/get_shop_info', 'GET', shop_id, token),
-          callShopeeAPIWithRetry(supabase, credentials, '/api/v2/shop/get_profile', 'GET', shop_id, token),
+          callShopeeAPIWithRetry(supabase, credentials, '/api/v2/shop/get_shop_info', 'GET', shop_id, token, undefined, undefined, callerUserId, callerUserEmail, triggeredBy),
+          callShopeeAPIWithRetry(supabase, credentials, '/api/v2/shop/get_profile', 'GET', shop_id, token, undefined, undefined, callerUserId, callerUserEmail, triggeredBy),
         ]);
 
         // Lưu cache nếu không có lỗi
@@ -512,7 +545,7 @@ serve(async (req) => {
 
         const results = await Promise.allSettled(
           apiCalls.map(api =>
-            callShopeeAPIWithRetry(supabase, credentials, api.path, 'GET', shop_id, token)
+            callShopeeAPIWithRetry(supabase, credentials, api.path, 'GET', shop_id, token, undefined, undefined, callerUserId, callerUserEmail, triggeredBy)
           )
         );
 
@@ -565,7 +598,12 @@ serve(async (req) => {
           '/api/v2/shop/get_shop_info',
           'GET',
           shop_id,
-          token
+          token,
+          undefined,
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -579,7 +617,12 @@ serve(async (req) => {
           '/api/v2/shop/get_profile',
           'GET',
           shop_id,
-          token
+          token,
+          undefined,
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }

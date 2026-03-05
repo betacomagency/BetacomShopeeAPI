@@ -12,7 +12,7 @@ export const SHOPEE_CONFIG = {
   partner_id: Number(import.meta.env.VITE_SHOPEE_PARTNER_ID) || 0,
   partner_key: import.meta.env.VITE_SHOPEE_PARTNER_KEY || '',
   shop_id: Number(import.meta.env.VITE_SHOPEE_SHOP_ID) || undefined,
-  callback_url: import.meta.env.VITE_SHOPEE_CALLBACK_URL || 'https://apishopeenextjs.vercel.app/auth/callback',
+  callback_url: import.meta.env.VITE_SHOPEE_CALLBACK_URL || 'https://sshop.betacom.agency/auth/callback',
 };
 
 export enum ShopeeRegion {

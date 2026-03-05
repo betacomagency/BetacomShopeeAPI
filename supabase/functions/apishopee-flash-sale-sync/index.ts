@@ -11,7 +11,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -72,7 +72,10 @@ async function callShopeeAPI(
   partnerId: number,
   partnerKey: string,
   params?: Record<string, string | number>,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   const timestamp = Math.floor(Date.now() / 1000);
@@ -104,11 +107,32 @@ async function callShopeeAPI(
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, options);
-  const result = await response.json();
+  let result: Record<string, unknown>;
+  try {
+    const response = await fetch(url, options);
+    result = await response.json();
+  } catch (fetchError) {
+    const err = fetchError as Error;
+    console.error(`[FLASH-SALE-SYNC] Fetch error for ${apiPath}:`, err.message);
+    logApiCall(supabaseClient, {
+      shopId,
+      edgeFunction: 'apishopee-flash-sale-sync',
+      apiEndpoint: apiPath,
+      httpMethod: method,
+      apiCategory: 'flash_sale',
+      status: 'failed',
+      shopeeError: 'network_error',
+      shopeeMessage: err.message || 'Network request failed',
+      durationMs: Date.now() - startTime,
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+    return { error: 'network_error', message: err.message || 'Network request failed' };
+  }
 
   // Log API call
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+  const apiStatus = getApiCallStatus(result);
   logApiCall(supabaseClient, {
     shopId,
     edgeFunction: 'apishopee-flash-sale-sync',
@@ -119,6 +143,10 @@ async function callShopeeAPI(
     shopeeError: apiStatus.shopeeError,
     shopeeMessage: apiStatus.shopeeMessage,
     durationMs: Date.now() - startTime,
+    responseSummary: createResponseSummary(result),
+    userId: callerUserId,
+    userEmail: callerUserEmail,
+    triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
   });
 
   return result;
@@ -134,7 +162,10 @@ async function fetchAllFlashSales(
   shopId: number,
   accessToken: string,
   partnerId: number,
-  partnerKey: string
+  partnerKey: string,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ items: FlashSaleItem[]; error?: string }> {
   const allItems: FlashSaleItem[] = [];
   const apiPath = '/api/v2/shop_flash_sale/get_shop_flash_sale_list';
@@ -157,7 +188,11 @@ async function fetchAllFlashSales(
           accessToken,
           partnerId,
           partnerKey,
-          { type, offset, limit }
+          { type, offset, limit },
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         ) as {
           error?: string;
           message?: string;
@@ -270,7 +305,10 @@ async function syncShopFlashSales(
     access_token: string;
     partner_id: number;
     partner_key: string;
-  }
+  },
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<SyncResult> {
   const result: SyncResult = {
     shopId: shop.shop_id,
@@ -287,7 +325,10 @@ async function syncShopFlashSales(
     shop.shop_id,
     shop.access_token,
     shop.partner_id,
-    shop.partner_key
+    shop.partner_key,
+    callerUserId,
+    callerUserEmail,
+    triggeredBy
   );
 
   if (fetchError) {
@@ -307,6 +348,51 @@ async function syncShopFlashSales(
   result.errors.push(...upsertResult.errors);
 
   console.log(`[SYNC] Shop ${shop.shop_id}: Inserted ${result.inserted}, Updated ${result.updated}`);
+
+  // 2.5 Cleanup: xóa records đã bị xóa trên Shopee (status 0)
+  // và upcoming records không còn trong API response
+  const { error: cleanupStatusError } = await supabase
+    .from('apishopee_flash_sale_data')
+    .delete()
+    .eq('shop_id', shop.shop_id)
+    .eq('status', 0);
+
+  if (cleanupStatusError) {
+    console.error(`[SYNC] Shop ${shop.shop_id}: Cleanup status=0 error:`, cleanupStatusError.message);
+  }
+
+  // Xóa upcoming records local mà Shopee không còn trả về (đã bị xóa)
+  const syncedUpcomingIds = items.filter(i => i.type === 1).map(i => i.flash_sale_id);
+  const { data: localUpcoming } = await supabase
+    .from('apishopee_flash_sale_data')
+    .select('id, flash_sale_id')
+    .eq('shop_id', shop.shop_id)
+    .eq('type', 1);
+
+  if (localUpcoming && syncedUpcomingIds.length > 0) {
+    const syncedSet = new Set(syncedUpcomingIds);
+    const staleIds = localUpcoming
+      .filter((r: { id: string; flash_sale_id: number }) => !syncedSet.has(r.flash_sale_id))
+      .map((r: { id: string }) => r.id);
+
+    if (staleIds.length > 0) {
+      await supabase
+        .from('apishopee_flash_sale_data')
+        .delete()
+        .in('id', staleIds);
+      console.log(`[SYNC] Shop ${shop.shop_id}: Cleaned up ${staleIds.length} stale upcoming records`);
+    }
+  } else if (localUpcoming && syncedUpcomingIds.length === 0) {
+    // Shopee trả về 0 upcoming → xóa hết upcoming trong DB
+    const staleIds = localUpcoming.map((r: { id: string }) => r.id);
+    if (staleIds.length > 0) {
+      await supabase
+        .from('apishopee_flash_sale_data')
+        .delete()
+        .in('id', staleIds);
+      console.log(`[SYNC] Shop ${shop.shop_id}: Cleaned up all ${staleIds.length} stale upcoming records`);
+    }
+  }
 
   // 3. Cập nhật sync status
   await supabase
@@ -332,6 +418,10 @@ serve(async (req: Request) => {
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'cron');
 
     // Parse request body để lấy shop_id cụ thể (optional)
     let targetShopId: number | null = null;
@@ -377,7 +467,7 @@ serve(async (req: Request) => {
     const results: SyncResult[] = [];
     for (const shop of shops) {
       try {
-        const result = await syncShopFlashSales(supabase, shop);
+        const result = await syncShopFlashSales(supabase, shop, callerUserId, callerUserEmail, triggeredBy);
         results.push(result);
 
         // Delay giữa các shops để tránh rate limit

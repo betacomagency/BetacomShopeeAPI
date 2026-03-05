@@ -5,6 +5,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy, type ApiCategory } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +20,7 @@ const ADMIN_EMAIL = 'betacom.work@gmail.com';
 // Partner-level API chỉ cho phép các endpoint này
 const PARTNER_LEVEL_ALLOWED_PATHS = [
   '/api/v2/public/get_shops_by_partner',
+  '/api/v2/public/get_merchants_by_partner',
   '/api/v2/public/get_shopee_ip_ranges',
 ];
 
@@ -54,6 +56,20 @@ async function hmacSha256(key: string, message: string): Promise<string> {
     .join('');
 }
 
+/**
+ * Detect API category from endpoint path
+ */
+function detectApiCategory(apiPath: string): ApiCategory {
+  if (apiPath.includes('/product/')) return 'product';
+  if (apiPath.includes('/flash_sale/') || apiPath.includes('/flash_deal/')) return 'flash_sale';
+  if (apiPath.includes('/order/')) return 'order';
+  if (apiPath.includes('/shop/')) return 'shop';
+  if (apiPath.includes('/finance/') || apiPath.includes('/payment/')) return 'finance';
+  if (apiPath.includes('/review/')) return 'review';
+  if (apiPath.includes('/auth/') || apiPath.includes('/public/')) return 'auth';
+  return 'shop'; // default
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -82,6 +98,10 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'user');
+
     // Determine if this is a partner-level API call (no shop_id/access_token needed)
     const isPartnerLevel = !shop_id && partner_app_id;
 
@@ -91,27 +111,15 @@ serve(async (req) => {
 
     if (isPartnerLevel) {
       // Partner-level API: chỉ admin mới được gọi
-      const authHeader = req.headers.get('Authorization');
-      if (!authHeader) {
+      if (!callerUserId) {
         return new Response(
           JSON.stringify({ error: 'Authorization header is required for partner-level API' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser(
-        authHeader.replace('Bearer ', '')
-      );
-
-      if (userError || !user) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid or expired token' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      if (user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-        console.warn(`[API Proxy] Partner-level access denied for: ${user.email}`);
+      if (callerUserEmail?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        console.warn(`[API Proxy] Partner-level access denied for: ${callerUserEmail}`);
         return new Response(
           JSON.stringify({ error: 'Forbidden: admin access required for partner-level API calls' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -268,10 +276,61 @@ serve(async (req) => {
     }
 
     const startTime = Date.now();
-    const response = await fetchWithProxy(url, fetchOptions);
+    let responseData: Record<string, unknown>;
+    let httpStatus = 0;
+    let httpStatusText = '';
+
+    try {
+      const response = await fetchWithProxy(url, fetchOptions);
+      httpStatus = response.status;
+      httpStatusText = response.statusText;
+      responseData = await response.json();
+    } catch (fetchErr) {
+      const duration = Date.now() - startTime;
+      console.error('[API Proxy] Fetch error:', fetchErr);
+      // Log the failed call so it's never missed
+      logApiCall(supabase, {
+        shopId: shop_id || undefined,
+        edgeFunction: 'apishopee-proxy',
+        apiEndpoint: api_path,
+        httpMethod: method,
+        apiCategory: detectApiCategory(api_path),
+        status: 'failed',
+        shopeeError: 'network_error',
+        shopeeMessage: (fetchErr as Error).message || 'Network request failed',
+        durationMs: duration,
+        requestParams: { ...params, ...(shop_id ? { shop_id } : {}) },
+        userId: callerUserId,
+        userEmail: callerUserEmail,
+        triggeredBy,
+      });
+      return new Response(
+        JSON.stringify({ error: (fetchErr as Error).message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const endTime = Date.now();
 
-    const responseData = await response.json();
+    // Log API call (non-blocking)
+    const callStatus = getApiCallStatus(responseData);
+    logApiCall(supabase, {
+      shopId: shop_id || undefined,
+      edgeFunction: 'apishopee-proxy',
+      apiEndpoint: api_path,
+      httpMethod: method,
+      apiCategory: detectApiCategory(api_path),
+      status: callStatus.status,
+      shopeeError: callStatus.shopeeError,
+      shopeeMessage: callStatus.shopeeMessage,
+      httpStatusCode: httpStatus,
+      durationMs: endTime - startTime,
+      requestParams: { ...params, ...(shop_id ? { shop_id } : {}) },
+      responseSummary: createResponseSummary(responseData),
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy,
+    });
 
     return new Response(
       JSON.stringify({
@@ -282,8 +341,8 @@ serve(async (req) => {
           body,
         },
         response: {
-          status: response.status,
-          statusText: response.statusText,
+          status: httpStatus,
+          statusText: httpStatusText,
           time_ms: endTime - startTime,
           data: responseData,
         },

@@ -8,6 +8,7 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export type ApiCategory = 'shop' | 'product' | 'flash_sale' | 'review' | 'auth' | 'order' | 'finance';
 export type ApiCallStatus = 'success' | 'failed' | 'timeout';
+export type TriggeredBy = 'user' | 'cron' | 'scheduler' | 'webhook' | 'system';
 
 export interface LogApiCallParams {
   shopId?: number;
@@ -24,6 +25,9 @@ export interface LogApiCallParams {
   responseSummary?: Record<string, unknown>;
   retryCount?: number;
   wasTokenRefreshed?: boolean;
+  userId?: string;
+  userEmail?: string;
+  triggeredBy?: TriggeredBy;
 }
 
 /**
@@ -68,6 +72,9 @@ export function logApiCall(
     response_summary: params.responseSummary || null,
     retry_count: params.retryCount || 0,
     was_token_refreshed: params.wasTokenRefreshed || false,
+    user_id: params.userId || null,
+    user_email: params.userEmail || null,
+    triggered_by: params.triggeredBy || 'system',
   };
 
   // Non-blocking insert - fire and forget
@@ -145,6 +152,43 @@ export function createResponseSummary(result: Record<string, unknown>): Record<s
   }
 
   return fullResponse;
+}
+
+/**
+ * Extract user info from JWT token (decode only, no verification)
+ * JWT đã được Supabase gateway verify rồi nên an toàn để decode
+ */
+export function extractUserFromJwt(authHeader: string | null): { userId?: string; userEmail?: string } {
+  if (!authHeader) return {};
+  try {
+    const token = authHeader.replace('Bearer ', '');
+    // JWT format: header.payload.signature
+    const parts = token.split('.');
+    if (parts.length !== 3) return {};
+    // Decode base64url payload
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    // Supabase user JWT has 'sub' (user_id) and usually 'email'
+    // Anon key JWT has role='anon' but no 'sub'
+    // Only require 'sub' to identify as user-triggered; email is optional
+    if (payload.sub) {
+      return { userId: payload.sub, userEmail: payload.email || undefined };
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Determine triggered_by based on JWT extraction result
+ * If userId exists from JWT -> 'user', otherwise use provided fallback
+ */
+export function determineTriggeredBy(
+  jwtResult: { userId?: string; userEmail?: string },
+  fallback: TriggeredBy = 'system'
+): TriggeredBy {
+  if (jwtResult.userId) return 'user';
+  return fallback;
 }
 
 /**

@@ -82,7 +82,7 @@ export default function AuthCallback() {
             : "Shop Shopee đã được liên kết với tài khoản của bạn.",
         });
 
-        navigate('/settings/shops?refresh=' + Date.now(), { replace: true });
+        navigate('/admin/shops?refresh=' + Date.now(), { replace: true });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
         setError(errorMessage);

@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
@@ -15,8 +15,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { SimpleDataTable, CellShopInfo, CellBadge, CellText, CellActions } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
@@ -32,15 +30,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Users, Trash2, ChevronLeft, ChevronRight, Search, RefreshCw } from 'lucide-react';
-import { getAllShopsByPartner } from '@/lib/shopee/supabase-client';
-import type { AuthedShop } from '@/lib/shopee/types';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { usePermissionsContext } from '@/contexts/PermissionsContext';
 
 // Số shop mỗi trang
 const SHOPS_PER_PAGE = 30;
-
-// Admin email - chỉ tài khoản này mới được thêm shop và phân quyền
-const ADMIN_EMAIL = 'betacom.work@gmail.com';
 
 interface Shop {
   id: string; // UUID - internal ID
@@ -64,26 +58,6 @@ interface ShopWithRole extends Shop {
   memberCount?: number;
 }
 
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string | null;
-}
-
-interface Role {
-  id: string;
-  name: string;
-  display_name: string;
-}
-
-interface ShopMember {
-  id: string;
-  profile_id: string;
-  role_id: string;
-  profile: Profile;
-  role: Role;
-}
-
 interface ShopManagementPanelProps {
   readOnly?: boolean; // Chế độ chỉ xem - ẩn các action
 }
@@ -92,22 +66,16 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const { toast } = useToast();
   const { user, login, isLoading: isAuthLoading } = useShopeeAuth();
   const { user: authUser, isLoading: isAuthContextLoading } = useAuth();
+  const { isAdmin: isSystemAdmin } = usePermissionsContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [shops, setShops] = useState<ShopWithRole[]>([]);
-  const [refreshingShop, setRefreshingShop] = useState<number | null>(null);
-  const [reconnectingShop, setReconnectingShop] = useState<number | null>(null);
   const [refreshingToken, setRefreshingToken] = useState<number | null>(null);
   const [refreshingAllTokens, setRefreshingAllTokens] = useState(false);
   const hasLoadedRef = useRef(false);
-
-  // Kiểm tra user hiện tại có phải admin không
-  const isSystemAdmin = authUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
   
   // Combined loading state - chờ cả 2 auth sources
   const isAnyAuthLoading = isAuthLoading || isAuthContextLoading;
-
-  const navigate = useNavigate();
 
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -121,31 +89,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const [partnerNameInput, setPartnerNameInput] = useState('');
   const [connecting, setConnecting] = useState(false);
 
-  // Sync dialog - Đồng bộ từ Shopee
-  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
-  const [partnerApps, setPartnerApps] = useState<{ id: string; partner_id: number; partner_name: string; app_category: string }[]>([]);
-  const [selectedPartnerAppId, setSelectedPartnerAppId] = useState<string>('');
-  const [shopeeShops, setShopeeShops] = useState<AuthedShop[]>([]);
-  const [loadingSync, setLoadingSync] = useState(false);
-  const [loadingPartnerApps, setLoadingPartnerApps] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [syncCurrentPage, setSyncCurrentPage] = useState(1);
-  const [syncFilterStatus, setSyncFilterStatus] = useState<'all' | 'in_db' | 'not_in_db' | 'expired'>('all');
 
-  // Members dialog - phân quyền shop
-  const [membersDialogOpen, setMembersDialogOpen] = useState(false);
-  const [selectedShopForMembers, setSelectedShopForMembers] = useState<ShopWithRole | null>(null);
-  const [shopMembers, setShopMembers] = useState<ShopMember[]>([]);
-  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
-  const [allRoles, setAllRoles] = useState<Role[]>([]);
-  const [loadingMembers, setLoadingMembers] = useState(false);
-  const [selectedProfileIds, setSelectedProfileIds] = useState<string[]>([]);
-  const [selectedShopIds, setSelectedShopIds] = useState<string[]>([]);
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
-  const [addingMembers, setAddingMembers] = useState(false);
-  const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [allShopMembers, setAllShopMembers] = useState<Record<string, ShopMember[]>>({});
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -396,101 +340,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     }
   }, [shops, loading]); // Chạy khi shops thay đổi hoặc loading xong
 
-  const handleRefreshShopName = async (shopId: number) => {
-    setRefreshingShop(shopId);
-    try {
-      const { data, error } = await supabase.functions.invoke('shopee-shop', {
-        body: { action: 'get-full-info', shop_id: shopId, force_refresh: true },
-      });
-
-      if (error) throw error;
-
-      // Response structure: { info: {...}, profile: { response: {...} }, cached, debug: {...} }
-      console.log('[REFRESH] Raw response:', JSON.stringify(data, null, 2));
-      console.log('[REFRESH] Debug info:', data?.debug);
-      
-      const shopName = data?.info?.shop_name;
-      const shopLogo = data?.profile?.response?.shop_logo;
-      const expireTime = data?.info?.expire_time; // Timestamp (seconds) khi authorization hết hạn
-      
-      // Check for API error in response
-      const apiError = data?.info?.error || data?.info?.message;
-      if (apiError && apiError !== '') {
-        console.error('[REFRESH] API error:', apiError, data?.info?.message);
-        toast({ 
-          title: 'Shopee API Error', 
-          description: `${apiError}: ${data?.info?.message || 'No details'}`, 
-          variant: 'destructive' 
-        });
-      }
-
-      // Reload shop data from database to get the persisted expire_time
-      // Edge function saves expire_time to DB, so we need to fetch it
-      const { data: shopData, error: shopError } = await supabase
-        .from('apishopee_shops')
-        .select('expire_time')
-        .eq('shop_id', shopId)
-        .single();
-
-      if (shopError) {
-        console.error('[REFRESH] Error fetching shop from DB:', shopError);
-      }
-
-      const persistedExpireTime = shopData?.expire_time || expireTime;
-
-      if (shopName) {
-        setShops(prev => prev.map(s =>
-          s.shop_id === shopId ? {
-            ...s,
-            shop_name: shopName,
-            shop_logo: shopLogo || s.shop_logo,
-            expire_time: persistedExpireTime || s.expire_time,
-          } : s
-        ));
-        toast({ title: 'Thành công', description: `Đã cập nhật: ${shopName}` });
-      } else {
-        // Nếu không có shop_name, vẫn cập nhật expire_time nếu có
-        if (persistedExpireTime) {
-          setShops(prev => prev.map(s =>
-            s.shop_id === shopId ? { ...s, expire_time: persistedExpireTime } : s
-          ));
-        }
-        toast({ title: 'Cảnh báo', description: 'Không lấy được tên shop từ Shopee', variant: 'destructive' });
-      }
-    } catch (err) {
-      toast({
-        title: 'Lỗi',
-        description: (err as Error).message,
-        variant: 'destructive',
-      });
-    } finally {
-      setRefreshingShop(null);
-    }
-  };
-
-  const handleReconnectShop = async (shop: ShopWithRole) => {
-    setReconnectingShop(shop.shop_id);
-    try {
-      let partnerInfo = null;
-      if (shop.partner_id && shop.partner_key) {
-        partnerInfo = {
-          partner_id: shop.partner_id,
-          partner_key: shop.partner_key,
-          partner_name: shop.partner_name || undefined,
-        };
-      }
-
-      await login(undefined, undefined, partnerInfo || undefined);
-    } catch (err) {
-      toast({
-        title: 'Lỗi',
-        description: (err as Error).message,
-        variant: 'destructive',
-      });
-      setReconnectingShop(null);
-    }
-  };
-
   // Refresh token cho shop bằng edge function
   const handleRefreshToken = async (shop: ShopWithRole) => {
     setRefreshingToken(shop.shop_id);
@@ -587,26 +436,26 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
     setDeleting(true);
     try {
-      // IMPORTANT: Delete shop first (while user is still admin), then members
-      // Use shop.id (UUID) for apishopee_shops.id
+      // Delete dependent records first, then the shop
+      // 1. Delete shop members
+      await supabase
+        .from('apishopee_shop_members')
+        .delete()
+        .eq('shop_id', shopToDelete.id);
+
+      // 2. Delete token refresh logs
+      await supabase
+        .from('apishopee_token_refresh_logs')
+        .delete()
+        .eq('shop_id', shopToDelete.id);
+
+      // 3. Delete the shop (cascade also handles remaining refs)
       const { error: shopError } = await supabase
         .from('apishopee_shops')
         .delete()
         .eq('id', shopToDelete.id);
 
       if (shopError) throw shopError;
-
-      // Shop members will be deleted by cascade or we delete them after
-      // Use shop.id (UUID) for apishopee_shop_members.shop_id
-      const { error: membersError } = await supabase
-        .from('apishopee_shop_members')
-        .delete()
-        .eq('shop_id', shopToDelete.id);
-
-      // Ignore members error since shop is already deleted
-      if (membersError) {
-        console.warn('Failed to delete shop members:', membersError);
-      }
 
       // Clear localStorage token if deleted shop was the selected one
       await clearToken();
@@ -667,325 +516,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       setConnecting(false);
     }
   };
-
-  // Mở dialog đồng bộ từ Shopee
-  const handleOpenSyncDialog = async () => {
-    setSyncDialogOpen(true);
-    setShopeeShops([]);
-    setSyncError(null);
-    setSelectedPartnerAppId('');
-    setLoadingPartnerApps(true);
-
-    try {
-      const { data, error } = await supabase
-        .from('apishopee_partner_apps')
-        .select('id, partner_id, partner_name, app_category')
-        .eq('is_active', true)
-        .order('partner_name');
-
-      if (error) throw error;
-      setPartnerApps(data || []);
-      if (data && data.length > 0) {
-        setSelectedPartnerAppId(data[0].id);
-      }
-    } catch (err) {
-      toast({ title: 'Lỗi', description: 'Không thể tải danh sách partner apps', variant: 'destructive' });
-    } finally {
-      setLoadingPartnerApps(false);
-    }
-  };
-
-  const handleCheckShopeeShops = async () => {
-    if (!selectedPartnerAppId) return;
-    setLoadingSync(true);
-    setSyncError(null);
-    setShopeeShops([]);
-
-    try {
-      const result = await getAllShopsByPartner(selectedPartnerAppId);
-      setShopeeShops(result);
-    } catch (err) {
-      setSyncError((err as Error).message);
-      toast({ title: 'Lỗi', description: (err as Error).message, variant: 'destructive' });
-    } finally {
-      setLoadingSync(false);
-    }
-  };
-
-  const getShopSyncStatus = (shopeeShop: AuthedShop): { label: string; variant: 'success' | 'warning' | 'destructive' } => {
-    const now = Math.floor(Date.now() / 1000);
-    const inDb = shops.some(s => s.shop_id === shopeeShop.shop_id);
-    if (shopeeShop.expire_time && shopeeShop.expire_time < now) {
-      return { label: 'Hết hạn UQ', variant: 'destructive' };
-    }
-    if (inDb) {
-      return { label: 'Đã có', variant: 'success' };
-    }
-    return { label: 'Chưa có', variant: 'warning' };
-  };
-
-  // Sync dialog pagination
-  const SYNC_PER_PAGE = 30;
-
-  const filteredSyncShops = useMemo(() => {
-    if (syncFilterStatus === 'all') return shopeeShops;
-    const now = Math.floor(Date.now() / 1000);
-    return shopeeShops.filter((s) => {
-      const inDb = shops.some(db => db.shop_id === s.shop_id);
-      const expired = s.expire_time && s.expire_time < now;
-      if (syncFilterStatus === 'expired') return expired;
-      if (syncFilterStatus === 'in_db') return inDb && !expired;
-      if (syncFilterStatus === 'not_in_db') return !inDb && !expired;
-      return true;
-    });
-  }, [shopeeShops, shops, syncFilterStatus]);
-
-  const syncTotalPages = useMemo(() => Math.ceil(filteredSyncShops.length / SYNC_PER_PAGE), [filteredSyncShops.length]);
-
-  const paginatedSyncShops = useMemo(() => {
-    const start = (syncCurrentPage - 1) * SYNC_PER_PAGE;
-    return filteredSyncShops.slice(start, start + SYNC_PER_PAGE);
-  }, [filteredSyncShops, syncCurrentPage]);
-
-  // Reset sync page when filter changes or new data
-  useEffect(() => {
-    setSyncCurrentPage(1);
-  }, [syncFilterStatus, shopeeShops]);
-
-  // Mở dialog phân quyền - load tất cả data
-  const handleOpenMembersDialog = async (shop?: ShopWithRole) => {
-    setMembersDialogOpen(true);
-    setLoadingMembers(true);
-    setSelectedProfileIds([]);
-    setSelectedShopIds(shop ? [shop.id] : []);
-    setSelectedRoleId('');
-    setSearchQuery('');
-    setSelectedShopForMembers(shop || null);
-
-    try {
-      // Load all members for all shops, profiles, roles in parallel
-      const [membersRes, profilesRes, rolesRes] = await Promise.all([
-        supabase
-          .from('apishopee_shop_members')
-          .select(`
-            id, shop_id, profile_id, role_id,
-            sys_profiles(id, email, full_name),
-            apishopee_roles(id, name, display_name)
-          `)
-          .eq('is_active', true),
-        supabase.from('sys_profiles').select('id, email, full_name').order('full_name'),
-        supabase.from('apishopee_roles').select('id, name, display_name').order('name'),
-      ]);
-
-      if (membersRes.error) throw membersRes.error;
-      if (profilesRes.error) throw profilesRes.error;
-      if (rolesRes.error) throw rolesRes.error;
-
-      // Group members by shop_id
-      const membersByShop: Record<string, ShopMember[]> = {};
-      (membersRes.data || []).forEach((m) => {
-        const member: ShopMember = {
-          id: m.id,
-          profile_id: m.profile_id,
-          role_id: m.role_id,
-          profile: m.sys_profiles as unknown as Profile,
-          role: m.apishopee_roles as unknown as Role,
-        };
-        if (!membersByShop[m.shop_id]) {
-          membersByShop[m.shop_id] = [];
-        }
-        membersByShop[m.shop_id].push(member);
-      });
-
-      setAllShopMembers(membersByShop);
-      
-      // Set shopMembers for selected shop
-      if (shop) {
-        setShopMembers(membersByShop[shop.id] || []);
-      } else {
-        setShopMembers([]);
-      }
-
-      setAllProfiles(profilesRes.data || []);
-      setAllRoles(rolesRes.data || []);
-
-      // Set default role to 'member'
-      const memberRole = (rolesRes.data || []).find(r => r.name === 'member');
-      if (memberRole) setSelectedRoleId(memberRole.id);
-    } catch (err) {
-      console.error('Error loading members:', err);
-      toast({
-        title: 'Lỗi',
-        description: 'Không thể tải danh sách thành viên',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingMembers(false);
-    }
-  };
-
-  // Chọn shop trong dialog
-  const handleSelectShopInDialog = (shopId: string) => {
-    const shop = shops.find(s => s.id === shopId);
-    setSelectedShopForMembers(shop || null);
-    setShopMembers(allShopMembers[shopId] || []);
-  };
-
-  // Toggle chọn shop
-  const toggleShopSelection = (shopId: string) => {
-    setSelectedShopIds(prev =>
-      prev.includes(shopId)
-        ? prev.filter(id => id !== shopId)
-        : [...prev, shopId]
-    );
-  };
-
-  // Thêm nhiều members vào nhiều shops
-  const handleAddMembers = async () => {
-    if (selectedShopIds.length === 0 || selectedProfileIds.length === 0 || !selectedRoleId) {
-      toast({
-        title: 'Lỗi',
-        description: 'Vui lòng chọn ít nhất một shop, một nhân viên và vai trò',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setAddingMembers(true);
-    try {
-      // Tạo danh sách insert cho tất cả combinations của shop và profile
-      const insertData: { shop_id: string; profile_id: string; role_id: string; is_active: boolean }[] = [];
-      
-      for (const shopId of selectedShopIds) {
-        const existingMembers = allShopMembers[shopId] || [];
-        const existingProfileIds = existingMembers.map(m => m.profile_id);
-        
-        for (const profileId of selectedProfileIds) {
-          // Chỉ thêm nếu chưa là member
-          if (!existingProfileIds.includes(profileId)) {
-            insertData.push({
-              shop_id: shopId,
-              profile_id: profileId,
-              role_id: selectedRoleId,
-              is_active: true,
-            });
-          }
-        }
-      }
-
-      if (insertData.length === 0) {
-        toast({
-          title: 'Thông báo',
-          description: 'Tất cả nhân viên đã chọn đều đã có quyền truy cập các shop đã chọn',
-        });
-        setAddingMembers(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('apishopee_shop_members')
-        .insert(insertData)
-        .select(`
-          id, shop_id, profile_id, role_id,
-          sys_profiles(id, email, full_name),
-          apishopee_roles(id, name, display_name)
-        `);
-
-      if (error) throw error;
-
-      // Update allShopMembers state
-      const newMembersByShop: Record<string, ShopMember[]> = { ...allShopMembers };
-      (data || []).forEach((m) => {
-        const member: ShopMember = {
-          id: m.id,
-          profile_id: m.profile_id,
-          role_id: m.role_id,
-          profile: m.sys_profiles as unknown as Profile,
-          role: m.apishopee_roles as unknown as Role,
-        };
-        if (!newMembersByShop[m.shop_id]) {
-          newMembersByShop[m.shop_id] = [];
-        }
-        newMembersByShop[m.shop_id].push(member);
-      });
-      setAllShopMembers(newMembersByShop);
-
-      // Update shopMembers for current selected shop
-      if (selectedShopForMembers) {
-        setShopMembers(newMembersByShop[selectedShopForMembers.id] || []);
-      }
-
-      setSelectedProfileIds([]);
-      setSelectedShopIds([]);
-
-      toast({
-        title: 'Thành công',
-        description: `Đã thêm ${data?.length || 0} quyền truy cập`,
-      });
-    } catch (err) {
-      console.error('Error adding members:', err);
-      toast({
-        title: 'Lỗi',
-        description: (err as Error).message,
-        variant: 'destructive',
-      });
-    } finally {
-      setAddingMembers(false);
-    }
-  };
-
-  // Xóa member
-  const handleDeleteMember = async (memberId: string, shopId: string) => {
-    setDeletingMemberId(memberId);
-    try {
-      const { error } = await supabase
-        .from('apishopee_shop_members')
-        .delete()
-        .eq('id', memberId);
-
-      if (error) throw error;
-
-      // Update allShopMembers
-      setAllShopMembers(prev => ({
-        ...prev,
-        [shopId]: (prev[shopId] || []).filter(m => m.id !== memberId),
-      }));
-
-      // Update shopMembers for current view
-      setShopMembers(prev => prev.filter(m => m.id !== memberId));
-      toast({ title: 'Thành công', description: 'Đã xóa quyền truy cập' });
-    } catch (err) {
-      console.error('Error deleting member:', err);
-      toast({
-        title: 'Lỗi',
-        description: (err as Error).message,
-        variant: 'destructive',
-      });
-    } finally {
-      setDeletingMemberId(null);
-    }
-  };
-
-  // Toggle chọn profile
-  const toggleProfileSelection = (profileId: string) => {
-    setSelectedProfileIds(prev =>
-      prev.includes(profileId)
-        ? prev.filter(id => id !== profileId)
-        : [...prev, profileId]
-    );
-  };
-
-  // Filter profiles chưa là member và theo search query
-  const availableProfiles = allProfiles.filter(p => {
-    const isMember = shopMembers.some(m => m.profile_id === p.id);
-    if (isMember) return false;
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      p.email.toLowerCase().includes(query) ||
-      (p.full_name?.toLowerCase().includes(query) ?? false)
-    );
-  });
 
   /**
    * Tính thời gian hết hạn ủy quyền (authorization expiry)
@@ -1155,26 +685,20 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       key: 'shop',
       header: 'Shop',
       width: '280px',
+      mobileHeader: true,
       render: (shop: ShopWithRole) => (
-        <div
-          className="cursor-pointer"
-          onClick={() => navigate(`/settings/shops/${shop.shop_id}`)}
-          title="Xem chi tiết shop"
-        >
-          <CellShopInfo
-            logo={shop.shop_logo}
-            name={shop.shop_name || `Shop ${shop.shop_id}`}
-            shopId={shop.shop_id}
-            region={shop.region || 'VN'}
-            onRefresh={readOnly ? undefined : () => handleRefreshShopName(shop.shop_id)}
-            refreshing={refreshingShop === shop.shop_id}
-          />
-        </div>
+        <CellShopInfo
+          logo={shop.shop_logo}
+          name={shop.shop_name || `Shop ${shop.shop_id}`}
+          shopId={shop.shop_id}
+          region={shop.region || 'VN'}
+        />
       ),
     },
     {
       key: 'role',
       header: 'Quyền',
+      mobileBadge: true,
       render: (shop: ShopWithRole) => (
         <CellBadge variant={shop.role === 'admin' ? 'success' : 'default'}>
           {shop.role === 'admin' ? 'Quản trị viên' : 'Thành viên'}
@@ -1230,23 +754,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
               </svg>
             )}
           </Button>
-          {/* Kết nối lại shop */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 h-7 w-7 p-0"
-            onClick={(e) => { e.stopPropagation(); handleReconnectShop(shop); }}
-            disabled={reconnectingShop === shop.shop_id}
-            title="Kết nối lại (re-authorize)"
-          >
-            {reconnectingShop === shop.shop_id ? (
-              <Spinner size="sm" />
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-            )}
-          </Button>
           {/* Xóa shop */}
           <Button
             variant="ghost"
@@ -1283,10 +790,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
             </div>
             {!readOnly && isSystemAdmin && (
               <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" className="text-blue-600 h-8 md:h-9" disabled>
-                  <Users className="w-4 h-4 mr-1.5" />
-                  <span className="hidden sm:inline">Phân quyền</span>
-                </Button>
                 <Button size="sm" className="bg-orange-500 hover:bg-orange-600 h-8 md:h-9" disabled>
                   <svg className="w-4 h-4 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1320,14 +823,31 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       <Card className="flex flex-col flex-1 min-h-0">
         <CardHeader className="pb-4 flex-shrink-0 border-b bg-white sticky top-0 z-10">
           <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="relative w-full md:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input
-                placeholder={`Tìm theo tên hoặc ID (${shops.length} shop)...`}
-                value={shopSearchQuery}
-                onChange={(e) => setShopSearchQuery(e.target.value)}
-                className="pl-9 h-9 text-sm"
-              />
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 md:w-64 md:flex-none">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  placeholder={`Tìm theo tên hoặc ID (${shops.length} shop)...`}
+                  value={shopSearchQuery}
+                  onChange={(e) => setShopSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-sm"
+                />
+              </div>
+              {shops.length > 0 && (
+                <Select value={shopFilterStatus} onValueChange={(v) => setShopFilterStatus(v as typeof shopFilterStatus)}>
+                  <SelectTrigger className="h-9 w-auto min-w-[160px] text-sm cursor-pointer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="cursor-pointer">Tất cả ({shopFilterCounts.all})</SelectItem>
+                    <SelectItem value="token_ok" className="cursor-pointer">Token OK ({shopFilterCounts.tokenOk})</SelectItem>
+                    <SelectItem value="token_expired" className="cursor-pointer">Token hết hạn ({shopFilterCounts.tokenExp})</SelectItem>
+                    {shopFilterCounts.authExp > 0 && (
+                      <SelectItem value="auth_expired" className="cursor-pointer">UQ hết hạn ({shopFilterCounts.authExp})</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             {!readOnly && isSystemAdmin && (
               <div className="flex items-center gap-2 flex-wrap">
@@ -1349,25 +869,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                   <span className="sm:hidden">Refresh</span>
                 </Button>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 h-8 md:h-9"
-                  onClick={handleOpenSyncDialog}
-                >
-                  <RefreshCw className="w-4 h-4 mr-1.5" />
-                  <span className="hidden sm:inline">Đồng bộ Shopee</span>
-                  <span className="sm:hidden">Đồng bộ</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 md:h-9"
-                  onClick={() => handleOpenMembersDialog()}
-                >
-                  <Users className="w-4 h-4 mr-1.5" />
-                  <span className="hidden sm:inline">Phân quyền</span>
-                </Button>
-                <Button
                   size="sm"
                   className="bg-orange-500 hover:bg-orange-600 h-8 md:h-9"
                   onClick={handleConnectNewShop}
@@ -1382,340 +883,65 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
           </CardTitle>
         </CardHeader>
 
-        {/* Filter Tabs */}
-        {shops.length > 0 && (
-          <div className="flex items-center gap-1.5 px-4 md:px-6 py-2 border-b bg-slate-50/50 flex-shrink-0 flex-wrap">
-            <button
-              onClick={() => setShopFilterStatus('all')}
-              className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                shopFilterStatus === 'all'
-                  ? 'bg-slate-200 text-slate-800 font-medium'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              Tất cả ({shopFilterCounts.all})
-            </button>
-            <button
-              onClick={() => setShopFilterStatus('token_ok')}
-              className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                shopFilterStatus === 'token_ok'
-                  ? 'bg-green-100 text-green-700 font-medium'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              Token OK ({shopFilterCounts.tokenOk})
-            </button>
-            <button
-              onClick={() => setShopFilterStatus('token_expired')}
-              className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                shopFilterStatus === 'token_expired'
-                  ? 'bg-orange-100 text-orange-700 font-medium'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              Token hết hạn ({shopFilterCounts.tokenExp})
-            </button>
-            {shopFilterCounts.authExp > 0 && (
-              <button
-                onClick={() => setShopFilterStatus('auth_expired')}
-                className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                  shopFilterStatus === 'auth_expired'
-                    ? 'bg-red-100 text-red-700 font-medium'
-                    : 'text-slate-500 hover:bg-slate-100'
-                }`}
-              >
-                UQ hết hạn ({shopFilterCounts.authExp})
-              </button>
-            )}
-          </div>
-        )}
 
-        <CardContent className="p-0 md:p-6 flex-1 overflow-hidden flex flex-col">
-          {/* Mobile View */}
-          <div className="md:hidden divide-y overflow-y-auto flex-1">
-            {paginatedShops.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-12">
-                {shopSearchQuery ? (
-                  <>
-                    <p className="text-slate-500">Không tìm thấy shop nào</p>
-                    <p className="text-sm text-slate-400">Thử tìm kiếm với từ khóa khác</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-slate-500">Chưa có shop nào được kết nối</p>
-                    <p className="text-sm text-slate-400">Nhấn '+' để bắt đầu</p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <>
-                {paginatedShops.map((shop) => {
-                  const tokenStatus = getTokenStatus(shop);
-                  return (
-                    <div key={shop.id} className="p-4 hover:bg-slate-50">
-                      <div className="flex items-start gap-3">
-                        {/* Shop Logo */}
-                        <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {shop.shop_logo ? (
-                            <img src={shop.shop_logo} alt={shop.shop_name || ''} className="w-full h-full object-cover" />
-                          ) : (
-                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                            </svg>
-                          )}
-                        </div>
+        <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-y-auto">
+            <SimpleDataTable
+              columns={columns}
+              data={paginatedShops}
+              keyExtractor={(shop) => shop.id}
+              emptyMessage={shopSearchQuery ? 'Không tìm thấy shop nào' : 'Chưa có shop nào được kết nối'}
+              emptyDescription={shopSearchQuery ? 'Thử tìm kiếm với từ khóa khác' : "Nhấn 'Kết nối tài khoản' để bắt đầu"}
+            />
 
-                        {/* Shop Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium text-slate-800 truncate">
-                              {shop.shop_name || `Shop ${shop.shop_id}`}
-                            </p>
-                            {refreshingShop === shop.shop_id ? (
-                              <Spinner size="sm" />
-                            ) : !readOnly && (
-                              <button
-                                onClick={() => handleRefreshShopName(shop.shop_id)}
-                                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 mb-2">
-                            {shop.region || 'VN'} - <span className="font-mono">{shop.shop_id}</span>
-                          </p>
-
-                          {/* Badges */}
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                              shop.role === 'admin' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {shop.role === 'admin' ? 'Quản trị viên' : 'Thành viên'}
-                            </span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                              tokenStatus.variant === 'success' ? 'bg-green-100 text-green-700' :
-                              tokenStatus.variant === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
-                            }`}>
-                              Token: {tokenStatus.label}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        {!readOnly && isSystemAdmin && (
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-blue-600 h-7 w-7 p-0"
-                              onClick={() => handleRefreshToken(shop)}
-                              disabled={refreshingToken === shop.shop_id}
-                            >
-                              {refreshingToken === shop.shop_id ? (
-                                <Spinner size="sm" />
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-slate-600 h-7 w-7 p-0"
-                              onClick={() => handleReconnectShop(shop)}
-                              disabled={reconnectingShop === shop.shop_id}
-                            >
-                              {reconnectingShop === shop.shop_id ? (
-                                <Spinner size="sm" />
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                </svg>
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 h-7 w-7 p-0"
-                              onClick={() => {
-                                setShopToDelete(shop);
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Pagination Controls - Mobile (inside scroll) */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
-                    <div className="text-sm text-slate-500">
-                      Trang {currentPage} / {totalPages}
-                      <span className="ml-2 text-slate-400">
-                        ({filteredShops.length} shop)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToPage(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <div className="flex items-center gap-1">
-                        {getPageNumbers().map((page, index) => (
-                          typeof page === 'number' ? (
-                            <Button
-                              key={index}
-                              variant={currentPage === page ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => goToPage(page)}
-                              className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
-                            >
-                              {page}
-                            </Button>
-                          ) : (
-                            <span key={index} className="px-2 text-slate-400">
-                              {page}
-                            </span>
-                          )
-                        ))}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToPage(currentPage + 1)}
-                        disabled={currentPage === totalPages}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Desktop View */}
-          <div className="hidden md:flex md:flex-col md:flex-1 md:overflow-hidden">
-            {paginatedShops.length === 0 ? (
-              <div className="flex items-center justify-center py-16 flex-1">
-                <div className="flex flex-col items-center gap-2">
-                  {shopSearchQuery ? (
-                    <>
-                      <p className="text-slate-500">Không tìm thấy shop nào</p>
-                      <p className="text-sm text-slate-400">Thử tìm kiếm với từ khóa khác</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-slate-500">Chưa có shop nào được kết nối</p>
-                      <p className="text-sm text-slate-400">Nhấn 'Kết nối tài khoản' để bắt đầu</p>
-                    </>
-                  )}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
+                <div className="text-sm text-slate-500">
+                  Trang {currentPage} / {totalPages}
+                  <span className="ml-2 text-slate-400">
+                    ({filteredShops.length} shop)
+                  </span>
                 </div>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto">
-                <table className="w-full table-fixed">
-                  <thead className="bg-slate-50 border-b sticky top-0 z-10">
-                    <tr>
-                      {columns.map((col) => (
-                        <th
-                          key={col.key}
-                          className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap"
-                          style={{ width: col.width }}
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="flex items-center gap-1">
+                    {getPageNumbers().map((page, index) => (
+                      typeof page === 'number' ? (
+                        <Button
+                          key={index}
+                          variant={currentPage === page ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => goToPage(page)}
+                          className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
                         >
-                          {col.header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedShops.map((shop) => (
-                      <tr
-                        key={shop.id}
-                        className="border-b transition-colors hover:bg-slate-50/50"
-                      >
-                        {columns.map((col) => (
-                          <td
-                            key={col.key}
-                            className="px-4 py-3 align-middle text-sm"
-                            style={{ width: col.width }}
-                          >
-                            {col.render(shop)}
-                          </td>
-                        ))}
-                      </tr>
+                          {page}
+                        </Button>
+                      ) : (
+                        <span key={index} className="px-2 text-slate-400">
+                          {page}
+                        </span>
+                      )
                     ))}
-                  </tbody>
-                </table>
-
-                {/* Pagination Controls - Desktop (at bottom of scroll) */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
-                    <div className="text-sm text-slate-500">
-                      Trang {currentPage} / {totalPages}
-                      <span className="ml-2 text-slate-400">
-                        ({filteredShops.length} shop)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToPage(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <div className="flex items-center gap-1">
-                        {getPageNumbers().map((page, index) => (
-                          typeof page === 'number' ? (
-                            <Button
-                              key={index}
-                              variant={currentPage === page ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => goToPage(page)}
-                              className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
-                            >
-                              {page}
-                            </Button>
-                          ) : (
-                            <span key={index} className="px-2 text-slate-400">
-                              {page}
-                            </span>
-                          )
-                        ))}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToPage(currentPage + 1)}
-                        disabled={currentPage === totalPages}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
                   </div>
-                )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -1815,417 +1041,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         </DialogContent>
       </Dialog>
 
-      {/* Members Dialog - Phân quyền shop - 3 columns layout */}
-      <Dialog open={membersDialogOpen} onOpenChange={setMembersDialogOpen}>
-        <DialogContent className="sm:max-w-[1000px] max-h-[85vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Phân quyền Shop
-            </DialogTitle>
-            <DialogDescription>
-              Chọn shop ở cột giữa để xem và quản lý thành viên
-            </DialogDescription>
-          </DialogHeader>
 
-          {loadingMembers ? (
-            <div className="flex items-center justify-center py-8">
-              <Spinner size="lg" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-4 py-4">
-              {/* Left column - Available profiles to add */}
-              <div className="border rounded-lg p-3 flex flex-col h-[450px]">
-                <h4 className="text-sm font-medium mb-2">Nhân viên</h4>
-                <Input
-                  placeholder="Tìm kiếm..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="mb-2 h-8 text-sm"
-                />
-                <ScrollArea className="flex-1 h-[280px]">
-                  <div className="space-y-1 pr-2">
-                    {availableProfiles.length === 0 ? (
-                      <p className="text-xs text-slate-500 text-center py-4">
-                        {searchQuery ? 'Không tìm thấy' : 'Tất cả đã có quyền'}
-                      </p>
-                    ) : (
-                      availableProfiles.map((profile) => (
-                        <div
-                          key={profile.id}
-                          className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded cursor-pointer"
-                          onClick={() => toggleProfileSelection(profile.id)}
-                        >
-                          <Checkbox
-                            checked={selectedProfileIds.includes(profile.id)}
-                            onCheckedChange={() => toggleProfileSelection(profile.id)}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {profile.full_name || profile.email}
-                            </p>
-                            <p className="text-xs text-slate-500 truncate">{profile.email}</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-                
-                {/* Role selection and Add button */}
-                <div className="border-t pt-2 mt-2 space-y-2">
-                  <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Chọn vai trò" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allRoles.map((role) => (
-                        <SelectItem key={role.id} value={role.id}>
-                          {role.display_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    className="w-full bg-orange-500 hover:bg-orange-600 h-8 text-sm"
-                    onClick={handleAddMembers}
-                    disabled={addingMembers || selectedProfileIds.length === 0 || selectedShopIds.length === 0 || !selectedRoleId}
-                  >
-                    {addingMembers ? <Spinner size="sm" className="mr-2" /> : null}
-                    Thêm ({selectedProfileIds.length} NV → {selectedShopIds.length} Shop)
-                  </Button>
-                </div>
-              </div>
-
-              {/* Middle column - Shop list */}
-              <div className="border rounded-lg p-3 flex flex-col h-[450px]">
-                <h4 className="text-sm font-medium mb-2">Danh sách Shop ({selectedShopIds.length} đã chọn)</h4>
-                <ScrollArea className="flex-1 h-[400px]">
-                  <div className="space-y-1 pr-2">
-                    {shops.map((shop) => (
-                      <div
-                        key={shop.id}
-                        className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
-                          selectedShopForMembers?.id === shop.id
-                            ? 'bg-orange-100 border border-orange-300'
-                            : selectedShopIds.includes(shop.id)
-                            ? 'bg-blue-50'
-                            : 'hover:bg-slate-50'
-                        }`}
-                        onClick={() => handleSelectShopInDialog(shop.id)}
-                      >
-                        <Checkbox
-                          checked={selectedShopIds.includes(shop.id)}
-                          onCheckedChange={() => toggleShopSelection(shop.id)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {shop.shop_logo ? (
-                            <img src={shop.shop_logo} alt={shop.shop_name || ''} className="w-full h-full object-cover" />
-                          ) : (
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                            </svg>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {shop.shop_name || `Shop ${shop.shop_id}`}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            {shop.region || 'VN'} - <span className="font-mono">{shop.shop_id}</span>
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-
-              {/* Right column - Current members of selected shop */}
-              <div className="border rounded-lg p-3 flex flex-col h-[450px] overflow-hidden">
-                <h4 className="text-sm font-medium mb-2">
-                  Thành viên {selectedShopForMembers ? `(${shopMembers.length})` : ''}
-                </h4>
-                {!selectedShopForMembers ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <p className="text-sm text-slate-500">Click vào shop để xem thành viên</p>
-                  </div>
-                ) : shopMembers.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <p className="text-sm text-slate-500">Chưa có thành viên</p>
-                  </div>
-                ) : (
-                  <div className="flex-1 overflow-y-auto">
-                    <div className="space-y-1">
-                      {shopMembers.map((member) => (
-                        <div
-                          key={member.id}
-                          className="flex items-center justify-between p-2 bg-slate-50 rounded gap-2"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {member.profile?.full_name || member.profile?.email}
-                            </p>
-                            <p className="text-xs text-slate-500 truncate">{member.profile?.email}</p>
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
-                              member.role?.name === 'admin' 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {member.role?.display_name}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 hover:text-red-600 h-6 w-6 p-0 flex-shrink-0"
-                              onClick={() => handleDeleteMember(member.id, selectedShopForMembers!.id)}
-                              disabled={deletingMemberId === member.id}
-                            >
-                              {deletingMemberId === member.id ? (
-                                <Spinner size="sm" />
-                              ) : (
-                                <Trash2 className="w-3 h-3" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMembersDialogOpen(false)}>
-              Đóng
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Sync Dialog - Đồng bộ từ Shopee */}
-      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[85vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="w-5 h-5" />
-              Đồng bộ từ Shopee
-            </DialogTitle>
-            <DialogDescription>
-              Kiểm tra danh sách shop đã ủy quyền trên Shopee và so sánh với hệ thống
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex items-end gap-3 py-2">
-            <div className="flex-1 space-y-1.5">
-              <Label className="text-sm">Partner App</Label>
-              {loadingPartnerApps ? (
-                <div className="flex items-center gap-2 h-9 px-3 border rounded-md">
-                  <Spinner size="sm" />
-                  <span className="text-sm text-slate-500">Đang tải...</span>
-                </div>
-              ) : (
-                <Select value={selectedPartnerAppId} onValueChange={setSelectedPartnerAppId}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Chọn partner app" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {partnerApps.map((app) => (
-                      <SelectItem key={app.id} value={app.id}>
-                        {app.partner_name} ({app.app_category}) - ID: {app.partner_id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            <Button
-              onClick={handleCheckShopeeShops}
-              disabled={!selectedPartnerAppId || loadingSync}
-              className="bg-green-600 hover:bg-green-700 h-9"
-            >
-              {loadingSync ? (
-                <>
-                  <Spinner size="sm" className="mr-2" />
-                  Đang kiểm tra...
-                </>
-              ) : (
-                'Kiểm tra'
-              )}
-            </Button>
-          </div>
-
-          {syncError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-              {syncError}
-            </div>
-          )}
-
-          {shopeeShops.length > 0 && (
-            <div className="space-y-3">
-              {(() => {
-                const now = Math.floor(Date.now() / 1000);
-                const inDbCount = shopeeShops.filter(s => shops.some(db => db.shop_id === s.shop_id) && !(s.expire_time && s.expire_time < now)).length;
-                const notInDbCount = shopeeShops.filter(s => !shops.some(db => db.shop_id === s.shop_id) && !(s.expire_time && s.expire_time < now)).length;
-                const expiredCount = shopeeShops.filter(s => s.expire_time && s.expire_time < now).length;
-                return (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      onClick={() => setSyncFilterStatus('all')}
-                      className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                        syncFilterStatus === 'all'
-                          ? 'bg-blue-100 text-blue-700 font-medium'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      Tất cả ({shopeeShops.length})
-                    </button>
-                    <button
-                      onClick={() => setSyncFilterStatus('in_db')}
-                      className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                        syncFilterStatus === 'in_db'
-                          ? 'bg-green-100 text-green-700 font-medium'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      Đã có ({inDbCount})
-                    </button>
-                    <button
-                      onClick={() => setSyncFilterStatus('not_in_db')}
-                      className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                        syncFilterStatus === 'not_in_db'
-                          ? 'bg-yellow-100 text-yellow-700 font-medium'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      Chưa có ({notInDbCount})
-                    </button>
-                    {expiredCount > 0 && (
-                      <button
-                        onClick={() => setSyncFilterStatus('expired')}
-                        className={`text-sm px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
-                          syncFilterStatus === 'expired'
-                            ? 'bg-red-100 text-red-700 font-medium'
-                            : 'text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        Hết hạn ({expiredCount})
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
-
-              <ScrollArea className="max-h-[350px]">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Shop ID</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Region</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Auth Time</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Hết hạn UQ</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {paginatedSyncShops.map((shopeeShop) => {
-                      const status = getShopSyncStatus(shopeeShop);
-                      const dbShop = shops.find(s => s.shop_id === shopeeShop.shop_id);
-                      const authDate = shopeeShop.auth_time
-                        ? new Date(shopeeShop.auth_time * 1000).toLocaleDateString('vi-VN')
-                        : '-';
-                      const expireDate = shopeeShop.expire_time
-                        ? new Date(shopeeShop.expire_time * 1000).toLocaleDateString('vi-VN')
-                        : '-';
-                      return (
-                        <tr key={shopeeShop.shop_id} className="hover:bg-slate-50/50">
-                          <td className="px-3 py-2">
-                            <div>
-                              <span className="font-mono">{shopeeShop.shop_id}</span>
-                              {dbShop?.shop_name && (
-                                <p className="text-xs text-slate-500 truncate max-w-[150px]">{dbShop.shop_name}</p>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">{shopeeShop.region}</td>
-                          <td className="px-3 py-2 text-slate-500">{authDate}</td>
-                          <td className="px-3 py-2 text-slate-500">{expireDate}</td>
-                          <td className="px-3 py-2">
-                            <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium ${
-                              status.variant === 'success' ? 'bg-green-100 text-green-700' :
-                              status.variant === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
-                            }`}>
-                              {status.label}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </ScrollArea>
-
-              {/* Sync Pagination */}
-              {syncTotalPages > 1 && (
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs text-slate-500">
-                    {(syncCurrentPage - 1) * SYNC_PER_PAGE + 1}-{Math.min(syncCurrentPage * SYNC_PER_PAGE, filteredSyncShops.length)} / {filteredSyncShops.length}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSyncCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={syncCurrentPage === 1}
-                      className="h-7 w-7 p-0"
-                    >
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    </Button>
-                    {Array.from({ length: syncTotalPages }, (_, i) => i + 1).map((page) => (
-                      <Button
-                        key={page}
-                        variant={syncCurrentPage === page ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setSyncCurrentPage(page)}
-                        className={`h-7 w-7 p-0 text-xs ${syncCurrentPage === page ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
-                      >
-                        {page}
-                      </Button>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSyncCurrentPage(p => Math.min(syncTotalPages, p + 1))}
-                      disabled={syncCurrentPage === syncTotalPages}
-                      className="h-7 w-7 p-0"
-                    >
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!loadingSync && shopeeShops.length === 0 && !syncError && selectedPartnerAppId && (
-            <div className="text-center py-8 text-slate-500 text-sm">
-              Nhấn "Kiểm tra" để xem danh sách shop từ Shopee
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
-              Đóng
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
 
     </div>

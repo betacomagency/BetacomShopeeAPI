@@ -4,7 +4,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from '../supabase';
-import type { AccessToken, GetShopInfoResponse, GetShopsByPartnerResponse } from './types';
+import type { AccessToken, GetShopInfoResponse, GetShopsByPartnerResponse, GetMerchantsByPartnerResponse } from './types';
 
 export { isSupabaseConfigured };
 
@@ -138,11 +138,14 @@ export async function authenticateWithCode(
 
 /**
  * Refresh access token
+ * Docs: chỉ truyền 1 trong 4 loại ID (shop_id / merchant_id / supplier_id / user_id)
  */
 export async function refreshToken(
   currentRefreshToken: string,
   shopId?: number,
-  merchantId?: number
+  merchantId?: number,
+  supplierId?: number,
+  userId?: number
 ): Promise<AccessToken> {
   const { data, error } = await supabase.functions.invoke('apishopee-auth', {
     body: {
@@ -150,6 +153,8 @@ export async function refreshToken(
       refresh_token: currentRefreshToken,
       shop_id: shopId,
       merchant_id: merchantId,
+      supplier_id: supplierId,
+      user_id: userId,
     },
   });
 
@@ -264,4 +269,93 @@ export async function getShopInfo(shopId: number): Promise<GetShopInfoResponse> 
   }
 
   return responseData as GetShopInfoResponse;
+}
+
+/**
+ * Lấy danh sách merchant đã ủy quyền cho partner app
+ * Gọi Shopee API: GET /api/v2/public/get_merchants_by_partner
+ * @param partnerAppId - UUID từ bảng apishopee_partner_apps
+ * @param pageSize - Số merchant trên mỗi trang (mặc định 100)
+ * @param pageNo - Số trang (bắt đầu từ 1)
+ */
+export async function getMerchantsByPartner(
+  partnerAppId: string,
+  pageSize = 100,
+  pageNo = 1
+): Promise<GetMerchantsByPartnerResponse> {
+  const { data, error } = await supabase.functions.invoke('apishopee-proxy', {
+    body: {
+      api_path: '/api/v2/public/get_merchants_by_partner',
+      method: 'GET',
+      partner_app_id: partnerAppId,
+      params: {
+        page_size: pageSize,
+        page_no: pageNo,
+      },
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to get merchants by partner');
+  }
+
+  const responseData = data?.response?.data;
+
+  if (responseData?.error) {
+    throw new Error(responseData.message || responseData.error);
+  }
+
+  return responseData as GetMerchantsByPartnerResponse;
+}
+
+/**
+ * Lấy TẤT CẢ merchant đã ủy quyền cho partner app (tự động phân trang)
+ * @param partnerAppId - UUID từ bảng apishopee_partner_apps
+ * @param pageSize - Số merchant trên mỗi trang (mặc định 100)
+ */
+export async function getAllMerchantsByPartner(
+  partnerAppId: string,
+  pageSize = 100
+): Promise<GetMerchantsByPartnerResponse['authed_merchant_list']> {
+  const allMerchants: GetMerchantsByPartnerResponse['authed_merchant_list'] = [];
+  let pageNo = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const result = await getMerchantsByPartner(partnerAppId, pageSize, pageNo);
+    allMerchants.push(...result.authed_merchant_list);
+    hasMore = result.more;
+    pageNo++;
+  }
+
+  return allMerchants;
+}
+
+/**
+ * Khôi phục token bằng resend code
+ * Dùng khi access_token và refresh_token bị mất hoặc hết hạn hoàn toàn
+ * @param resendCode - Code lấy từ trang quản lý ủy quyền Shopee
+ * @param partnerInfo - Partner credentials (optional, fallback to env)
+ */
+export async function recoverTokenByResendCode(
+  resendCode: string,
+  partnerInfo?: PartnerInfo
+): Promise<AccessToken> {
+  const { data, error } = await supabase.functions.invoke('apishopee-auth', {
+    body: {
+      action: 'get-token-by-resend-code',
+      resend_code: resendCode,
+      partner_info: partnerInfo,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to recover token by resend code');
+  }
+
+  if (data.error) {
+    throw new Error(data.message || data.error);
+  }
+
+  return data as AccessToken;
 }

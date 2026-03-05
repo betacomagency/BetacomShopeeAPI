@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { BookOpen } from 'lucide-react';
 import ShopSelector from './ShopSelector';
 
 export default function Header() {
@@ -26,8 +27,20 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Right side: Shop Selector + User Menu */}
+          {/* Right side: API Docs + Shop Selector + User Menu */}
           <div className="flex items-center gap-2 sm:gap-4">
+            {/* API Docs */}
+            <a
+              href="/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-medium cursor-pointer"
+              title="Tài liệu API Shopee"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span className="hidden sm:inline">API Docs</span>
+            </a>
+
             {/* Shop Selector - Chuyển đổi giữa các shop */}
             <ShopSelector />
 

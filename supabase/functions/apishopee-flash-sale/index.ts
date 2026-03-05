@@ -7,7 +7,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
-import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -174,11 +174,37 @@ async function callShopeeAPIWithRetry(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   body?: Record<string, unknown>,
-  extraParams?: Record<string, string | number | boolean>
+  extraParams?: Record<string, string | number | boolean>,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
   let retryCount = 0;
+
+  const logCall = (status: 'success' | 'failed' | 'timeout', duration: number, opts?: {
+    shopeeError?: string; shopeeMessage?: string; responseSummary?: Record<string, unknown>;
+    retry?: number; tokenRefreshed?: boolean;
+  }) => {
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'apishopee-flash-sale',
+      apiEndpoint: path,
+      httpMethod: method,
+      apiCategory: 'flash_sale',
+      status,
+      shopeeError: opts?.shopeeError,
+      shopeeMessage: opts?.shopeeMessage,
+      durationMs: duration,
+      responseSummary: opts?.responseSummary,
+      retryCount: opts?.retry ?? retryCount,
+      wasTokenRefreshed: opts?.tokenRefreshed ?? wasTokenRefreshed,
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+  };
 
   const makeRequest = async (accessToken: string) => {
     const timestamp = Math.floor(Date.now() / 1000);
@@ -212,44 +238,66 @@ async function callShopeeAPIWithRetry(
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetchWithProxy(url, options);
-    return await response.json();
+    try {
+      const response = await fetchWithProxy(url, options);
+      return await response.json();
+    } catch (fetchError) {
+      const err = fetchError as Error;
+      return { error: 'network_error', message: err.message || 'Network request failed' };
+    }
   };
 
-  let result = await makeRequest(token.access_token);
+  try {
+    let result = await makeRequest(token.access_token);
 
-  // Auto retry if token invalid
-  if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
-    console.log('[AUTO-RETRY] Invalid token detected, refreshing...');
+    // Auto retry if token invalid
+    if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
+      const firstCallStatus = getApiCallStatus(result as Record<string, unknown>);
+      logCall(firstCallStatus.status, Date.now() - startTime, {
+        shopeeError: firstCallStatus.shopeeError,
+        shopeeMessage: firstCallStatus.shopeeMessage,
+        responseSummary: createResponseSummary(result as Record<string, unknown>),
+      });
 
-    const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+      console.log('[AUTO-RETRY] Invalid token detected, refreshing...');
+      const retryStartTime = Date.now();
+      const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
 
-    if (!newToken.error) {
-      await saveToken(supabase, shopId, newToken);
-      wasTokenRefreshed = true;
-      retryCount = 1;
-      result = await makeRequest(newToken.access_token);
+      if (!newToken.error) {
+        await saveToken(supabase, shopId, newToken);
+        wasTokenRefreshed = true;
+        retryCount = 1;
+        result = await makeRequest(newToken.access_token);
+      }
+
+      const retryStatus = getApiCallStatus(result as Record<string, unknown>);
+      logCall(retryStatus.status, Date.now() - retryStartTime, {
+        shopeeError: retryStatus.shopeeError,
+        shopeeMessage: retryStatus.shopeeMessage,
+        responseSummary: createResponseSummary(result as Record<string, unknown>),
+        retry: retryCount,
+        tokenRefreshed: true,
+      });
+
+      return result;
     }
+
+    // Log API call (non-blocking)
+    const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+    logCall(apiStatus.status, Date.now() - startTime, {
+      shopeeError: apiStatus.shopeeError,
+      shopeeMessage: apiStatus.shopeeMessage,
+      responseSummary: createResponseSummary(result as Record<string, unknown>),
+    });
+
+    return result;
+  } catch (err) {
+    logCall('failed', Date.now() - startTime, {
+      shopeeError: 'edge_function_error',
+      shopeeMessage: (err as Error).message || 'Unexpected error in callShopeeAPIWithRetry',
+    });
+    throw err;
   }
-
-  // Log API call (non-blocking)
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
-  logApiCall(supabase, {
-    shopId,
-    edgeFunction: 'apishopee-flash-sale',
-    apiEndpoint: path,
-    httpMethod: method,
-    apiCategory: 'flash_sale',
-    status: apiStatus.status,
-    shopeeError: apiStatus.shopeeError,
-    shopeeMessage: apiStatus.shopeeMessage,
-    durationMs: Date.now() - startTime,
-    responseSummary: createResponseSummary(result as Record<string, unknown>),
-    retryCount,
-    wasTokenRefreshed,
-  });
-
-  return result;
 }
 
 
@@ -288,6 +336,11 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'cron');
+
     const credentials = await getPartnerCredentials(supabase, shop_id);
     const token = await getTokenWithAutoRefresh(supabase, shop_id);
 
@@ -318,7 +371,10 @@ serve(async (req) => {
           shop_id,
           token,
           undefined,
-          extraParams
+          extraParams,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -340,7 +396,11 @@ serve(async (req) => {
           'POST',
           shop_id,
           token,
-          { timeslot_id }
+          { timeslot_id },
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -366,7 +426,10 @@ serve(async (req) => {
           shop_id,
           token,
           undefined,
-          { flash_sale_id: flashSaleIdNum }
+          { flash_sale_id: flashSaleIdNum },
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -383,7 +446,10 @@ serve(async (req) => {
           shop_id,
           token,
           undefined,
-          { type, offset, limit }
+          { type, offset, limit },
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -410,7 +476,11 @@ serve(async (req) => {
           'POST',
           shop_id,
           token,
-          updateBody
+          updateBody,
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -435,7 +505,11 @@ serve(async (req) => {
           'POST',
           shop_id,
           token,
-          { flash_sale_id: flashSaleIdNum }
+          { flash_sale_id: flashSaleIdNum },
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -460,7 +534,11 @@ serve(async (req) => {
           'POST',
           shop_id,
           token,
-          { flash_sale_id: flashSaleIdNum, items }
+          { flash_sale_id: flashSaleIdNum, items },
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -492,7 +570,10 @@ serve(async (req) => {
           shop_id,
           token,
           undefined,
-          { flash_sale_id: flashSaleIdNum, offset, limit }
+          { flash_sale_id: flashSaleIdNum, offset, limit },
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -517,24 +598,30 @@ serve(async (req) => {
           'POST',
           shop_id,
           token,
-          { flash_sale_id: flashSaleIdNum, items }
+          { flash_sale_id: flashSaleIdNum, items },
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
 
       // ==================== DELETE ITEMS ====================
       case 'delete-items': {
-        const { flash_sale_id, item_id } = body;
-        if (!flash_sale_id || !item_id) {
-          return new Response(JSON.stringify({ error: 'flash_sale_id and item_id are required' }), {
+        const { flash_sale_id, item_ids } = body;
+        if (!flash_sale_id || !item_ids) {
+          return new Response(JSON.stringify({ error: 'flash_sale_id and item_ids are required' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
-        // Đảm bảo flash_sale_id và item_id là số nguyên
+        // Đảm bảo flash_sale_id là số nguyên, item_ids là mảng số nguyên
         const flashSaleIdNum = Number(flash_sale_id);
-        const itemIdNum = Number(item_id);
+        const itemIdsArr: number[] = Array.isArray(item_ids)
+          ? item_ids.map(Number)
+          : [Number(item_ids)];
 
         result = await callShopeeAPIWithRetry(
           supabase,
@@ -543,7 +630,11 @@ serve(async (req) => {
           'POST',
           shop_id,
           token,
-          { flash_sale_id: flashSaleIdNum, item_id: itemIdNum }
+          { flash_sale_id: flashSaleIdNum, item_ids: itemIdsArr },
+          undefined,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }
@@ -566,7 +657,10 @@ serve(async (req) => {
           shop_id,
           token,
           undefined,
-          { item_id }
+          { item_id },
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         );
         break;
       }

@@ -17,6 +17,7 @@ import {
 import type { AccessToken } from '@/lib/shopee';
 import { saveUserShop, getUserShops } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { usePermissionsContext } from '@/contexts/PermissionsContext';
 
 // Simple in-memory cache for shops data
 const shopsCache = new Map<string, { data: ShopInfo[]; timestamp: number }>();
@@ -58,7 +59,7 @@ const ShopeeAuthContext = createContext<ShopeeAuthContextType | undefined>(undef
 
 const DEFAULT_CALLBACK =
   import.meta.env.VITE_SHOPEE_CALLBACK_URL ||
-  (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://apishopeenextjs.vercel.app/auth/callback');
+  (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://sshop.betacom.agency/auth/callback');
 
 export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<AccessToken | null>(null);
@@ -67,13 +68,58 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [shops, setShops] = useState<ShopInfo[]>([]);
   const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
-  
+
   const initialLoadDoneRef = useRef(false);
   const loadingRef = useRef(false);
+
+  const { systemRole, managedMemberIds, isLoading: permissionsLoading } = usePermissionsContext();
 
   const useBackend = isSupabaseConfigured();
   const isConfigured = isConfigValid() || useBackend;
   const isAuthenticated = !!token && !error;
+
+  // Load shops based on role visibility
+  const loadShopsByRole = useCallback(async (userId: string): Promise<ShopInfo[]> => {
+    if (systemRole === 'super_admin' || systemRole === 'admin') {
+      // Admin/Super admin: load ALL shops
+      const { data } = await supabase
+        .from('apishopee_shops')
+        .select('shop_id, shop_name, shop_logo, region')
+        .order('shop_name');
+      return (data || []).map(s => ({ ...s, is_active: true }));
+    }
+
+    if (systemRole === 'leader' && managedMemberIds.length > 0) {
+      // Leader: own shops + managed members' shops
+      const allProfileIds = [userId, ...managedMemberIds];
+      const { data } = await supabase
+        .from('apishopee_shop_members')
+        .select('shop:apishopee_shops(shop_id, shop_name, shop_logo, region)')
+        .in('profile_id', allProfileIds)
+        .eq('is_active', true);
+
+      // Deduplicate by shop_id
+      const shopMap = new Map<number, ShopInfo>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (data || []).forEach((d: any) => {
+        const shop = Array.isArray(d.shop) ? d.shop[0] : d.shop;
+        if (shop?.shop_id) shopMap.set(shop.shop_id, { ...shop, is_active: true });
+      });
+      return Array.from(shopMap.values());
+    }
+
+    // Member (or leader with no managed members): only own shops
+    const userShops = await getUserShops(userId);
+    return (userShops || [])
+      .filter((s): s is typeof s & { shop_id: number } => typeof s.shop_id === 'number')
+      .map(s => ({
+        shop_id: s.shop_id,
+        shop_name: s.shop_name ?? null,
+        shop_logo: s.shop_logo ?? null,
+        region: s.region ?? null,
+        is_active: true,
+      }));
+  }, [systemRole, managedMemberIds]);
 
   const loadTokenFromSource = useCallback(async (userId?: string, targetShopId?: number, forceRefresh = false) => {
     if (loadingRef.current && !forceRefresh) {
@@ -85,32 +131,18 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
       if (userId) {
         const cached = shopsCache.get(userId);
         const now = Date.now();
-        
-        let userShops;
+
+        let userShops: ShopInfo[];
         if (cached && (now - cached.timestamp) < CACHE_TTL && !forceRefresh) {
-          userShops = cached.data.map(shop => ({
-            shop_id: shop.shop_id,
-            shop_name: shop.shop_name,
-            shop_logo: shop.shop_logo,
-            region: shop.region,
-            is_active: shop.is_active,
-          }));
+          userShops = cached.data;
           setShops(cached.data);
         } else {
-          userShops = await getUserShops(userId);
+          // Use role-based shop loading
+          userShops = await loadShopsByRole(userId);
 
-          if (userShops && userShops.length > 0) {
-            const shopInfoList: ShopInfo[] = userShops
-              .filter((shop): shop is typeof shop & { shop_id: number } => typeof shop.shop_id === 'number')
-              .map((shop) => ({
-                shop_id: shop.shop_id,
-                shop_name: shop.shop_name ?? null,
-                shop_logo: shop.shop_logo ?? null,
-                region: shop.region ?? null,
-                is_active: true
-              }));
-            setShops(shopInfoList);
-            shopsCache.set(userId, { data: shopInfoList, timestamp: now });
+          if (userShops.length > 0) {
+            setShops(userShops);
+            shopsCache.set(userId, { data: userShops, timestamp: now });
           }
         }
 
@@ -174,9 +206,12 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
     } finally {
       loadingRef.current = false;
     }
-  }, []);
+  }, [loadShopsByRole]);
 
   useEffect(() => {
+    // Wait for permissions to load before loading shops (we need role to determine visibility)
+    if (permissionsLoading) return;
+
     let mounted = true;
 
     async function initLoad() {
@@ -233,7 +268,7 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadTokenFromSource]);
+  }, [loadTokenFromSource, permissionsLoading]);
 
   const login = useCallback(
     async (callbackUrl = DEFAULT_CALLBACK, partnerAccountId?: string, partnerInfo?: PartnerInfo) => {

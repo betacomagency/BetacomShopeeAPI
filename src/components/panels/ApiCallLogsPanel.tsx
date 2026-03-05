@@ -1,10 +1,18 @@
 /**
  * API Call Logs Panel - Filterable table with pagination and detail dialog
+ * Theo dõi các lệnh gọi Shopee API từ hệ thống
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { useApiLogs, type ApiCallLog, type ApiLogFilters } from '@/hooks/useApiLogs';
-import { supabase } from '@/lib/supabase';
+import { useState, useCallback, useMemo } from 'react';
+import {
+  useApiCallLogs,
+  fetchApiCallLogDetail,
+  type ApiCallLog,
+  type ApiCallLogListItem,
+  type ApiCallLogFilters,
+} from '@/hooks/useApiCallLogs';
+import { useApiCallStats } from '@/hooks/useApiCallStats';
+import { useShopeeAuth } from '@/contexts/ShopeeAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -32,28 +40,42 @@ import {
   ChevronDown,
   ChevronUp,
   AlertTriangle,
-  Repeat,
-  Shield,
   Copy,
   Check,
+  Activity,
+  TrendingDown,
+  Percent,
+  Timer,
 } from 'lucide-react';
 
 const PAGE_SIZE = 50;
 
 const CATEGORY_OPTIONS = [
   { value: 'all', label: 'Tất cả' },
-  { value: 'shop', label: 'Shop' },
-  { value: 'product', label: 'Product' },
-{ value: 'flash_sale', label: 'Flash Sale' },
-  { value: 'review', label: 'Review' },
   { value: 'auth', label: 'Auth' },
+  { value: 'product', label: 'Product' },
+  { value: 'flash_sale', label: 'Flash Sale' },
+  { value: 'shop', label: 'Shop' },
+  { value: 'order', label: 'Order' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'review', label: 'Review' },
 ];
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Tất cả' },
-  { value: 'success', label: 'Success' },
-  { value: 'failed', label: 'Failed' },
+  { value: 'success', label: 'Thành công' },
+  { value: 'failed', label: 'Thất bại' },
   { value: 'timeout', label: 'Timeout' },
+];
+
+const EDGE_FUNCTION_OPTIONS = [
+  { value: 'all', label: 'Tất cả' },
+  { value: 'shopee-token-refresh', label: 'Token Refresh' },
+  { value: 'apishopee-flash-sale-scheduler', label: 'Flash Sale' },
+  { value: 'apishopee-product', label: 'Product' },
+  { value: 'shopee-shop', label: 'Shop' },
+  { value: 'apishopee-proxy', label: 'API Proxy' },
+  { value: 'apishopee-auth', label: 'Auth' },
 ];
 
 const DATE_OPTIONS = [
@@ -64,7 +86,40 @@ const DATE_OPTIONS = [
   { value: 'all', label: 'Tất cả' },
 ];
 
-function formatDate(dateString: string | null): string {
+export const CATEGORY_COLORS: Record<string, string> = {
+  auth: 'bg-purple-50 text-purple-700',
+  product: 'bg-blue-50 text-blue-700',
+  flash_sale: 'bg-orange-50 text-orange-700',
+  shop: 'bg-green-50 text-green-700',
+  order: 'bg-cyan-50 text-cyan-700',
+  finance: 'bg-emerald-50 text-emerald-700',
+  review: 'bg-yellow-50 text-yellow-700',
+};
+
+export const STATUS_COLORS: Record<string, string> = {
+  success: 'bg-green-50 text-green-700',
+  failed: 'bg-red-50 text-red-700',
+  timeout: 'bg-yellow-50 text-yellow-700',
+};
+
+const TRIGGERED_BY_OPTIONS = [
+  { value: 'all', label: 'Tất cả' },
+  { value: 'user', label: 'Người dùng' },
+  { value: 'cron', label: 'Cron Job' },
+  { value: 'scheduler', label: 'Scheduler' },
+  { value: 'webhook', label: 'Webhook' },
+  { value: 'system', label: 'Hệ thống' },
+];
+
+const TRIGGERED_BY_COLORS: Record<string, string> = {
+  user: 'bg-blue-50 text-blue-700',
+  cron: 'bg-amber-50 text-amber-700',
+  scheduler: 'bg-purple-50 text-purple-700',
+  webhook: 'bg-teal-50 text-teal-700',
+  system: 'bg-slate-50 text-slate-500',
+};
+
+export function formatDate(dateString: string | null): string {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleString('vi-VN', {
     day: '2-digit',
@@ -87,86 +142,250 @@ function formatFullDate(dateString: string | null): string {
   });
 }
 
-function formatDuration(ms: number | null): string {
-  if (!ms && ms !== 0) return '-';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+export function formatEndpoint(endpoint: string): string {
+  // Show only the last 2 segments: e.g. /api/v2/product/get_item_list → product/get_item_list
+  const parts = endpoint.split('/').filter(Boolean);
+  if (parts.length >= 2) {
+    return parts.slice(-2).join('/');
+  }
+  return endpoint;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'success') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">
-        <CheckCircle className="w-3 h-3" /> OK
-      </span>
-    );
-  }
-  if (status === 'timeout') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
-        <Clock className="w-3 h-3" /> Timeout
-      </span>
-    );
-  }
+export function CategoryBadge({ category }: { category: string }) {
+  const color = CATEGORY_COLORS[category] || 'bg-slate-50 text-slate-700';
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">
-      <XCircle className="w-3 h-3" /> Failed
-    </span>
-  );
-}
-
-function CategoryBadge({ category }: { category: string }) {
-  const colors: Record<string, string> = {
-    shop: 'bg-blue-50 text-blue-700',
-    product: 'bg-green-50 text-green-700',
-    flash_sale: 'bg-orange-50 text-orange-700',
-    review: 'bg-yellow-50 text-yellow-700',
-    auth: 'bg-red-50 text-red-700',
-  };
-  return (
-    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${colors[category] || 'bg-slate-50 text-slate-700'}`}>
+    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${color}`}>
       {category}
     </span>
   );
 }
 
+export function StatusBadge({ status }: { status: string | null }) {
+  if (!status) return <span className="text-xs text-slate-400">-</span>;
+  const color = STATUS_COLORS[status] || 'bg-slate-50 text-slate-700';
+  const Icon = status === 'success' ? CheckCircle : status === 'failed' ? XCircle : Clock;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+      <Icon className="w-3 h-3" />
+      {status === 'success' ? 'OK' : status === 'failed' ? 'Failed' : 'Timeout'}
+    </span>
+  );
+}
+
+export function TriggeredByBadge({ triggeredBy }: { triggeredBy: string | null }) {
+  const value = triggeredBy || 'system';
+  const color = TRIGGERED_BY_COLORS[value] || 'bg-slate-50 text-slate-500';
+  const label = TRIGGERED_BY_OPTIONS.find(o => o.value === value)?.label || value;
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${color}`}>
+      {label}
+    </span>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className="text-sm text-slate-700 font-medium break-all">{value}</p>
+    </div>
+  );
+}
+
+function CollapsibleJson({
+  label,
+  data,
+  defaultOpen = false,
+}: {
+  label: string;
+  data: Record<string, unknown>;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [copied, setCopied] = useState(false);
+  const jsonString = JSON.stringify(data, null, 2);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(jsonString);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-2">
+          {isOpen ? (
+            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          )}
+          <span className="text-xs font-medium text-slate-600">{label}</span>
+        </div>
+        <button
+          onClick={handleCopy}
+          className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer"
+          title="Copy JSON"
+        >
+          {copied ? (
+            <Check className="w-3.5 h-3.5 text-green-600" />
+          ) : (
+            <Copy className="w-3.5 h-3.5 text-slate-400" />
+          )}
+        </button>
+      </button>
+      {isOpen && (
+        <pre className="text-xs p-3 overflow-auto max-h-[400px] bg-white font-mono leading-relaxed text-slate-700">
+          {jsonString}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export function ApiCallLogsPanel() {
-  const [filters, setFilters] = useState<ApiLogFilters>({
+  const { shops } = useShopeeAuth();
+  const [filters, setFilters] = useState<ApiCallLogFilters>({
     page: 0,
     pageSize: PAGE_SIZE,
-    dateRange: '24h',
+    dateRange: '7d',
   });
   const [searchInput, setSearchInput] = useState('');
   const [selectedLog, setSelectedLog] = useState<ApiCallLog | null>(null);
-  const [shops, setShops] = useState<Array<{ shop_id: number; shop_name: string | null }>>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Fetch shop list for filter
-  useEffect(() => {
-    supabase
-      .from('apishopee_shops')
-      .select('shop_id, shop_name')
-      .order('shop_name')
-      .then(({ data }) => {
-        if (data) setShops(data);
-      });
-  }, []);
+  const { data, isLoading, refetch, isFetching } = useApiCallLogs(filters);
 
-  const { data, isLoading, refetch, isFetching } = useApiLogs(filters);
+  // Daily stats for summary cards
+  const { data: statsData, isLoading: statsLoading } = useApiCallStats({
+    shopId: filters.shopId,
+    dateRange: filters.dateRange,
+  });
+  const summary = statsData?.summary;
+
   const logs = data?.logs || [];
   const totalCount = data?.totalCount || 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
+  // Shop name lookup map
+  const shopNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    shops.forEach((s) => {
+      if (s.shop_name) map.set(s.shop_id, s.shop_name);
+    });
+    return map;
+  }, [shops]);
+
+  const shopOptions = useMemo(() => {
+    return shops
+      .filter((s) => s.shop_name)
+      .sort((a, b) => (a.shop_name || '').localeCompare(b.shop_name || '', 'vi'))
+      .map((s) => ({ value: s.shop_id.toString(), label: s.shop_name || s.shop_id.toString() }));
+  }, [shops]);
+
+  // Unique user emails from visible logs (for filter)
+  const userEmailOptions = useMemo(() => {
+    const emails = [...new Set(logs.map((l) => l.user_email).filter((e): e is string => !!e))];
+    return emails.sort();
+  }, [logs]);
 
   const handleSearch = useCallback(() => {
     setFilters((prev) => ({ ...prev, search: searchInput || undefined, page: 0 }));
   }, [searchInput]);
 
-  const updateFilter = (key: keyof ApiLogFilters, value: string | number) => {
+  const updateFilter = (key: keyof ApiCallLogFilters, value: string | number | undefined) => {
     setFilters((prev) => ({ ...prev, [key]: value, page: 0 }));
   };
 
+  const handleRowClick = async (log: ApiCallLogListItem) => {
+    setLoadingDetail(true);
+    setSelectedLog(null);
+    const detail = await fetchApiCallLogDetail(log.id);
+    setSelectedLog(detail);
+    setLoadingDetail(false);
+  };
+
+  const getShopName = (shopId: number | null) => {
+    if (!shopId) return '-';
+    return shopNameMap.get(shopId) || shopId.toString();
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col gap-4">
+      {/* Stats Cards + Chart */}
+      <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-4">
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <div className="flex items-center gap-2 mb-1">
+              <Activity className="w-4 h-4 text-blue-500" />
+              <span className="text-xs text-slate-500">Tổng Calls</span>
+            </div>
+            {statsLoading ? (
+              <div className="h-7 w-16 bg-slate-200 rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-slate-800 tabular-nums">
+                {(summary?.total || 0).toLocaleString('vi-VN')}
+              </p>
+            )}
+          </div>
+
+          <div className="p-3 rounded-lg bg-red-50/50 border border-red-100">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingDown className="w-4 h-4 text-red-500" />
+              <span className="text-xs text-slate-500">Thất bại</span>
+            </div>
+            {statsLoading ? (
+              <div className="h-7 w-16 bg-red-100 rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-red-600 tabular-nums">
+                {(summary?.failed || 0).toLocaleString('vi-VN')}
+                {summary && summary.total > 0 && (
+                  <span className="text-xs font-normal text-red-400 ml-1">
+                    ({((summary.failed / summary.total) * 100).toFixed(1)}%)
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+
+          <div className="p-3 rounded-lg bg-green-50/50 border border-green-100">
+            <div className="flex items-center gap-2 mb-1">
+              <Percent className="w-4 h-4 text-green-500" />
+              <span className="text-xs text-slate-500">Tỷ lệ thành công</span>
+            </div>
+            {statsLoading ? (
+              <div className="h-7 w-16 bg-green-100 rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-green-600 tabular-nums">
+                {(summary?.successRate || 0).toFixed(1)}%
+              </p>
+            )}
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <div className="flex items-center gap-2 mb-1">
+              <Timer className="w-4 h-4 text-amber-500" />
+              <span className="text-xs text-slate-500">TB Duration</span>
+            </div>
+            {statsLoading ? (
+              <div className="h-7 w-16 bg-slate-200 rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-slate-800 tabular-nums">
+                {summary?.avgDuration || 0}<span className="text-sm font-normal text-slate-400 ml-0.5">ms</span>
+              </p>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Logs Table */}
+      <div className="flex flex-col bg-white rounded-lg border border-slate-200 overflow-hidden">
       {/* Filters */}
       <div className="flex-shrink-0 p-4 bg-white border-b space-y-3">
         {/* Search + Refresh */}
@@ -174,7 +393,7 @@ export function ApiCallLogsPanel() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input
-              placeholder="Tìm endpoint, error, edge function..."
+              placeholder="Tìm endpoint, lỗi..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -190,61 +409,150 @@ export function ApiCallLogsPanel() {
         </div>
 
         {/* Filter dropdowns */}
-        <div className="flex flex-wrap items-center gap-2">
-          {shops.length > 0 && (
+        <div className="flex flex-wrap items-end gap-2">
+          {/* Shop filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Shop</label>
             <Select
               value={filters.shopId?.toString() || 'all'}
-              onValueChange={(v) => updateFilter('shopId', v === 'all' ? undefined as unknown as number : Number(v))}
+              onValueChange={(v) => updateFilter('shopId', v === 'all' ? undefined : Number(v))}
             >
               <SelectTrigger className="w-[160px] h-8 text-sm cursor-pointer">
                 <SelectValue placeholder="Shop" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="cursor-pointer">Tất cả shop</SelectItem>
-                {shops.map((shop) => (
-                  <SelectItem key={shop.shop_id} value={shop.shop_id.toString()} className="cursor-pointer">
-                    {shop.shop_name || `Shop ${shop.shop_id}`}
+                <SelectItem value="all">Tất cả</SelectItem>
+                {shopOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
+                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Category filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Danh mục</label>
+            <Select
+              value={filters.category || 'all'}
+              onValueChange={(v) => updateFilter('category', v)}
+            >
+              <SelectTrigger className="w-[130px] h-8 text-sm cursor-pointer">
+                <SelectValue placeholder="Danh mục" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORY_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Status filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Trạng thái</label>
+            <Select
+              value={filters.status || 'all'}
+              onValueChange={(v) => updateFilter('status', v)}
+            >
+              <SelectTrigger className="w-[130px] h-8 text-sm cursor-pointer">
+                <SelectValue placeholder="Trạng thái" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Edge function filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Function</label>
+            <Select
+              value={filters.edgeFunction || 'all'}
+              onValueChange={(v) => updateFilter('edgeFunction', v)}
+            >
+              <SelectTrigger className="w-[150px] h-8 text-sm cursor-pointer">
+                <SelectValue placeholder="Function" />
+              </SelectTrigger>
+              <SelectContent>
+                {EDGE_FUNCTION_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* User filter */}
+          {userEmailOptions.length > 0 && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Người dùng</label>
+              <Select
+                value={filters.userEmail || 'all'}
+                onValueChange={(v) => updateFilter('userEmail', v)}
+              >
+                <SelectTrigger className="w-[160px] h-8 text-sm cursor-pointer">
+                  <SelectValue placeholder="Người dùng" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả</SelectItem>
+                  {userEmailOptions.map((email) => (
+                    <SelectItem key={email} value={email} className="cursor-pointer">
+                      {email.split('@')[0]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
 
-          <Select value={filters.apiCategory || 'all'} onValueChange={(v) => updateFilter('apiCategory', v)}>
-            <SelectTrigger className="w-[130px] h-8 text-sm cursor-pointer">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORY_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Triggered by filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Nguồn</label>
+            <Select
+              value={filters.triggeredBy || 'all'}
+              onValueChange={(v) => updateFilter('triggeredBy', v)}
+            >
+              <SelectTrigger className="w-[130px] h-8 text-sm cursor-pointer">
+                <SelectValue placeholder="Nguồn" />
+              </SelectTrigger>
+              <SelectContent>
+                {TRIGGERED_BY_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={filters.status || 'all'} onValueChange={(v) => updateFilter('status', v)}>
-            <SelectTrigger className="w-[120px] h-8 text-sm cursor-pointer">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Date range filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Thời gian</label>
+            <Select value={filters.dateRange || '7d'} onValueChange={(v) => updateFilter('dateRange', v)}>
+              <SelectTrigger className="w-[110px] h-8 text-sm cursor-pointer">
+                <SelectValue placeholder="Thời gian" />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={filters.dateRange || '24h'} onValueChange={(v) => updateFilter('dateRange', v)}>
-            <SelectTrigger className="w-[110px] h-8 text-sm cursor-pointer">
-              <SelectValue placeholder="Thời gian" />
-            </SelectTrigger>
-            <SelectContent>
-              {DATE_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <span className="text-xs text-slate-400 ml-auto">
-            {totalCount} kết quả
+          <span className="text-xs text-slate-400 ml-auto self-end pb-1">
+            {totalCount.toLocaleString('vi-VN')} kết quả
           </span>
         </div>
       </div>
@@ -260,8 +568,8 @@ export function ApiCallLogsPanel() {
         ) : logs.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-            <p className="font-medium">Không có logs</p>
-            <p className="text-sm mt-1">Thử thay đổi bộ lọc hoặc chờ API calls được ghi log</p>
+            <p className="font-medium">Không có API call logs</p>
+            <p className="text-sm mt-1">Thử thay đổi bộ lọc để xem kết quả khác</p>
           </div>
         ) : (
           <>
@@ -271,18 +579,29 @@ export function ApiCallLogsPanel() {
                 <div
                   key={log.id}
                   className="p-3 hover:bg-slate-50 cursor-pointer transition-colors"
-                  onClick={() => setSelectedLog(log)}
+                  onClick={() => handleRowClick(log)}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <StatusBadge status={log.status} />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <CategoryBadge category={log.api_category} />
+                      <StatusBadge status={log.status} />
+                    </div>
                     <span className="text-xs text-slate-400">{formatDate(log.created_at)}</span>
                   </div>
-                  <p className="text-xs font-mono text-slate-700 truncate">{log.api_endpoint}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <CategoryBadge category={log.api_category} />
-                    <span className="text-xs text-slate-400">{formatDuration(log.duration_ms)}</span>
-                    {log.shopee_error && (
-                      <span className="text-xs text-red-500 truncate">{log.shopee_error}</span>
+                  <p className="text-xs text-slate-700 font-medium truncate">
+                    {formatEndpoint(log.api_endpoint)}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-xs text-slate-500">
+                      {getShopName(log.shop_id)}
+                    </span>
+                    {log.user_email ? (
+                      <span className="text-xs text-slate-400">{log.user_email.split('@')[0]}</span>
+                    ) : (
+                      <TriggeredByBadge triggeredBy={log.triggered_by} />
+                    )}
+                    {log.duration_ms != null && (
+                      <span className="text-xs text-slate-400">{log.duration_ms}ms</span>
                     )}
                   </div>
                 </div>
@@ -295,11 +614,11 @@ export function ApiCallLogsPanel() {
                 <tr>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Thời gian</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Shop</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Endpoint</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">API Endpoint</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Category</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Status</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Duration</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Error</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">User</th>
+                  <th className="text-right px-4 py-2 text-xs font-medium text-slate-500">Duration</th>
                   <th className="text-center px-4 py-2 text-xs font-medium text-slate-500 w-10"></th>
                 </tr>
               </thead>
@@ -307,26 +626,16 @@ export function ApiCallLogsPanel() {
                 {logs.map((log) => (
                   <tr
                     key={log.id}
-                    className="hover:bg-slate-50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedLog(log)}
+                    className="hover:bg-slate-50 transition-colors"
                   >
                     <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">
                       {formatDate(log.created_at)}
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-600 whitespace-nowrap">
-                      {log.shop_id || '-'}
+                    <td className="px-4 py-2 text-xs text-slate-600 whitespace-nowrap max-w-[120px] truncate">
+                      {getShopName(log.shop_id)}
                     </td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-1">
-                        <span className={`text-[10px] font-bold px-1 rounded ${
-                          log.http_method === 'GET' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {log.http_method}
-                        </span>
-                        <span className="text-xs font-mono text-slate-700 truncate max-w-[250px]">
-                          {log.api_endpoint}
-                        </span>
-                      </div>
+                    <td className="px-4 py-2 text-xs text-slate-700 truncate max-w-[250px] font-mono" title={log.api_endpoint}>
+                      {formatEndpoint(log.api_endpoint)}
                     </td>
                     <td className="px-4 py-2">
                       <CategoryBadge category={log.api_category} />
@@ -334,14 +643,14 @@ export function ApiCallLogsPanel() {
                     <td className="px-4 py-2">
                       <StatusBadge status={log.status} />
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">
-                      {formatDuration(log.duration_ms)}
+                    <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap max-w-[120px] truncate" title={log.user_email || ''}>
+                      {log.user_email ? log.user_email.split('@')[0] : <TriggeredByBadge triggeredBy={log.triggered_by} />}
                     </td>
-                    <td className="px-4 py-2 text-xs text-red-500 truncate max-w-[150px]">
-                      {log.shopee_error || '-'}
+                    <td className="px-4 py-2 text-xs text-slate-500 text-right whitespace-nowrap tabular-nums">
+                      {log.duration_ms != null ? `${log.duration_ms}ms` : '-'}
                     </td>
                     <td className="px-4 py-2 text-center">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 cursor-pointer">
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 cursor-pointer" onClick={() => handleRowClick(log)}>
                         <Eye className="w-3.5 h-3.5 text-slate-400" />
                       </Button>
                     </td>
@@ -357,7 +666,7 @@ export function ApiCallLogsPanel() {
       {totalPages > 1 && (
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-t">
           <span className="text-xs text-slate-400">
-            Trang {filters.page + 1} / {totalPages}
+            Trang {filters.page + 1} / {totalPages.toLocaleString('vi-VN')}
           </span>
           <div className="flex items-center gap-1">
             <Button
@@ -382,146 +691,77 @@ export function ApiCallLogsPanel() {
         </div>
       )}
 
+      </div>{/* end Logs Table */}
+
       {/* Detail Dialog */}
-      <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
+      <Dialog open={!!selectedLog || loadingDetail} onOpenChange={() => { setSelectedLog(null); setLoadingDetail(false); }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <StatusBadge status={selectedLog?.status || ''} />
-              <span className="font-mono text-sm truncate">{selectedLog?.api_endpoint}</span>
-            </DialogTitle>
-          </DialogHeader>
-
-          {selectedLog && (
-            <div className="space-y-4 mt-2">
-              {/* Basic info grid */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <DetailItem label="Thời gian" value={formatFullDate(selectedLog.created_at)} />
-                <DetailItem label="Shop ID" value={selectedLog.shop_id?.toString() || '-'} />
-                <DetailItem label="Edge Function" value={selectedLog.edge_function} />
-                <DetailItem label="HTTP Method" value={selectedLog.http_method} />
-                <DetailItem label="Category" value={selectedLog.api_category} />
-                <DetailItem label="Duration" value={formatDuration(selectedLog.duration_ms)} />
-              </div>
-
-              {/* Retry & Token info */}
-              {(selectedLog.retry_count > 0 || selectedLog.was_token_refreshed) && (
-                <div className="flex items-center gap-3 p-2 bg-amber-50 rounded-lg text-sm">
-                  {selectedLog.retry_count > 0 && (
-                    <span className="flex items-center gap-1 text-amber-700">
-                      <Repeat className="w-3.5 h-3.5" /> Retry: {selectedLog.retry_count}
-                    </span>
-                  )}
-                  {selectedLog.was_token_refreshed && (
-                    <span className="flex items-center gap-1 text-amber-700">
-                      <Shield className="w-3.5 h-3.5" /> Token refreshed
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Error details */}
-              {selectedLog.shopee_error && (
-                <div className="p-3 bg-red-50 rounded-lg border border-red-100">
-                  <p className="text-xs font-medium text-red-700 mb-1">Shopee Error</p>
-                  <p className="text-sm text-red-600 font-mono">{selectedLog.shopee_error}</p>
-                  {selectedLog.shopee_message && (
-                    <p className="text-xs text-red-500 mt-1">{selectedLog.shopee_message}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Response data */}
-              {selectedLog.response_summary && Object.keys(selectedLog.response_summary).length > 0 && (
-                <CollapsibleJson
-                  label="Response Data"
-                  data={selectedLog.response_summary}
-                  defaultOpen={true}
-                />
-              )}
-
-              {/* Request params */}
-              {selectedLog.request_params && Object.keys(selectedLog.request_params).length > 0 && (
-                <CollapsibleJson
-                  label="Request Params"
-                  data={selectedLog.request_params}
-                  defaultOpen={false}
-                />
-              )}
+          {loadingDetail && !selectedLog ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-6 h-6 animate-spin text-slate-400" />
+              <span className="ml-3 text-sm text-slate-500">Đang tải chi tiết...</span>
             </div>
-          )}
+          ) : selectedLog ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base flex-wrap">
+                  <StatusBadge status={selectedLog.status} />
+                  <CategoryBadge category={selectedLog.api_category} />
+                  <span className="text-sm text-slate-600 font-mono">
+                    {formatEndpoint(selectedLog.api_endpoint)}
+                  </span>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-4 mt-2">
+                {/* Basic info grid */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <DetailItem label="Thời gian" value={formatFullDate(selectedLog.created_at)} />
+                  <DetailItem label="Shop" value={getShopName(selectedLog.shop_id)} />
+                  <DetailItem label="API Endpoint" value={selectedLog.api_endpoint} />
+                  <DetailItem label="HTTP Method" value={selectedLog.http_method || 'GET'} />
+                  <DetailItem label="Edge Function" value={selectedLog.edge_function} />
+                  <DetailItem label="HTTP Status" value={selectedLog.http_status_code?.toString() || '-'} />
+                  <DetailItem label="Duration" value={selectedLog.duration_ms != null ? `${selectedLog.duration_ms}ms` : '-'} />
+                  <DetailItem label="Người dùng" value={selectedLog.user_email || '-'} />
+                  <DetailItem label="Nguồn" value={TRIGGERED_BY_OPTIONS.find(o => o.value === (selectedLog.triggered_by || 'system'))?.label || selectedLog.triggered_by || 'system'} />
+                  <DetailItem label="Retry Count" value={selectedLog.retry_count?.toString() || '0'} />
+                  {selectedLog.was_token_refreshed && (
+                    <DetailItem label="Token Refreshed" value="Có" />
+                  )}
+                </div>
+
+                {/* Error info */}
+                {selectedLog.shopee_error && (
+                  <div className="p-3 rounded-lg bg-red-50 space-y-1">
+                    <p className="text-xs text-red-500 font-medium">Shopee Error</p>
+                    <p className="text-sm text-red-700 font-mono">{selectedLog.shopee_error}</p>
+                    {selectedLog.shopee_message && (
+                      <p className="text-xs text-red-600">{selectedLog.shopee_message}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Collapsible JSON sections */}
+                {selectedLog.request_params && Object.keys(selectedLog.request_params).length > 0 && (
+                  <CollapsibleJson
+                    label="Request Params"
+                    data={selectedLog.request_params}
+                    defaultOpen={false}
+                  />
+                )}
+                {selectedLog.response_summary && Object.keys(selectedLog.response_summary).length > 0 && (
+                  <CollapsibleJson
+                    label="Response Summary"
+                    data={selectedLog.response_summary}
+                    defaultOpen={true}
+                  />
+                )}
+              </div>
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function DetailItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-slate-400">{label}</p>
-      <p className="text-sm text-slate-700 font-medium">{value}</p>
-    </div>
-  );
-}
-
-function CollapsibleJson({
-  label,
-  data,
-  defaultOpen = false,
-}: {
-  label: string;
-  data: Record<string, unknown>;
-  defaultOpen?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  const [copied, setCopied] = useState(false);
-  const jsonString = JSON.stringify(data, null, 2);
-  const isTruncated = !!(data as Record<string, unknown>)._truncated;
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(jsonString);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
-      >
-        <div className="flex items-center gap-2">
-          {isOpen ? (
-            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          )}
-          <span className="text-xs font-medium text-slate-600">{label}</span>
-          {isTruncated && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
-              Truncated
-            </span>
-          )}
-        </div>
-        <button
-          onClick={handleCopy}
-          className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer"
-          title="Copy JSON"
-        >
-          {copied ? (
-            <Check className="w-3.5 h-3.5 text-green-600" />
-          ) : (
-            <Copy className="w-3.5 h-3.5 text-slate-400" />
-          )}
-        </button>
-      </button>
-      {isOpen && (
-        <pre className="text-xs p-3 overflow-auto max-h-[400px] bg-white font-mono leading-relaxed text-slate-700">
-          {jsonString}
-        </pre>
-      )}
     </div>
   );
 }

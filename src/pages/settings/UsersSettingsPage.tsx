@@ -1,10 +1,10 @@
 /**
  * Users Settings Page - Quản lý người dùng (Admin only)
  * Hiển thị danh sách người dùng và cho phép admin tạo tài khoản mới
- * Cấu hình chức năng cơ bản (global permissions) cho tất cả user
+ * Per-user feature overrides (stored in sys_profiles.permissions)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -27,13 +27,13 @@ import {
 } from '@/components/ui/dialog';
 import { SimpleDataTable, CellText, CellBadge, CellActions } from '@/components/ui/data-table';
 import { toast } from 'sonner';
-import { Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2, Store, Check, Search, Zap, Save } from 'lucide-react';
+import { Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2, Store, Search, Save, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getAssignablePermissions, getAllAssignablePermissionKeys } from '@/config/menu-config';
+import { getFeaturePermissions } from '@/config/menu-config';
+import { AppRole, ROLE_DEFAULTS } from '@/hooks/usePermissions';
 
-// Lấy danh sách permissions có thể gán (không bao gồm adminOnly)
-const ASSIGNABLE_PERMISSIONS = getAssignablePermissions();
+const ALL_FEATURES = getFeaturePermissions();
 
 interface ShopInfo {
   id: string;
@@ -52,7 +52,9 @@ interface UserProfile {
   created_at: string;
   updated_at: string;
   shops?: ShopInfo[];
-  permissions?: string[];
+  permissions?: Record<string, unknown> | null;
+  appRole?: AppRole | null;
+  leaderName?: string | null;
 }
 
 const SYSTEM_ROLES = [
@@ -60,26 +62,41 @@ const SYSTEM_ROLES = [
   { value: 'user', label: 'Người dùng', description: 'Quyền sử dụng cơ bản' },
 ];
 
+const ROLE_LABELS: Record<AppRole, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Quản trị viên',
+  leader: 'Trưởng nhóm',
+  member: 'Thành viên',
+};
+
 export default function UsersSettingsPage() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  
-  // Shop assignment dialog state
+
+  // Permission dialog state
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [savingPermissions, setSavingPermissions] = useState(false);
-
-  // Global permissions dialog state
-  const [isGlobalPermissionsDialogOpen, setIsGlobalPermissionsDialogOpen] = useState(false);
 
   // Shop permission state
   const [allShops, setAllShops] = useState<ShopInfo[]>([]);
   const [selectedShopIds, setSelectedShopIds] = useState<string[]>([]);
   const [loadingPermissionData, setLoadingPermissionData] = useState(false);
   const [shopSearchQuery, setShopSearchQuery] = useState('');
+
+  // Per-user feature override state
+  const [userAppRole, setUserAppRole] = useState<AppRole | null>(null);
+  const [featureAdds, setFeatureAdds] = useState<string[]>([]);
+  const [featureRemoves, setFeatureRemoves] = useState<string[]>([]);
+
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterRole, setFilterRole] = useState<string>('all');
+  const [filterLeader, setFilterLeader] = useState<string>('all');
+  const [filterShop, setFilterShop] = useState<string>('all');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -90,91 +107,40 @@ export default function UsersSettingsPage() {
     systemRole: 'user' as 'admin' | 'user',
   });
 
-  // Global permissions state
-  const [globalPermissions, setGlobalPermissions] = useState<string[]>([]);
-  const [loadingGlobalPermissions, setLoadingGlobalPermissions] = useState(true);
-  const [savingGlobalPermissions, setSavingGlobalPermissions] = useState(false);
-
-  // Fetch global permissions
-  const fetchGlobalPermissions = async () => {
-    setLoadingGlobalPermissions(true);
-    try {
-      const { data, error } = await supabase
-        .from('sys_settings')
-        .select('value')
-        .eq('key', 'global_permissions')
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data?.value) {
-        setGlobalPermissions(data.value as string[]);
-      } else {
-        // Default: tất cả chức năng cơ bản đều bật
-        setGlobalPermissions(getAllAssignablePermissionKeys());
-      }
-    } catch (error) {
-      console.error('Error fetching global permissions:', error);
-      // Fallback to all permissions
-      setGlobalPermissions(getAllAssignablePermissionKeys());
-    } finally {
-      setLoadingGlobalPermissions(false);
-    }
-  };
-
-  // Save global permissions
-  const handleSaveGlobalPermissions = async () => {
-    setSavingGlobalPermissions(true);
-    try {
-      const { error } = await supabase
-        .from('sys_settings')
-        .upsert({
-          key: 'global_permissions',
-          value: globalPermissions,
-          description: 'Danh sách chức năng cơ bản mà tất cả user đều được dùng',
-        }, { onConflict: 'key' });
-
-      if (error) throw error;
-      toast.success('Đã lưu cấu hình chức năng cơ bản');
-    } catch (error) {
-      console.error('Error saving global permissions:', error);
-      toast.error('Không thể lưu cấu hình');
-    } finally {
-      setSavingGlobalPermissions(false);
-    }
-  };
-
-  // Toggle global permission
-  const toggleGlobalPermission = (key: string) => {
-    setGlobalPermissions(prev =>
-      prev.includes(key)
-        ? prev.filter(p => p !== key)
-        : [...prev, key]
-    );
-  };
-
-  // Toggle all global permissions
-  const toggleAllGlobalPermissions = () => {
-    const allKeys = getAllAssignablePermissionKeys();
-    if (globalPermissions.length === allKeys.length) {
-      setGlobalPermissions([]);
-    } else {
-      setGlobalPermissions(allKeys);
-    }
-  };
+  const SHOPEE_DEPT_ID = 'd552e806-e27e-4b1e-a293-ab72714d2c56';
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // Fetch users with permissions
+      // Fetch profile IDs + manager IDs belonging to Shopee department
+      const { data: deptMembers, error: deptError } = await supabase
+        .from('sys_profile_departments')
+        .select('profile_id, manager_id')
+        .eq('department_id', SHOPEE_DEPT_ID);
+
+      if (deptError) throw deptError;
+
+      const shopeeProfileIds = (deptMembers || []).map(m => m.profile_id);
+      const managerByUser: Record<string, string | null> = {};
+      (deptMembers || []).forEach(m => {
+        managerByUser[m.profile_id] = m.manager_id;
+      });
+
+      if (shopeeProfileIds.length === 0) {
+        setUsers([]);
+        return;
+      }
+
+      // Fetch only Shopee department users
       const { data: usersData, error: usersError } = await supabase
         .from('sys_profiles')
         .select('*, permissions')
+        .in('id', shopeeProfileIds)
         .order('created_at', { ascending: false });
 
       if (usersError) throw usersError;
 
-      // Fetch all shops first (exclude demo shop 999999001)
+      // Fetch all shops (exclude demo shop 999999001)
       const { data: shopsData, error: shopsError } = await supabase
         .from('apishopee_shops')
         .select('id, shop_id, shop_name')
@@ -198,7 +164,8 @@ export default function UsersSettingsPage() {
       const { data: membersData, error: membersError } = await supabase
         .from('apishopee_shop_members')
         .select('profile_id, shop_id')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .in('profile_id', shopeeProfileIds);
 
       if (membersError) {
         console.error('Error fetching shop members:', membersError);
@@ -216,13 +183,69 @@ export default function UsersSettingsPage() {
         }
       });
 
-      // Merge shops into users
+      // Fetch all manager names in one batch
+      const allManagerIds = [...new Set(
+        Object.values(managerByUser).filter((id): id is string => id !== null)
+      )];
+      const managerNameMap: Record<string, string> = {};
+      if (allManagerIds.length > 0) {
+        const { data: managerProfiles } = await supabase
+          .from('sys_profiles')
+          .select('id, full_name')
+          .in('id', allManagerIds);
+        (managerProfiles || []).forEach(p => {
+          if (p.full_name) managerNameMap[p.id] = p.full_name;
+        });
+      }
+
+      // Merge shops + leader into users
       const usersWithShops = (usersData || []).map(user => ({
         ...user,
         shops: shopsByUser[user.id] || [],
+        leaderName: managerByUser[user.id] ? (managerNameMap[managerByUser[user.id]!] || null) : null,
       }));
 
-      setUsers(usersWithShops);
+      // Fetch app roles for all users via RPC
+      const roleResults = await Promise.all(
+        usersWithShops.map(user =>
+          supabase.rpc('get_shopee_app_permissions', { p_user_id: user.id })
+        )
+      );
+
+      // Build managed-members map: leaderId → [memberId, ...]
+      const managedMembers: Record<string, string[]> = {};
+      Object.entries(managerByUser).forEach(([profileId, managerId]) => {
+        if (managerId) {
+          if (!managedMembers[managerId]) managedMembers[managerId] = [];
+          managedMembers[managerId].push(profileId);
+        }
+      });
+
+      const allShopsList = Object.values(shopsMap);
+
+      const usersWithRoles = usersWithShops.map((user, i) => {
+        const role = (roleResults[i].data?.role as AppRole) || null;
+
+        // Admin/super_admin: full access to all shops
+        if (role === 'super_admin' || role === 'admin') {
+          return { ...user, appRole: role, shops: allShopsList };
+        }
+
+        // Leader: own shops + shops of managed members
+        if (role === 'leader') {
+          const memberIds = managedMembers[user.id] || [];
+          const memberShops = memberIds.flatMap(mid => shopsByUser[mid] || []);
+          const ownShops = shopsByUser[user.id] || [];
+          // Deduplicate by shop id
+          const shopMap = new Map<string, ShopInfo>();
+          [...ownShops, ...memberShops].forEach(s => shopMap.set(s.id, s));
+          return { ...user, appRole: role, shops: [...shopMap.values()] };
+        }
+
+        return { ...user, appRole: role };
+      });
+
+      setUsers(usersWithRoles);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast.error('Không thể tải danh sách người dùng');
@@ -233,7 +256,6 @@ export default function UsersSettingsPage() {
 
   useEffect(() => {
     fetchUsers();
-    fetchGlobalPermissions();
   }, []);
 
   const handleCreateUser = async () => {
@@ -253,13 +275,12 @@ export default function UsersSettingsPage() {
 
       // Nếu session sắp hết hạn, refresh
       if (session && session.expires_at && (session.expires_at * 1000 - Date.now()) < 60000) {
-        const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+        const { error: refreshError } = await supabase.auth.refreshSession();
         if (refreshError) {
           throw new Error('Không thể refresh session. Vui lòng đăng nhập lại.');
         }
       }
 
-      // Dùng supabase.functions.invoke() với adminEmail để bypass JWT verification
       const { data, error } = await supabase.functions.invoke('admin-create-user', {
         body: {
           email: formData.email,
@@ -267,7 +288,7 @@ export default function UsersSettingsPage() {
           fullName: formData.fullName,
           phone: formData.phone,
           systemRole: formData.systemRole,
-          adminEmail: session?.user?.email, // Gửi email để verify admin
+          adminEmail: session?.user?.email,
         },
       });
 
@@ -279,7 +300,6 @@ export default function UsersSettingsPage() {
         throw new Error(data.error);
       }
 
-      // Thêm user mới vào đầu danh sách ngay lập tức
       const newUser: UserProfile = {
         id: data.user.id,
         email: formData.email,
@@ -303,31 +323,18 @@ export default function UsersSettingsPage() {
     }
   };
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
-
-  const getRoleDisplay = (role: string) => {
-    const roleInfo = SYSTEM_ROLES.find(r => r.value === role);
-    return roleInfo?.label || role;
-  };
-
-  // Mở dialog gán shop
+  // Open permission dialog — load shops + user's app role + current overrides
   const openPermissionDialog = async (user: UserProfile) => {
     setSelectedUser(user);
     setIsPermissionDialogOpen(true);
     setShopSearchQuery('');
     setLoadingPermissionData(true);
+    setUserAppRole(null);
+    setFeatureAdds([]);
+    setFeatureRemoves([]);
 
     try {
-      // Load all shops và current shop assignments song song
-      // Filter out demo shop 999999001
-      const [shopsRes, memberRes] = await Promise.all([
+      const [shopsRes, memberRes, permRes] = await Promise.all([
         supabase
           .from('apishopee_shops')
           .select('id, shop_id, shop_name, shop_logo')
@@ -338,6 +345,7 @@ export default function UsersSettingsPage() {
           .select('shop_id')
           .eq('profile_id', user.id)
           .eq('is_active', true),
+        supabase.rpc('get_shopee_app_permissions', { p_user_id: user.id }),
       ]);
 
       if (shopsRes.error) throw shopsRes.error;
@@ -345,21 +353,50 @@ export default function UsersSettingsPage() {
 
       setAllShops(shopsRes.data || []);
       setSelectedShopIds((memberRes.data || []).map(m => m.shop_id));
+
+      // Set user's app role from RPC
+      if (permRes.data?.role) {
+        setUserAppRole(permRes.data.role as AppRole);
+      }
+
+      // Load current overrides from user's permissions field
+      const overrides = user.permissions as Record<string, unknown> | null;
+      const shopeeFeatures = overrides?.shopee_features as { add?: string[]; remove?: string[] } | undefined;
+      setFeatureAdds(shopeeFeatures?.add || []);
+      setFeatureRemoves(shopeeFeatures?.remove || []);
     } catch (error) {
-      console.error('Error loading shop data:', error);
-      toast.error('Không thể tải danh sách shop');
+      console.error('Error loading permission data:', error);
+      toast.error('Không thể tải dữ liệu phân quyền');
     } finally {
       setLoadingPermissionData(false);
     }
   };
 
-  // Lưu shop assignments (không còn lưu per-user permissions)
+  // Compute role defaults for the selected user
+  const roleDefaults = useMemo(() => {
+    if (!userAppRole || userAppRole === 'super_admin') return [];
+    return ROLE_DEFAULTS[userAppRole] || [];
+  }, [userAppRole]);
+
+  // Compute available features for override (exclude role defaults for adds, include only defaults for removes)
+  const addableFeatures = useMemo(() => {
+    return ALL_FEATURES.filter(f => !roleDefaults.includes(f.key));
+  }, [roleDefaults]);
+
+  // Toggle feature add
+  const toggleFeatureAdd = (key: string) => {
+    setFeatureAdds(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  // Save both shop assignments and per-user feature overrides
   const handleSavePermissions = async () => {
     if (!selectedUser) return;
 
     setSavingPermissions(true);
     try {
-      // Lấy member role để assign shop
+      // --- Save shop assignments ---
       const { data: rolesData } = await supabase
         .from('apishopee_roles')
         .select('id')
@@ -368,7 +405,6 @@ export default function UsersSettingsPage() {
 
       const memberRoleId = rolesData?.id;
 
-      // Lấy danh sách shop hiện tại của user
       const { data: currentMembers } = await supabase
         .from('apishopee_shop_members')
         .select('id, shop_id')
@@ -377,15 +413,11 @@ export default function UsersSettingsPage() {
 
       const currentShopIds = (currentMembers || []).map(m => m.shop_id);
 
-      // Shops cần thêm (có trong selectedShopIds nhưng không có trong current)
       const shopsToAdd = selectedShopIds.filter(id => !currentShopIds.includes(id));
-
-      // Shops cần xóa (có trong current nhưng không có trong selectedShopIds)
       const memberIdsToDelete = (currentMembers || [])
         .filter(m => !selectedShopIds.includes(m.shop_id))
         .map(m => m.id);
 
-      // 1. Thêm shop mới (nếu có)
       if (shopsToAdd.length > 0 && memberRoleId) {
         const insertData = shopsToAdd.map(shopId => ({
           shop_id: shopId,
@@ -396,33 +428,48 @@ export default function UsersSettingsPage() {
         const { error: insertError } = await supabase
           .from('apishopee_shop_members')
           .insert(insertData);
-
         if (insertError) throw insertError;
       }
 
-      // 2. Xóa shop không còn được chọn (nếu có)
       if (memberIdsToDelete.length > 0) {
         const { error: deleteError } = await supabase
           .from('apishopee_shop_members')
           .delete()
           .in('id', memberIdsToDelete);
-
         if (deleteError) throw deleteError;
       }
 
-      // Cập nhật local state - chỉ shops
+      // --- Save per-user feature overrides ---
+      const hasOverrides = featureAdds.length > 0 || featureRemoves.length > 0;
+      const permissions = hasOverrides
+        ? {
+            shopee_features: {
+              ...(featureAdds.length > 0 ? { add: featureAdds } : {}),
+              ...(featureRemoves.length > 0 ? { remove: featureRemoves } : {}),
+            },
+          }
+        : null;
+
+      const { error: permError } = await supabase
+        .from('sys_profiles')
+        .update({ permissions })
+        .eq('id', selectedUser.id);
+
+      if (permError) throw permError;
+
+      // Update local state
       const updatedShops = allShops.filter(s => selectedShopIds.includes(s.id));
       setUsers(prev => prev.map(u =>
         u.id === selectedUser.id
-          ? { ...u, shops: updatedShops }
+          ? { ...u, shops: updatedShops, permissions }
           : u
       ));
 
-      toast.success('Đã cập nhật shop cho người dùng');
+      toast.success('Đã cập nhật phân quyền cho người dùng');
       setIsPermissionDialogOpen(false);
     } catch (error) {
-      console.error('Error saving shop assignments:', error);
-      toast.error('Không thể cập nhật');
+      console.error('Error saving permissions:', error);
+      toast.error('Không thể cập nhật phân quyền');
     } finally {
       setSavingPermissions(false);
     }
@@ -437,7 +484,6 @@ export default function UsersSettingsPage() {
     );
   };
 
-  // Chọn tất cả / Bỏ chọn tất cả shops
   const toggleAllShops = () => {
     if (selectedShopIds.length === allShops.length) {
       setSelectedShopIds([]);
@@ -446,12 +492,74 @@ export default function UsersSettingsPage() {
     }
   };
 
-  // Filter shops by search query
-  const filteredShops = allShops.filter(shop =>
-    !shopSearchQuery ||
-    shop.shop_name?.toLowerCase().includes(shopSearchQuery.toLowerCase()) ||
-    shop.shop_id.toString().includes(shopSearchQuery)
-  );
+  const filteredShops = useMemo(() => {
+    const filtered = allShops.filter(shop =>
+      !shopSearchQuery ||
+      shop.shop_name?.toLowerCase().includes(shopSearchQuery.toLowerCase()) ||
+      shop.shop_id.toString().includes(shopSearchQuery)
+    );
+    // Pin selected shops to top
+    const selected = filtered.filter(s => selectedShopIds.includes(s.id));
+    const unselected = filtered.filter(s => !selectedShopIds.includes(s.id));
+    return [...selected, ...unselected];
+  }, [allShops, shopSearchQuery, selectedShopIds]);
+
+  // Derived filter options
+  const leaderOptions = useMemo(() => {
+    const leaders = [...new Set(users.map(u => u.leaderName).filter((n): n is string => !!n))];
+    return leaders.sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [users]);
+
+  const shopOptions = useMemo(() => {
+    const shopMap = new Map<string, string>();
+    users.forEach(u => {
+      (u.shops || []).forEach(s => {
+        shopMap.set(s.id, s.shop_name || `Shop ${s.shop_id}`);
+      });
+    });
+    return [...shopMap.entries()].sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  }, [users]);
+
+  const activeFilterCount = [
+    searchQuery,
+    filterRole !== 'all' ? filterRole : '',
+    filterLeader !== 'all' ? filterLeader : '',
+    filterShop !== 'all' ? filterShop : '',
+  ].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setFilterRole('all');
+    setFilterLeader('all');
+    setFilterShop('all');
+  };
+
+  // Filtered users
+  const filteredUsers = useMemo(() => {
+    return users.filter(user => {
+      // Search
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchName = user.full_name?.toLowerCase().includes(q);
+        const matchEmail = user.email.toLowerCase().includes(q);
+        if (!matchName && !matchEmail) return false;
+      }
+      // Role
+      if (filterRole !== 'all') {
+        if (user.appRole !== filterRole) return false;
+      }
+      // Leader
+      if (filterLeader !== 'all') {
+        if (user.leaderName !== filterLeader) return false;
+      }
+      // Shop
+      if (filterShop !== 'all') {
+        const hasShop = (user.shops || []).some(s => s.id === filterShop);
+        if (!hasShop) return false;
+      }
+      return true;
+    });
+  }, [users, searchQuery, filterRole, filterLeader, filterShop]);
 
   const columns = [
     {
@@ -474,51 +582,41 @@ export default function UsersSettingsPage() {
       ),
     },
     {
-      key: 'system_role',
+      key: 'app_role',
       header: 'Vai trò',
       width: '140px',
       mobileBadge: true,
-      render: (user: UserProfile) => (
-        <CellBadge variant={user.system_role === 'admin' ? 'warning' : 'default'}>
-          {user.system_role === 'admin' ? (
-            <span className="flex items-center gap-1">
-              <Shield className="w-3 h-3" />
-              {getRoleDisplay(user.system_role)}
-            </span>
-          ) : (
-            getRoleDisplay(user.system_role)
-          )}
-        </CellBadge>
-      ),
+      render: (user: UserProfile) => {
+        const role = user.appRole;
+        if (!role) {
+          return <CellBadge variant="default">Chưa phân quyền</CellBadge>;
+        }
+        const isAdminRole = role === 'super_admin' || role === 'admin';
+        return (
+          <CellBadge variant={isAdminRole ? 'warning' : 'default'}>
+            {isAdminRole ? (
+              <span className="flex items-center gap-1">
+                <Shield className="w-3 h-3" />
+                {ROLE_LABELS[role]}
+              </span>
+            ) : (
+              ROLE_LABELS[role]
+            )}
+          </CellBadge>
+        );
+      },
     },
     {
-      key: 'phone',
-      header: 'Số điện thoại',
-      width: '140px',
+      key: 'leader',
+      header: 'Leader',
+      width: '160px',
       hideOnMobile: true,
-      render: (user: UserProfile) => (
-        <CellText muted={!user.phone}>{user.phone || '-'}</CellText>
-      ),
-    },
-    {
-      key: 'created_at',
-      header: 'Ngày tạo',
-      width: '120px',
-      hideOnMobile: true,
-      render: (user: UserProfile) => (
-        <CellText muted>{formatDate(user.created_at)}</CellText>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'Trạng thái',
-      width: '100px',
-      hideOnMobile: true,
-      render: (user: UserProfile) => (
-        <CellBadge variant={user.id === currentUser?.id ? 'success' : 'default'}>
-          {user.id === currentUser?.id ? 'Bạn' : 'Active'}
-        </CellBadge>
-      ),
+      render: (user: UserProfile) => {
+        if (!user.leaderName) {
+          return <CellText muted>-</CellText>;
+        }
+        return <CellText>{user.leaderName}</CellText>;
+      },
     },
     {
       key: 'shops',
@@ -572,7 +670,6 @@ export default function UsersSettingsPage() {
             size="sm"
             className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 w-7 p-0"
             onClick={() => {
-              // TODO: Implement delete user
               toast.info('Chức năng đang phát triển');
             }}
             title="Xóa người dùng"
@@ -588,40 +685,96 @@ export default function UsersSettingsPage() {
   return (
     <div className="space-y-4 sm:space-y-6 bg-white min-h-full">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-6 border-b">
-        <div>
-          <h1 className="text-lg sm:text-xl font-semibold text-slate-800">Quản lý người dùng</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Xem danh sách và tạo tài khoản cho người dùng mới
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsGlobalPermissionsDialogOpen(true)}
-            className="border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-          >
-            <Zap className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Chức năng cơ bản</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchUsers}
-            disabled={loading}
-          >
-            <RefreshCw className={`w-4 h-4 sm:mr-2 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Làm mới</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setIsCreateDialogOpen(true)}
-            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-          >
-            <UserPlus className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Tạo tài khoản</span>
-          </Button>
+      <div className="p-4 sm:p-6 border-b">
+        <h1 className="text-lg sm:text-xl font-semibold text-slate-800">Quản lý người dùng</h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          Xem danh sách người dùng trong phòng ban Shopee
+        </p>
+      </div>
+
+      {/* Filters */}
+      <div className="px-4 sm:px-6">
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          {/* Search */}
+          <div className="relative flex-1 w-full sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Tìm theo tên hoặc email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-9"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Role filter */}
+          <Select value={filterRole} onValueChange={setFilterRole}>
+            <SelectTrigger className="w-full sm:w-[160px] h-9">
+              <div className="flex items-center gap-2">
+                <Shield className="w-3.5 h-3.5 text-slate-400" />
+                <SelectValue placeholder="Vai trò" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả vai trò</SelectItem>
+              {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                <SelectItem key={key} value={key}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Leader filter */}
+          <Select value={filterLeader} onValueChange={setFilterLeader}>
+            <SelectTrigger className="w-full sm:w-[180px] h-9">
+              <div className="flex items-center gap-2">
+                <User className="w-3.5 h-3.5 text-slate-400" />
+                <SelectValue placeholder="Leader" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả leader</SelectItem>
+              {leaderOptions.map(name => (
+                <SelectItem key={name} value={name}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Shop filter */}
+          <Select value={filterShop} onValueChange={setFilterShop}>
+            <SelectTrigger className="w-full sm:w-[180px] h-9">
+              <div className="flex items-center gap-2">
+                <Store className="w-3.5 h-3.5 text-slate-400" />
+                <SelectValue placeholder="Shop" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả shop</SelectItem>
+              {shopOptions.map(([id, name]) => (
+                <SelectItem key={id} value={id}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Clear filters */}
+          {activeFilterCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="text-slate-500 hover:text-slate-700 h-9 px-3 flex-shrink-0"
+            >
+              <X className="w-3.5 h-3.5 mr-1.5" />
+              Xóa bộ lọc ({activeFilterCount})
+            </Button>
+          )}
         </div>
       </div>
 
@@ -630,17 +783,20 @@ export default function UsersSettingsPage() {
         <div className="border rounded-lg overflow-hidden">
           <SimpleDataTable
             columns={columns}
-            data={users}
+            data={filteredUsers}
             keyExtractor={(user) => user.id}
             loading={loading}
             loadingMessage="Đang tải danh sách người dùng..."
-            emptyMessage="Chưa có người dùng nào"
-            emptyDescription="Tạo tài khoản mới để bắt đầu"
+            emptyMessage={activeFilterCount > 0 ? 'Không tìm thấy người dùng phù hợp' : 'Chưa có người dùng nào'}
+            emptyDescription={activeFilterCount > 0 ? 'Thử thay đổi bộ lọc để xem kết quả khác' : 'Tạo tài khoản mới để bắt đầu'}
           />
         </div>
         {!loading && users.length > 0 && (
           <p className="text-xs sm:text-sm text-slate-500 mt-2 sm:mt-3">
-            Tổng cộng: {users.length} người dùng
+            {filteredUsers.length < users.length
+              ? `Hiển thị ${filteredUsers.length} / ${users.length} người dùng`
+              : `Tổng cộng: ${users.length} người dùng`
+            }
           </p>
         )}
       </div>
@@ -722,7 +878,7 @@ export default function UsersSettingsPage() {
               </Label>
               <Select
                 value={formData.systemRole}
-                onValueChange={(value: 'admin' | 'user') => 
+                onValueChange={(value: 'admin' | 'user') =>
                   setFormData({ ...formData, systemRole: value })
                 }
               >
@@ -772,132 +928,215 @@ export default function UsersSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Shop Assignment Dialog - Simplified (only shop selection) */}
+      {/* Permission Dialog — Shop Assignment + Per-User Feature Overrides */}
       <Dialog open={isPermissionDialogOpen} onOpenChange={setIsPermissionDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Store className="w-5 h-5 text-orange-500" />
-              Gán Shop cho người dùng
-            </DialogTitle>
-            <DialogDescription>
-              Chọn các shop mà <span className="font-medium text-slate-700">{selectedUser?.full_name || selectedUser?.email}</span> được quyền truy cập
-            </DialogDescription>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+          <DialogHeader className="pb-4 border-b">
+            <div className="flex items-center gap-3">
+              {selectedUser && (
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                  {selectedUser.full_name?.[0]?.toUpperCase() || selectedUser.email[0]?.toUpperCase() || 'U'}
+                </div>
+              )}
+              <div>
+                <DialogTitle className="text-lg">
+                  {selectedUser?.full_name || 'Chưa cập nhật'}
+                </DialogTitle>
+                <DialogDescription className="text-sm">
+                  {selectedUser?.email}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
           {loadingPermissionData ? (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="w-6 h-6 animate-spin text-slate-400" />
-              <span className="ml-2 text-slate-500">Đang tải dữ liệu...</span>
+            <div className="flex items-center justify-center py-16">
+              <RefreshCw className="w-7 h-7 animate-spin text-slate-400" />
+              <span className="ml-3 text-base text-slate-500">Đang tải dữ liệu...</span>
             </div>
           ) : (
-            <div className="space-y-4 py-4">
-              {/* Header with select all */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Store className="w-4 h-4 text-orange-500" />
-                  <h3 className="text-sm font-semibold text-slate-800">Quyền truy cập Shop</h3>
-                </div>
-                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                  <span>Chọn tất cả</span>
-                  <Checkbox
-                    checked={selectedShopIds.length === allShops.length && allShops.length > 0}
-                    onCheckedChange={toggleAllShops}
-                    disabled={allShops.length === 0}
-                  />
-                </label>
-              </div>
-
-              {/* Search shops */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  placeholder="Tìm shop theo tên hoặc ID..."
-                  value={shopSearchQuery}
-                  onChange={(e) => setShopSearchQuery(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
-
-              <ScrollArea className="h-[350px] pr-3">
-                {allShops.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                    <Store className="w-10 h-10 mb-2" />
-                    <p className="text-sm">Chưa có shop nào</p>
+            <ScrollArea className="max-h-[60vh] pr-4">
+              <div className="space-y-6 py-5">
+                {/* Section 1: User Role Info */}
+                {userAppRole && (
+                  <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
+                      <Shield className="w-5 h-5 text-orange-500" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-slate-500">Vai trò trong ứng dụng</p>
+                      <p className="text-base font-semibold text-slate-800 mt-0.5">
+                        {ROLE_LABELS[userAppRole] || userAppRole}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-400 max-w-[140px] text-right leading-tight">
+                      Xác định từ vị trí trong phòng ban
+                    </span>
                   </div>
-                ) : filteredShops.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                    <Search className="w-10 h-10 mb-2" />
-                    <p className="text-sm">Không tìm thấy shop</p>
+                )}
+
+                {!userAppRole && (
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
+                    <Shield className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                    <p className="text-sm text-amber-700">
+                      Người dùng chưa được gán vào phòng ban Shopee. Không có vai trò trong ứng dụng.
+                    </p>
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    {filteredShops.map((shop) => (
-                      <label
-                        key={shop.id}
-                        className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
-                          selectedShopIds.includes(shop.id)
-                            ? 'border-orange-300 bg-orange-50'
-                            : 'border-slate-200 hover:bg-slate-50'
-                        }`}
+                )}
+
+                {/* Section 2: Per-user feature overrides (only show for non-super_admin) */}
+                {userAppRole && userAppRole !== 'super_admin' && (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">
+                      Quản lý chức năng
+                    </h3>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {addableFeatures.map(feature => {
+                        const Icon = feature.icon;
+                        const isAdded = featureAdds.includes(feature.key);
+                        return (
+                          <label
+                            key={feature.key}
+                            className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                              isAdded
+                                ? 'border-green-300 bg-green-50 shadow-sm'
+                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <Checkbox
+                              checked={isAdded}
+                              onCheckedChange={() => toggleFeatureAdd(feature.key)}
+                              className="w-4 h-4"
+                            />
+                            <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
+                              isAdded ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'
+                            }`}>
+                              <Icon className="w-3.5 h-3.5" />
+                            </div>
+                            <span className={`text-sm font-medium ${isAdded ? 'text-green-700' : 'text-slate-600'}`}>
+                              {feature.label}
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {addableFeatures.length === 0 && (
+                        <p className="text-sm text-slate-400 py-3 col-span-2 text-center">Đã có đầy đủ chức năng</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 3: Shop Assignment */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">
+                      Quyền truy cập Shop
+                    </h3>
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                      <span>Chọn tất cả</span>
+                      <Checkbox
+                        checked={selectedShopIds.length === allShops.length && allShops.length > 0}
+                        onCheckedChange={toggleAllShops}
+                        disabled={allShops.length === 0}
+                        className="w-5 h-5"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      placeholder="Tìm shop theo tên hoặc ID..."
+                      value={shopSearchQuery}
+                      onChange={(e) => setShopSearchQuery(e.target.value)}
+                      className="pl-10 h-10"
+                    />
+                  </div>
+
+                  <div className="max-h-[240px] overflow-y-auto pr-1">
+                    {allShops.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                        <Store className="w-10 h-10 mb-2" />
+                        <p className="text-sm">Chưa có shop nào</p>
+                      </div>
+                    ) : filteredShops.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                        <Search className="w-10 h-10 mb-2" />
+                        <p className="text-sm">Không tìm thấy shop</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {filteredShops.map((shop) => (
+                          <label
+                            key={shop.id}
+                            className={`flex items-center gap-3 px-3 py-3 rounded-xl border cursor-pointer transition-colors ${
+                              selectedShopIds.includes(shop.id)
+                                ? 'border-orange-300 bg-orange-50 shadow-sm'
+                                : 'border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <Checkbox
+                              checked={selectedShopIds.includes(shop.id)}
+                              onCheckedChange={() => toggleShopSelection(shop.id)}
+                              className="w-5 h-5"
+                            />
+                            {shop.shop_logo ? (
+                              <img
+                                src={shop.shop_logo}
+                                alt={shop.shop_name || ''}
+                                className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                                {shop.shop_name?.[0]?.toUpperCase() || 'S'}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-700 truncate">
+                                {shop.shop_name || `Shop ${shop.shop_id}`}
+                              </p>
+                              <p className="text-xs text-slate-500">ID: {shop.shop_id}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-orange-50 rounded-xl flex items-center justify-between">
+                    <p className="text-sm text-orange-700">
+                      Đã chọn <strong>{selectedShopIds.length}</strong> / {allShops.length} shop
+                    </p>
+                    {selectedShopIds.length > 0 && (
+                      <button
+                        type="button"
+                        className="text-sm text-orange-600 hover:text-orange-800 cursor-pointer font-medium"
+                        onClick={() => setSelectedShopIds([])}
                       >
-                        <Checkbox
-                          checked={selectedShopIds.includes(shop.id)}
-                          onCheckedChange={() => toggleShopSelection(shop.id)}
-                        />
-                        {shop.shop_logo ? (
-                          <img
-                            src={shop.shop_logo}
-                            alt={shop.shop_name || ''}
-                            className="w-9 h-9 rounded-lg object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                            {shop.shop_name?.[0]?.toUpperCase() || 'S'}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-700 truncate">
-                            {shop.shop_name || `Shop ${shop.shop_id}`}
-                          </p>
-                          <p className="text-xs text-slate-500">ID: {shop.shop_id}</p>
-                        </div>
-                      </label>
-                    ))}
+                        Bỏ chọn tất cả
+                      </button>
+                    )}
                   </div>
-                )}
-              </ScrollArea>
-
-              {/* Shop count info */}
-              <div className="p-2.5 bg-orange-50 rounded-lg flex items-center justify-between">
-                <p className="text-xs text-orange-700">
-                  Đã chọn <strong>{selectedShopIds.length}</strong> / {allShops.length} shop
-                </p>
-                {selectedShopIds.length > 0 && (
-                  <button
-                    type="button"
-                    className="text-xs text-orange-600 hover:text-orange-800 cursor-pointer"
-                    onClick={() => setSelectedShopIds([])}
-                  >
-                    Bỏ chọn tất cả
-                  </button>
-                )}
+                </div>
               </div>
-            </div>
+            </ScrollArea>
           )}
 
-          <DialogFooter className="border-t pt-4">
+          <DialogFooter className="border-t pt-5 gap-3">
             <Button
               variant="outline"
+              size="lg"
               onClick={() => setIsPermissionDialogOpen(false)}
               disabled={savingPermissions}
             >
               Hủy
             </Button>
             <Button
+              size="lg"
               onClick={handleSavePermissions}
               disabled={savingPermissions || loadingPermissionData}
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 px-8"
             >
               {savingPermissions ? (
                 <>
@@ -906,121 +1145,12 @@ export default function UsersSettingsPage() {
                 </>
               ) : (
                 <>
-                  <Check className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 mr-2" />
                   Lưu
                 </>
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Global Permissions Dialog - Compact Design */}
-      <Dialog open={isGlobalPermissionsDialogOpen} onOpenChange={setIsGlobalPermissionsDialogOpen}>
-        <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
-          {/* Header */}
-          <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-slate-800 text-sm">Chức năng cơ bản</h3>
-                <p className="text-xs text-slate-500">Áp dụng cho tất cả người dùng</p>
-              </div>
-            </div>
-          </div>
-
-          {loadingGlobalPermissions ? (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="w-5 h-5 animate-spin text-blue-500" />
-            </div>
-          ) : (
-            <>
-              {/* Select all row */}
-              <div className="px-5 py-2.5 border-b bg-slate-50/50 flex items-center justify-between">
-                <span className="text-xs text-slate-500">
-                  Đã chọn <span className="font-semibold text-blue-600">{globalPermissions.length}</span> / {getAllAssignablePermissionKeys().length} chức năng
-                </span>
-                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer hover:text-blue-600 transition-colors">
-                  <span>Chọn tất cả</span>
-                  <Checkbox
-                    checked={globalPermissions.length === getAllAssignablePermissionKeys().length}
-                    onCheckedChange={toggleAllGlobalPermissions}
-                    className="w-4 h-4"
-                  />
-                </label>
-              </div>
-
-              {/* Features grid */}
-              <div className="px-4 py-3 max-h-[320px] overflow-y-auto">
-                <div className="grid grid-cols-2 gap-2">
-                  {[...ASSIGNABLE_PERMISSIONS.filter(f => !f.group), ...ASSIGNABLE_PERMISSIONS.filter(f => f.group === 'Cài đặt')].map((feature) => {
-                    const Icon = feature.icon;
-                    const isEnabled = globalPermissions.includes(feature.key);
-                    return (
-                      <label
-                        key={feature.key}
-                        className={`group flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
-                          isEnabled
-                            ? 'border-blue-200 bg-blue-50/80 shadow-sm'
-                            : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/50'
-                        }`}
-                      >
-                        <Checkbox
-                          checked={isEnabled}
-                          onCheckedChange={() => toggleGlobalPermission(feature.key)}
-                          className="w-4 h-4 flex-shrink-0"
-                        />
-                        <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 transition-colors ${
-                          isEnabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
-                        }`}>
-                          <Icon className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-xs font-medium truncate ${isEnabled ? 'text-blue-700' : 'text-slate-600'}`}>
-                            {feature.label}
-                          </p>
-                          <p className="text-[10px] text-slate-400 truncate leading-tight">{feature.description}</p>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Footer */}
-          <div className="px-5 py-3 border-t bg-slate-50/50 flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsGlobalPermissionsDialogOpen(false)}
-              disabled={savingGlobalPermissions}
-              className="h-8 px-3 text-xs"
-            >
-              Hủy
-            </Button>
-            <Button
-              size="sm"
-              onClick={async () => {
-                await handleSaveGlobalPermissions();
-                setIsGlobalPermissionsDialogOpen(false);
-              }}
-              disabled={savingGlobalPermissions || loadingGlobalPermissions}
-              className="h-8 px-4 text-xs bg-blue-600 hover:bg-blue-700"
-            >
-              {savingGlobalPermissions ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <>
-                  <Save className="w-3.5 h-3.5 mr-1.5" />
-                  Lưu cấu hình
-                </>
-              )}
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
     </div>

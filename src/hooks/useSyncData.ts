@@ -192,7 +192,44 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
           syncedIds.push(...batch.map(s => s.flash_sale_id));
         }
 
-        // Không cleanup vì chỉ fetch 50 gần nhất, không phải toàn bộ
+        // Cleanup: xóa các Flash Sale đã bị xóa trên Shopee (status 0)
+        // và các record local không còn trong danh sách Shopee trả về (upcoming/ongoing)
+        if (syncedIds.length > 0) {
+          // 1. Xóa records có status = 0 (deleted on Shopee)
+          await supabase
+            .from('apishopee_flash_sale_data')
+            .delete()
+            .eq('shop_id', shopId)
+            .eq('status', 0);
+
+          // 2. Xóa upcoming/ongoing records không còn trong API response
+          // (chỉ cleanup upcoming type=1 vì có thể bị xóa bởi user)
+          const syncedUpcomingIds = allFlashSales
+            .filter(s => s.type === 1)
+            .map(s => s.flash_sale_id);
+
+          // Lấy tất cả upcoming records hiện tại trong DB
+          const { data: localUpcoming } = await supabase
+            .from('apishopee_flash_sale_data')
+            .select('id, flash_sale_id')
+            .eq('shop_id', shopId)
+            .eq('type', 1);
+
+          if (localUpcoming && localUpcoming.length > 0) {
+            const syncedSet = new Set(syncedUpcomingIds);
+            const toDelete = localUpcoming
+              .filter(r => !syncedSet.has(r.flash_sale_id))
+              .map(r => r.id);
+
+            if (toDelete.length > 0) {
+              await supabase
+                .from('apishopee_flash_sale_data')
+                .delete()
+                .in('id', toDelete);
+              console.log(`[useSyncData] Cleaned up ${toDelete.length} stale upcoming records`);
+            }
+          }
+        }
       }
 
       // Update sync status

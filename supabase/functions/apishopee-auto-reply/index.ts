@@ -13,7 +13,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 import { logActivity, getShopInfo, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
-import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -189,7 +189,10 @@ async function callShopeeReplyAPI(
   credentials: PartnerCredentials,
   shopId: number,
   token: { access_token: string; refresh_token: string },
-  commentList: ReplyCommentRequest[]
+  commentList: ReplyCommentRequest[],
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<ReplyCommentResponse> {
   const makeRequest = async (accessToken: string) => {
     const timestamp = Math.floor(Date.now() / 1000);
@@ -213,52 +216,78 @@ async function callShopeeReplyAPI(
     const url = `${SHOPEE_BASE_URL}${REPLY_API_PATH}?${params.toString()}`;
     console.log('[AUTO-REPLY] Calling reply API with', commentList.length, 'comments');
 
-    const response = await fetchWithProxy(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment_list: commentList }),
-    });
-
-    return await response.json();
+    try {
+      const response = await fetchWithProxy(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment_list: commentList }),
+      });
+      return await response.json();
+    } catch (fetchError) {
+      const err = fetchError as Error;
+      return { error: 'network_error', message: err.message || 'Network request failed' };
+    }
   };
 
   const startTime = Date.now();
   let wasTokenRefreshed = false;
   let retryCount = 0;
-  let result = await makeRequest(token.access_token);
 
-  // Auto-retry khi token hết hạn
-  if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
-    console.log('[AUTO-REPLY] Token expired, refreshing...');
-    const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+  const logCall = (status: 'success' | 'failed' | 'timeout', duration: number, opts?: {
+    shopeeError?: string; shopeeMessage?: string; responseSummary?: Record<string, unknown>;
+  }) => {
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'apishopee-auto-reply',
+      apiEndpoint: REPLY_API_PATH,
+      httpMethod: 'POST',
+      apiCategory: 'review',
+      status,
+      shopeeError: opts?.shopeeError,
+      shopeeMessage: opts?.shopeeMessage,
+      durationMs: duration,
+      responseSummary: opts?.responseSummary,
+      retryCount,
+      wasTokenRefreshed,
+      requestParams: { comment_count: commentList.length },
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+  };
 
-    if (!newToken.error) {
-      await saveToken(supabase, shopId, newToken);
-      wasTokenRefreshed = true;
-      retryCount = 1;
-      result = await makeRequest(newToken.access_token);
+  try {
+    let result = await makeRequest(token.access_token);
+
+    // Auto-retry khi token hết hạn
+    if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
+      console.log('[AUTO-REPLY] Token expired, refreshing...');
+      const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+
+      if (!newToken.error) {
+        await saveToken(supabase, shopId, newToken);
+        wasTokenRefreshed = true;
+        retryCount = 1;
+        result = await makeRequest(newToken.access_token);
+      }
     }
+
+    // Log API call (non-blocking)
+    const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+    logCall(apiStatus.status, Date.now() - startTime, {
+      shopeeError: apiStatus.shopeeError,
+      shopeeMessage: apiStatus.shopeeMessage,
+      responseSummary: createResponseSummary(result as Record<string, unknown>),
+    });
+
+    return result;
+  } catch (err) {
+    logCall('failed', Date.now() - startTime, {
+      shopeeError: 'edge_function_error',
+      shopeeMessage: (err as Error).message || 'Unexpected error in callShopeeReplyAPI',
+    });
+    throw err;
   }
-
-  // Log API call (non-blocking)
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
-  logApiCall(supabase, {
-    shopId,
-    edgeFunction: 'apishopee-auto-reply',
-    apiEndpoint: REPLY_API_PATH,
-    httpMethod: 'POST',
-    apiCategory: 'review',
-    status: apiStatus.status,
-    shopeeError: apiStatus.shopeeError,
-    shopeeMessage: apiStatus.shopeeMessage,
-    durationMs: Date.now() - startTime,
-    responseSummary: createResponseSummary(result as Record<string, unknown>),
-    retryCount,
-    wasTokenRefreshed,
-    requestParams: { comment_count: commentList.length },
-  });
-
-  return result;
 }
 
 // ==================== AUTO REPLY FUNCTIONS ====================
@@ -399,7 +428,10 @@ async function processAutoReply(
   supabase: ReturnType<typeof createClient>,
   credentials: PartnerCredentials,
   shopId: number,
-  token: { access_token: string; refresh_token: string }
+  token: { access_token: string; refresh_token: string },
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{
   success: boolean;
   replied: number;
@@ -483,7 +515,10 @@ async function processAutoReply(
       credentials,
       shopId,
       token,
-      replyRequests
+      replyRequests,
+      callerUserId,
+      callerUserEmail,
+      triggeredBy
     );
 
     // 5. Process results
@@ -603,6 +638,10 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'cron');
+
     let result;
 
     switch (action) {
@@ -619,7 +658,7 @@ serve(async (req) => {
         const credentials = await getPartnerCredentials(supabase, shop_id);
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
 
-        const processResult = await processAutoReply(supabase, credentials, shop_id, token);
+        const processResult = await processAutoReply(supabase, credentials, shop_id, token, callerUserId, callerUserEmail, triggeredBy);
 
         const durationMs = Date.now() - startTime;
 

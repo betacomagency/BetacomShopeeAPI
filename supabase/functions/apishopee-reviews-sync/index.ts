@@ -10,7 +10,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
-import { logApiCall, getApiCallStatus, createResponseSummary } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -186,7 +186,10 @@ async function callShopeeAPI(
   path: string,
   shopId: number,
   token: { access_token: string; refresh_token: string },
-  extraParams?: Record<string, string | number>
+  extraParams?: Record<string, string | number>,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
@@ -215,47 +218,72 @@ async function callShopeeAPI(
     const url = `${SHOPEE_BASE_URL}${path}?${params.toString()}`;
     console.log('[REVIEWS-SYNC] Calling:', path);
 
-    const response = await fetchWithProxy(url, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    return await response.json();
+    try {
+      const response = await fetchWithProxy(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return await response.json();
+    } catch (fetchError) {
+      const err = fetchError as Error;
+      return { error: 'network_error', message: err.message || 'Network request failed' };
+    }
   };
 
-  let result = await makeRequest(token.access_token);
+  const logCall = (status: 'success' | 'failed' | 'timeout', duration: number, opts?: {
+    shopeeError?: string; shopeeMessage?: string; responseSummary?: Record<string, unknown>;
+  }) => {
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'apishopee-reviews-sync',
+      apiEndpoint: path,
+      httpMethod: 'GET',
+      apiCategory: 'review',
+      status,
+      shopeeError: opts?.shopeeError,
+      shopeeMessage: opts?.shopeeMessage,
+      durationMs: duration,
+      responseSummary: opts?.responseSummary,
+      retryCount,
+      wasTokenRefreshed,
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+  };
 
-  // Auto-retry khi token hết hạn
-  if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
-    console.log('[REVIEWS-SYNC] Token expired, refreshing...');
-    const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+  try {
+    let result = await makeRequest(token.access_token);
 
-    if (!newToken.error) {
-      await saveToken(supabase, shopId, newToken);
-      wasTokenRefreshed = true;
-      retryCount = 1;
-      result = await makeRequest(newToken.access_token);
+    // Auto-retry khi token hết hạn
+    if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
+      console.log('[REVIEWS-SYNC] Token expired, refreshing...');
+      const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+
+      if (!newToken.error) {
+        await saveToken(supabase, shopId, newToken);
+        wasTokenRefreshed = true;
+        retryCount = 1;
+        result = await makeRequest(newToken.access_token);
+      }
     }
+
+    // Log API call (non-blocking)
+    const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+    logCall(apiStatus.status, Date.now() - startTime, {
+      shopeeError: apiStatus.shopeeError,
+      shopeeMessage: apiStatus.shopeeMessage,
+      responseSummary: createResponseSummary(result as Record<string, unknown>),
+    });
+
+    return result;
+  } catch (err) {
+    logCall('failed', Date.now() - startTime, {
+      shopeeError: 'edge_function_error',
+      shopeeMessage: (err as Error).message || 'Unexpected error in callShopeeAPI',
+    });
+    throw err;
   }
-
-  // Log API call (non-blocking)
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
-  logApiCall(supabase, {
-    shopId,
-    edgeFunction: 'apishopee-reviews-sync',
-    apiEndpoint: path,
-    httpMethod: 'GET',
-    apiCategory: 'review',
-    status: apiStatus.status,
-    shopeeError: apiStatus.shopeeError,
-    shopeeMessage: apiStatus.shopeeMessage,
-    durationMs: Date.now() - startTime,
-    responseSummary: createResponseSummary(result as Record<string, unknown>),
-    retryCount,
-    wasTokenRefreshed,
-  });
-
-  return result;
 }
 
 // ==================== SYNC STATUS FUNCTIONS ====================
@@ -313,7 +341,10 @@ async function fetchCommentPageByType(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   commentType: number,
-  cursor: string = ''
+  cursor: string = '',
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ comments: ShopeeComment[]; nextCursor: string; more: boolean }> {
   const params: Record<string, string | number> = {
     page_size: PAGE_SIZE,
@@ -321,7 +352,7 @@ async function fetchCommentPageByType(
   };
   if (cursor) params.cursor = cursor;
 
-  const result = await callShopeeAPI(supabase, credentials, COMMENT_API_PATH, shopId, token, params) as CommentApiResponse;
+  const result = await callShopeeAPI(supabase, credentials, COMMENT_API_PATH, shopId, token, params, callerUserId, callerUserEmail, triggeredBy) as CommentApiResponse;
 
   // Kiểm tra kết quả trả về
   if (!result) {
@@ -362,10 +393,13 @@ async function fetchCommentPage(
   credentials: PartnerCredentials,
   shopId: number,
   token: { access_token: string; refresh_token: string },
-  cursor: string = ''
+  cursor: string = '',
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ comments: ShopeeComment[]; nextCursor: string; more: boolean }> {
   // comment_type: 0 = All comments
-  return fetchCommentPageByType(supabase, credentials, shopId, token, 0, cursor);
+  return fetchCommentPageByType(supabase, credentials, shopId, token, 0, cursor, callerUserId, callerUserEmail, triggeredBy);
 }
 
 /**
@@ -375,7 +409,10 @@ async function fetchAllRepliedComments(
   supabase: ReturnType<typeof createClient>,
   credentials: PartnerCredentials,
   shopId: number,
-  token: { access_token: string; refresh_token: string }
+  token: { access_token: string; refresh_token: string },
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<Map<number, ShopeeComment>> {
   console.log('[REVIEWS-SYNC] Fetching replied comments...');
 
@@ -389,7 +426,7 @@ async function fetchAllRepliedComments(
     while (more && pageCount < MAX_PAGES) {
       // comment_type: 2 = With reply
       const { comments, nextCursor, more: hasMore } = await fetchCommentPageByType(
-        supabase, credentials, shopId, token, 2, cursor
+        supabase, credentials, shopId, token, 2, cursor, callerUserId, callerUserEmail, triggeredBy
       );
 
       console.log(`[REVIEWS-SYNC] Fetched ${comments.length} replied comments (page ${pageCount + 1})`);
@@ -538,7 +575,10 @@ async function initialLoadReviews(
   credentials: PartnerCredentials,
   shopId: number,
   token: { access_token: string; refresh_token: string },
-  userId?: string
+  userId?: string,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ success: boolean; total_synced: number; error?: string }> {
   console.log('[REVIEWS-SYNC] Starting Initial Load for shop:', shopId);
 
@@ -554,7 +594,7 @@ async function initialLoadReviews(
     });
 
     // Step 1: Fetch tất cả replied comments trước để có map reply
-    const repliedMap = await fetchAllRepliedComments(supabase, credentials, shopId, token);
+    const repliedMap = await fetchAllRepliedComments(supabase, credentials, shopId, token, callerUserId, callerUserEmail, triggeredBy);
 
     // Step 2: Fetch tất cả comments và merge với replied data
     let pageCount = 0;
@@ -562,7 +602,7 @@ async function initialLoadReviews(
 
     while (more && pageCount < MAX_PAGES) {
       const { comments, nextCursor, more: hasMore } = await fetchCommentPage(
-        supabase, credentials, shopId, token, cursor
+        supabase, credentials, shopId, token, cursor, callerUserId, callerUserEmail, triggeredBy
       );
 
       console.log(`[REVIEWS-SYNC] Fetched ${comments.length} comments, more: ${hasMore} (page ${pageCount + 1})`);
@@ -652,7 +692,10 @@ async function periodicSyncReviews(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   lastSyncCreateTime: number,
-  userId?: string
+  userId?: string,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ success: boolean; new_reviews: number; updated_reviews: number; error?: string }> {
   console.log('[REVIEWS-SYNC] Starting Periodic Sync for shop:', shopId);
 
@@ -674,11 +717,11 @@ async function periodicSyncReviews(
     });
 
     // Fetch replied comments để có reply data mới nhất
-    const repliedMap = await fetchAllRepliedComments(supabase, credentials, shopId, token);
+    const repliedMap = await fetchAllRepliedComments(supabase, credentials, shopId, token, callerUserId, callerUserEmail, triggeredBy);
 
     while (more && !shouldStop) {
       const { comments, nextCursor, more: hasMore } = await fetchCommentPage(
-        supabase, credentials, shopId, token, cursor
+        supabase, credentials, shopId, token, cursor, callerUserId, callerUserEmail, triggeredBy
       );
 
       console.log(`[REVIEWS-SYNC] Fetched ${comments.length} comments`);
@@ -783,7 +826,10 @@ async function syncReviews(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   userId?: string,
-  forceInitial = false
+  forceInitial = false,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{
   success: boolean;
   mode: 'initial' | 'periodic';
@@ -809,7 +855,7 @@ async function syncReviews(
 
   if (shouldDoInitialLoad) {
     // A. Initial Load
-    const result = await initialLoadReviews(supabase, credentials, shopId, token, userId);
+    const result = await initialLoadReviews(supabase, credentials, shopId, token, userId, callerUserId, callerUserEmail, triggeredBy);
     return {
       success: result.success,
       mode: 'initial',
@@ -819,7 +865,7 @@ async function syncReviews(
   } else {
     // B. Periodic Sync
     const lastSyncCreateTime = syncStatus?.last_sync_create_time || Math.floor(Date.now() / 1000);
-    const result = await periodicSyncReviews(supabase, credentials, shopId, token, lastSyncCreateTime, userId);
+    const result = await periodicSyncReviews(supabase, credentials, shopId, token, lastSyncCreateTime, userId, callerUserId, callerUserEmail, triggeredBy);
     return {
       success: result.success,
       mode: 'periodic',
@@ -850,6 +896,10 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'cron');
+
     let result;
 
     switch (action) {
@@ -857,7 +907,7 @@ serve(async (req) => {
         // Sync reviews (auto-detect initial vs periodic)
         const credentials = await getPartnerCredentials(supabase, shop_id);
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
-        result = await syncReviews(supabase, credentials, shop_id, token, user_id, force_initial === true);
+        result = await syncReviews(supabase, credentials, shop_id, token, user_id, force_initial === true, callerUserId, callerUserEmail, triggeredBy);
         break;
       }
 
@@ -944,12 +994,15 @@ serve(async (req) => {
         if (cursor) params.cursor = cursor;
 
         const apiResult = await callShopeeAPI(
-          supabase, 
-          credentials, 
-          COMMENT_API_PATH, 
-          shop_id, 
-          token, 
-          params
+          supabase,
+          credentials,
+          COMMENT_API_PATH,
+          shop_id,
+          token,
+          params,
+          callerUserId,
+          callerUserEmail,
+          triggeredBy
         ) as CommentApiResponse;
 
         result = {

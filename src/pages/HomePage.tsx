@@ -22,7 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { useDashboardData } from '@/hooks/useDashboardData';
-import { ADMIN_EMAIL } from '@/config/menu-config';
+import { usePermissionsContext } from '@/contexts/PermissionsContext';
 
 // Platform icons
 const ShopeeIcon = () => (
@@ -78,12 +78,8 @@ function CardSkeleton({ lines = 3 }: { lines?: number }) {
 // --- Token Alerts (admin) ---
 
 function TokenAlerts() {
-  const { user, profile } = useAuth();
   const { shops: shopeeShops } = useShopeeAuth();
-
-  const isAdmin =
-    user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() ||
-    profile?.system_role === 'admin';
+  const { isAdmin } = usePermissionsContext();
 
   if (!isAdmin) return null;
   if (!shopeeShops.length) return null;

@@ -33,11 +33,18 @@ export {
 export {
   createTokenStorage,
   createAutoStorage,
+  createSecureStorage,
+  setStorageType,
+  setStorageOptions,
+  getStorageType,
+  getStorageOptions,
   LocalStorageTokenStorage,
   MemoryTokenStorage,
   IndexedDBTokenStorage,
+  EncryptedStorageTokenStorage,
+  SupabaseTokenStorage,
 } from './storage';
-export type { TokenStorage } from './storage';
+export type { TokenStorage, StorageType, StorageOptions } from './storage';
 
 // Flash Sale Client - Removed (not used)
 
@@ -46,4 +53,3 @@ export type {
   AccessToken,
   RefreshedAccessToken,
 } from './types';
-

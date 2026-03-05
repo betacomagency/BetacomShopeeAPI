@@ -1,6 +1,6 @@
 /**
  * All Shops Panel - Hiển thị tất cả shop trong hệ thống
- * Chỉ admin (betacom.work@gmail.com) mới có quyền sử dụng
+ * Chỉ admin mới có quyền sử dụng
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
+import { usePermissionsContext } from '@/contexts/PermissionsContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
@@ -36,7 +37,6 @@ import { Users, Trash2, Store, RefreshCw } from 'lucide-react';
 import { getAllShopsByPartner } from '@/lib/shopee/supabase-client';
 import type { AuthedShop } from '@/lib/shopee/types';
 
-const ADMIN_EMAIL = 'betacom.work@gmail.com';
 
 interface Shop {
   id: string;
@@ -93,7 +93,7 @@ export function AllShopsPanel() {
   const [reconnectingShop, setReconnectingShop] = useState<number | null>(null);
   const hasLoadedRef = useRef(false);
 
-  const isSystemAdmin = authUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const { isAdmin: isSystemAdmin } = usePermissionsContext();
 
   const navigate = useNavigate();
 
@@ -240,21 +240,24 @@ export function AllShopsPanel() {
 
     setDeleting(true);
     try {
+      // Delete dependent records first, then the shop
+      await supabase
+        .from('apishopee_shop_members')
+        .delete()
+        .eq('shop_id', shopToDelete.id);
+
+      await supabase
+        .from('apishopee_token_refresh_logs')
+        .delete()
+        .eq('shop_id', shopToDelete.id);
+
+      // Delete the shop (cascade also handles remaining refs)
       const { error: shopError } = await supabase
         .from('apishopee_shops')
         .delete()
         .eq('id', shopToDelete.id);
 
       if (shopError) throw shopError;
-
-      const { error: membersError } = await supabase
-        .from('apishopee_shop_members')
-        .delete()
-        .eq('shop_id', shopToDelete.id);
-
-      if (membersError) {
-        console.warn('Failed to delete shop members:', membersError);
-      }
 
       setShops(prev => prev.filter(s => s.id !== shopToDelete.id));
       setDeleteDialogOpen(false);
@@ -593,7 +596,7 @@ export function AllShopsPanel() {
       render: (shop: Shop) => (
         <div
           className="cursor-pointer"
-          onClick={() => navigate(`/settings/shops/${shop.shop_id}`)}
+          onClick={() => navigate(`/admin/shops/${shop.shop_id}`)}
           title="Xem chi tiết shop"
         >
           <CellShopInfo

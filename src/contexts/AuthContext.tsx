@@ -18,7 +18,6 @@ interface Profile {
   join_date: string | null;
   created_at: string;
   updated_at: string;
-  role_display_name?: string;
 }
 
 interface AuthContextType {
@@ -58,10 +57,7 @@ async function getUserProfile(userId: string): Promise<Profile | null> {
           .single();
         
         if (!retryError && retryData) {
-          return {
-            ...retryData,
-            role_display_name: retryData.system_role === 'admin' ? 'Admin' : 'User',
-          };
+          return retryData;
         }
       }
       return null;
@@ -82,19 +78,13 @@ async function getUserProfile(userId: string): Promise<Profile | null> {
 
       if (insertError) return null;
 
-      return {
-        ...newProfile,
-        role_display_name: 'User',
-      };
+      return newProfile;
     }
 
     return null;
   }
 
-  return {
-    ...profileData,
-    role_display_name: profileData.system_role === 'admin' ? 'Admin' : 'User',
-  };
+  return profileData;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

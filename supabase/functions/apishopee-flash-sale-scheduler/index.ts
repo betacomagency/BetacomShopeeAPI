@@ -13,7 +13,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
-import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -162,10 +162,35 @@ async function callShopeeAPI(
   shopId: number,
   token: { access_token: string; refresh_token: string },
   body?: Record<string, unknown>,
-  extraParams?: Record<string, string | number | boolean>
+  extraParams?: Record<string, string | number | boolean>,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
+
+  const logCall = (status: 'success' | 'failed' | 'timeout', duration: number, opts?: {
+    shopeeError?: string; shopeeMessage?: string; responseSummary?: Record<string, unknown>;
+    tokenRefreshed?: boolean;
+  }) => {
+    logApiCall(supabase, {
+      shopId,
+      edgeFunction: 'apishopee-flash-sale-scheduler',
+      apiEndpoint: path,
+      httpMethod: method,
+      apiCategory: 'flash_sale',
+      status,
+      shopeeError: opts?.shopeeError,
+      shopeeMessage: opts?.shopeeMessage,
+      durationMs: duration,
+      responseSummary: opts?.responseSummary,
+      wasTokenRefreshed: opts?.tokenRefreshed ?? wasTokenRefreshed,
+      userId: callerUserId,
+      userEmail: callerUserEmail,
+      triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+    });
+  };
 
   const makeRequest = async (accessToken: string) => {
     const timestamp = Math.floor(Date.now() / 1000);
@@ -196,38 +221,62 @@ async function callShopeeAPI(
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetchWithProxy(url, options);
-    return await response.json();
+    try {
+      const response = await fetchWithProxy(url, options);
+      return await response.json();
+    } catch (fetchError) {
+      const err = fetchError as Error;
+      return { error: 'network_error', message: err.message || 'Network request failed' };
+    }
   };
 
-  let result = await makeRequest(token.access_token);
+  try {
+    let result = await makeRequest(token.access_token);
 
-  if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
-    console.log('[SCHEDULER] Token invalid, refreshing...');
-    const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
-    if (!newToken.error) {
-      await saveToken(supabase, shopId, newToken);
-      wasTokenRefreshed = true;
-      result = await makeRequest(newToken.access_token);
+    if (result.error === 'error_auth' || result.message?.includes('Invalid access_token')) {
+      const firstCallStatus = getApiCallStatus(result as Record<string, unknown>);
+      logCall(firstCallStatus.status, Date.now() - startTime, {
+        shopeeError: firstCallStatus.shopeeError,
+        shopeeMessage: firstCallStatus.shopeeMessage,
+        responseSummary: createResponseSummary(result as Record<string, unknown>),
+      });
+
+      console.log('[SCHEDULER] Token invalid, refreshing...');
+      const retryStartTime = Date.now();
+      const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
+      if (!newToken.error) {
+        await saveToken(supabase, shopId, newToken);
+        wasTokenRefreshed = true;
+        result = await makeRequest(newToken.access_token);
+      }
+
+      const retryStatus = getApiCallStatus(result as Record<string, unknown>);
+      logCall(retryStatus.status, Date.now() - retryStartTime, {
+        shopeeError: retryStatus.shopeeError,
+        shopeeMessage: retryStatus.shopeeMessage,
+        responseSummary: createResponseSummary(result as Record<string, unknown>),
+        tokenRefreshed: true,
+      });
+
+      return result;
     }
+
+    // Log API call
+    const apiStatus = getApiCallStatus(result as Record<string, unknown>);
+    logCall(apiStatus.status, Date.now() - startTime, {
+      shopeeError: apiStatus.shopeeError,
+      shopeeMessage: apiStatus.shopeeMessage,
+      responseSummary: createResponseSummary(result as Record<string, unknown>),
+    });
+
+    return result;
+  } catch (err) {
+    logCall('failed', Date.now() - startTime, {
+      shopeeError: 'edge_function_error',
+      shopeeMessage: (err as Error).message || 'Unexpected error in callShopeeAPI',
+    });
+    throw err;
   }
-
-  // Log API call
-  const apiStatus = getApiCallStatus(result as Record<string, unknown>);
-  logApiCall(supabase, {
-    shopId,
-    edgeFunction: 'apishopee-flash-sale-scheduler',
-    apiEndpoint: path,
-    httpMethod: method,
-    apiCategory: 'flash_sale',
-    status: apiStatus.status,
-    shopeeError: apiStatus.shopeeError,
-    shopeeMessage: apiStatus.shopeeMessage,
-    durationMs: Date.now() - startTime,
-    wasTokenRefreshed,
-  });
-
-  return result;
 }
 
 // ==================== MAIN LOGIC ====================
@@ -240,7 +289,10 @@ async function checkTimeslotHasFlashSale(
   credentials: PartnerCredentials,
   shopId: number,
   token: { access_token: string; refresh_token: string },
-  timeslotId: number
+  timeslotId: number,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ exists: boolean; flashSaleId?: number }> {
   // Lấy danh sách Flash Sale sắp tới (type=1) và đang chạy (type=2)
   const result = await callShopeeAPI(
@@ -251,7 +303,10 @@ async function checkTimeslotHasFlashSale(
     shopId,
     token,
     undefined,
-    { type: 0, offset: 0, limit: 100 } // type=0 lấy tất cả
+    { type: 0, offset: 0, limit: 100 }, // type=0 lấy tất cả
+    callerUserId,
+    callerUserEmail,
+    triggeredBy
   ) as { response?: { flash_sale_list?: Array<{ timeslot_id: number; flash_sale_id: number; type: number }> } };
 
   const flashSaleList = result?.response?.flash_sale_list || [];
@@ -346,17 +401,21 @@ async function getTemplateItems(
   supabase: ReturnType<typeof createClient>,
   credentials: PartnerCredentials,
   shopId: number,
-  token: { access_token: string; refresh_token: string }
+  token: { access_token: string; refresh_token: string },
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<Array<Record<string, unknown>>> {
-  // Lấy nhiều Flash Sale candidates từ DB - ưu tiên đang chạy/sắp tới, rồi đến đã kết thúc
+  // Lấy Flash Sale candidates từ DB - CHỈ upcoming (type=1) và đang chạy (type=2), bỏ qua đã kết thúc (type=3)
   const { data: fsCandidates } = await supabase
     .from('apishopee_flash_sale_data')
     .select('flash_sale_id, type, item_count')
     .eq('shop_id', shopId)
     .gt('item_count', 0)
-    .order('type', { ascending: true }) // type 1 (upcoming) trước, rồi 2 (running), rồi 3 (ended)
+    .in('type', [1, 2]) // Chỉ upcoming + running, KHÔNG lấy type=3 (ended) vì Shopee đã xóa
+    .order('type', { ascending: true }) // type 1 (upcoming) trước, rồi 2 (running)
     .order('start_time', { ascending: false })
-    .limit(10);
+    .limit(5);
 
   const candidates = fsCandidates || [];
 
@@ -376,8 +435,17 @@ async function getTemplateItems(
       shopId,
       token,
       undefined,
-      { flash_sale_id: fs.flash_sale_id, offset: 0, limit: 100 }
+      { flash_sale_id: fs.flash_sale_id, offset: 0, limit: 100 },
+      callerUserId,
+      callerUserEmail,
+      triggeredBy
     ) as { response?: { item_info?: FlashSaleItem[]; models?: FlashSaleModel[] }; error?: string; message?: string };
+
+    // Thoát sớm nếu Shopee trả lỗi not_exist hoặc not_enabled → không cần thử tiếp
+    if (result.error === 'shop_flash_sale_not_exist' || result.error === 'shop_flash_sale_is_not_enabled_or_upcoming') {
+      console.log(`[SCHEDULER] FS ${fs.flash_sale_id} no longer exists on Shopee (${result.error}), skipping remaining candidates`);
+      break;
+    }
 
     const items = parseFlashSaleItems(result);
 
@@ -433,7 +501,10 @@ async function getItemsFromSuccessfulHistory(
  */
 async function processJob(
   supabase: ReturnType<typeof createClient>,
-  job: ScheduledJob
+  job: ScheduledJob,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<{ success: boolean; message: string; flashSaleId?: number }> {
   console.log(`[SCHEDULER] Processing job ${job.id} for shop ${job.shop_id}, timeslot ${job.timeslot_id}`);
 
@@ -469,7 +540,7 @@ async function processJob(
 
     // 1. Kiểm tra xem timeslot đã có Flash Sale chưa
     const { exists, flashSaleId: existingFsId } = await checkTimeslotHasFlashSale(
-      supabase, credentials, job.shop_id, token, job.timeslot_id
+      supabase, credentials, job.shop_id, token, job.timeslot_id, callerUserId, callerUserEmail, triggeredBy
     );
 
     if (exists) {
@@ -492,7 +563,7 @@ async function processJob(
     }
 
     // 2. Lấy template items
-    const itemsToAdd = await getTemplateItems(supabase, credentials, job.shop_id, token);
+    const itemsToAdd = await getTemplateItems(supabase, credentials, job.shop_id, token, callerUserId, callerUserEmail, triggeredBy);
     
     if (itemsToAdd.length === 0) {
       const errorMsg = 'Không có sản phẩm mẫu để thêm vào Flash Sale';
@@ -517,7 +588,11 @@ async function processJob(
       'POST',
       job.shop_id,
       token,
-      { timeslot_id: job.timeslot_id }
+      { timeslot_id: job.timeslot_id },
+      undefined,
+      callerUserId,
+      callerUserEmail,
+      triggeredBy
     ) as { response?: { flash_sale_id?: number }; error?: string; message?: string };
 
     if (createResult.error || !createResult.response?.flash_sale_id) {
@@ -546,7 +621,11 @@ async function processJob(
       'POST',
       job.shop_id,
       token,
-      { flash_sale_id: newFlashSaleId, items: itemsToAdd }
+      { flash_sale_id: newFlashSaleId, items: itemsToAdd },
+      undefined,
+      callerUserId,
+      callerUserEmail,
+      triggeredBy
     ) as { error?: string; message?: string };
 
     let message = `Đã tạo Flash Sale #${newFlashSaleId}`;
@@ -599,7 +678,10 @@ async function syncFlashSaleData(
   credentials: PartnerCredentials,
   shopId: number,
   token: { access_token: string; refresh_token: string },
-  userId: string
+  userId: string,
+  callerUserId?: string,
+  callerUserEmail?: string,
+  triggeredBy?: string
 ): Promise<number> {
   console.log(`[SCHEDULER] Syncing flash sale data for shop ${shopId}`);
 
@@ -611,7 +693,10 @@ async function syncFlashSaleData(
     shopId,
     token,
     undefined,
-    { type: 0, offset: 0, limit: 50 }
+    { type: 0, offset: 0, limit: 50 },
+    callerUserId,
+    callerUserEmail,
+    triggeredBy
   ) as { response?: { flash_sale_list?: Array<Record<string, unknown>>; total_count?: number }; error?: string };
 
   if (result.error || !result.response?.flash_sale_list) {
@@ -674,6 +759,10 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
     const now = new Date().toISOString();
 
+    // Extract calling user from JWT (decode only, already verified by gateway)
+    const { userId: callerUserId, userEmail: callerUserEmail } = extractUserFromJwt(req.headers.get('Authorization'));
+    const triggeredBy = determineTriggeredBy({ userId: callerUserId, userEmail: callerUserEmail }, 'scheduler');
+
     console.log(`[SCHEDULER] Running at ${now}`);
 
     // Tìm các scheduled jobs đến hạn
@@ -727,7 +816,7 @@ serve(async (req) => {
           const shopResults = [];
           // Trong cùng 1 shop, xử lý tuần tự để tránh Shopee rate limit
           for (const job of jobs) {
-            const result = await processJob(supabase, job as ScheduledJob);
+            const result = await processJob(supabase, job as ScheduledJob, callerUserId, callerUserEmail, triggeredBy);
             shopResults.push({
               jobId: job.id as string,
               shopId,
@@ -766,7 +855,7 @@ serve(async (req) => {
           const token = await getTokenWithAutoRefresh(supabase, shopId);
           const job = pendingJobs.find(j => j.shop_id === shopId);
           const userId = (job?.user_id as string) || '';
-          await syncFlashSaleData(supabase, credentials, shopId, token, userId);
+          await syncFlashSaleData(supabase, credentials, shopId, token, userId, callerUserId, callerUserEmail, triggeredBy);
         } catch (err) {
           console.error(`[SCHEDULER] Sync failed for shop ${shopId}:`, (err as Error).message);
         }

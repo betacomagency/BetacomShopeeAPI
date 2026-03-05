@@ -8,7 +8,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
-import { logApiCall, getApiCallStatus } from '../_shared/api-logger.ts';
+import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -178,13 +178,42 @@ async function getAccessToken(
 }
 
 /**
+ * Lấy token bằng resend code (khôi phục khi mất token)
+ * Dùng khi refresh_token hết hạn hoặc bị mất
+ */
+async function getTokenByResendCode(
+  credentials: PartnerCredentials,
+  resendCode: string
+) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const path = '/api/v2/public/get_token_by_resend_code';
+  const sign = createSignature(credentials.partnerId, credentials.partnerKey, path, timestamp);
+
+  const body = {
+    resend_code: resendCode,
+  };
+
+  const url = `${SHOPEE_BASE_URL}${path}?partner_id=${credentials.partnerId}&timestamp=${timestamp}&sign=${sign}`;
+
+  const response = await fetchWithProxy(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  return await response.json();
+}
+
+/**
  * Refresh access token
  */
 async function refreshAccessToken(
   credentials: PartnerCredentials,
   refreshToken: string,
   shopId?: number,
-  merchantId?: number
+  merchantId?: number,
+  supplierId?: number,
+  userId?: number
 ) {
   const timestamp = Math.floor(Date.now() / 1000);
   const path = '/api/v2/auth/access_token/get';
@@ -195,11 +224,18 @@ async function refreshAccessToken(
     partner_id: credentials.partnerId,
   };
 
+  // Docs: chỉ truyền 1 trong 4 loại ID mỗi request
   if (shopId) {
     body.shop_id = shopId;
   }
   if (merchantId) {
     body.merchant_id = merchantId;
+  }
+  if (supplierId) {
+    body.supplier_id = supplierId;
+  }
+  if (userId) {
+    body.user_id = userId;
   }
 
   const url = `${SHOPEE_BASE_URL}${path}?partner_id=${credentials.partnerId}&timestamp=${timestamp}&sign=${sign}`;
@@ -438,6 +474,7 @@ serve(async (req) => {
     // Get user from auth header (optional)
     const authHeader = req.headers.get('Authorization');
     let userId: string | undefined;
+    const { userId: jwtUserId, userEmail: jwtUserEmail } = extractUserFromJwt(authHeader);
 
     if (authHeader) {
       const {
@@ -490,6 +527,10 @@ serve(async (req) => {
           shopeeError: tokenStatus.shopeeError,
           shopeeMessage: tokenStatus.shopeeMessage,
           durationMs: Date.now() - getTokenStart,
+          responseSummary: createResponseSummary(token),
+          userId: userId || jwtUserId,
+          userEmail: jwtUserEmail,
+          triggeredBy: 'user',
         });
 
         console.log('[AUTH] Shopee API response:', {
@@ -541,13 +582,13 @@ serve(async (req) => {
       }
 
       case 'refresh-token': {
-        const { refresh_token, shop_id, merchant_id } = body;
+        const { refresh_token, shop_id, merchant_id, supplier_id, user_id } = body;
         const partnerInfo = body.partner_info as PartnerInfo | undefined;
 
         // Lấy partner credentials
         const credentials = await getPartnerCredentials(supabase, partnerInfo, shop_id);
         const refreshStart = Date.now();
-        const token = await refreshAccessToken(credentials, refresh_token, shop_id, merchant_id);
+        const token = await refreshAccessToken(credentials, refresh_token, shop_id, merchant_id, supplier_id, user_id);
 
         // Log API call
         const refreshStatus = getApiCallStatus(token);
@@ -561,6 +602,10 @@ serve(async (req) => {
           shopeeError: refreshStatus.shopeeError,
           shopeeMessage: refreshStatus.shopeeMessage,
           durationMs: Date.now() - refreshStart,
+          responseSummary: createResponseSummary(token),
+          userId: userId || jwtUserId,
+          userEmail: jwtUserEmail,
+          triggeredBy: 'user',
         });
 
         if (token.error) {
@@ -669,6 +714,10 @@ serve(async (req) => {
           shopeeError: tokenStatus.shopeeError,
           shopeeMessage: tokenStatus.shopeeMessage,
           durationMs: Date.now() - getTokenStart,
+          responseSummary: createResponseSummary(token),
+          userId: userId || jwtUserId,
+          userEmail: jwtUserEmail,
+          triggeredBy: 'user',
         });
 
         if (token.error) {
@@ -723,6 +772,10 @@ serve(async (req) => {
           shopeeError: refreshStatus.shopeeError,
           shopeeMessage: refreshStatus.shopeeMessage,
           durationMs: Date.now() - refreshStart,
+          responseSummary: createResponseSummary(token),
+          userId: userId || jwtUserId,
+          userEmail: jwtUserEmail,
+          triggeredBy: 'user',
         });
 
         if (token.error) {
@@ -736,6 +789,84 @@ serve(async (req) => {
         await saveAppToken(supabase, { ...token, shop_id }, partner_app_id);
 
         return new Response(JSON.stringify(token), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-token-by-resend-code': {
+        const resendCode = body.resend_code || '';
+        const partnerInfo = body.partner_info as PartnerInfo | undefined;
+
+        if (!resendCode) {
+          return new Response(JSON.stringify({ error: 'resend_code is required', success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log('[AUTH] get-token-by-resend-code request:', { resendCode: resendCode.substring(0, 15) + '...' });
+
+        // Lấy partner credentials
+        const credentials = await getPartnerCredentials(supabase, partnerInfo);
+        console.log('[AUTH] Using partner credentials:', { partnerId: credentials.partnerId });
+
+        const resendStart = Date.now();
+        const token = await getTokenByResendCode(credentials, resendCode);
+
+        // Log API call
+        const resendStatus = getApiCallStatus(token);
+        logApiCall(supabase, {
+          edgeFunction: 'apishopee-auth',
+          apiEndpoint: '/api/v2/public/get_token_by_resend_code',
+          httpMethod: 'POST',
+          apiCategory: 'auth',
+          status: resendStatus.status,
+          shopeeError: resendStatus.shopeeError,
+          shopeeMessage: resendStatus.shopeeMessage,
+          durationMs: Date.now() - resendStart,
+          responseSummary: createResponseSummary(token),
+          userId: userId || jwtUserId,
+          userEmail: jwtUserEmail,
+          triggeredBy: 'user',
+        });
+
+        console.log('[AUTH] Resend code response:', {
+          error: token.error,
+          message: token.message,
+          hasAccessToken: !!token.access_token,
+          shopIdList: token.shop_id_list,
+          merchantIdList: token.merchant_id_list,
+        });
+
+        if (token.error) {
+          return new Response(JSON.stringify({ error: token.error, message: token.message, success: false }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Main account: có shop_id_list
+        if (token.shop_id_list && token.shop_id_list.length > 0) {
+          const result = await saveTokenForMerchant(supabase, token, userId, credentials);
+          console.log('[AUTH] Resend code: tokens saved for shops:', result.shop_id_list);
+
+          return new Response(JSON.stringify({
+            ...token,
+            merchant_id: result.merchant_id,
+            shop_id_list: result.shop_id_list,
+            success: true,
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Shop-level: single shop
+        if (token.shop_id) {
+          await saveToken(supabase, token, userId, credentials);
+          console.log('[AUTH] Resend code: token saved for shop:', token.shop_id);
+        }
+
+        return new Response(JSON.stringify({ ...token, success: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
