@@ -7,7 +7,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Clock,
-  Calendar,
+  Calendar as CalendarIcon,
+  ChevronDown,
   Package,
   Zap,
   RefreshCw,
@@ -16,7 +17,6 @@ import {
   Play,
   Square,
   AlertCircle,
-  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,6 +39,27 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+import { format } from 'date-fns';
+import { vi } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
@@ -105,12 +126,14 @@ interface AutoHistoryRecord {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  pending: { label: 'Đang chờ', color: 'bg-slate-100 text-slate-600', icon: <Clock className="h-3 w-3" /> },
-  scheduled: { label: 'Đã lên lịch', color: 'bg-blue-100 text-blue-600', icon: <Calendar className="h-3 w-3" /> },
-  processing: { label: 'Đang xử lý', color: 'bg-yellow-100 text-yellow-600', icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
-  success: { label: 'Thành công', color: 'bg-green-100 text-green-600', icon: <CheckCircle className="h-3 w-3" /> },
-  error: { label: 'Lỗi', color: 'bg-red-100 text-red-600', icon: <XCircle className="h-3 w-3" /> },
+  pending: { label: 'Đang chờ', color: 'bg-slate-100 text-slate-500 border-slate-200', icon: <Clock className="h-3 w-3" /> },
+  scheduled: { label: 'Đã lên lịch', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: <CalendarIcon className="h-3 w-3" /> },
+  processing: { label: 'Đang xử lý', color: 'bg-yellow-50 text-yellow-700 border-yellow-200', icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
+  success: { label: 'Thành công', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <CheckCircle className="h-3 w-3" /> },
+  error: { label: 'Lỗi', color: 'bg-red-50 text-red-700 border-red-200', icon: <XCircle className="h-3 w-3" /> },
 };
+
+const HISTORY_PAGE_SIZE = 20;
 
 // Format helpers
 function formatDateTime(timestamp: number | string): string {
@@ -168,6 +191,14 @@ export default function FlashSaleAutoSetupPage() {
   const [history, setHistory] = useState<AutoHistoryRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<Date | undefined>(undefined);
+  const [historyPage, setHistoryPage] = useState(1);
+
+  const historyTotalPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
+  const pagedHistory = useMemo(() => {
+    const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
+    return history.slice(start, start + HISTORY_PAGE_SIZE);
+  }, [history, historyPage]);
 
   // Confirm dialog state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -333,6 +364,12 @@ export default function FlashSaleAutoSetupPage() {
         query = query.eq('status', statusFilter);
       }
 
+      if (dateFilter) {
+        const startOfDay = Math.floor(new Date(dateFilter).setHours(0, 0, 0, 0) / 1000);
+        const endOfDay = Math.floor(new Date(dateFilter).setHours(23, 59, 59, 999) / 1000);
+        query = query.gte('slot_start_time', startOfDay).lte('slot_start_time', endOfDay);
+      }
+
       const { data, error } = await query;
       if (error) throw error;
 
@@ -355,6 +392,7 @@ export default function FlashSaleAutoSetupPage() {
       });
 
       setHistory(sorted);
+      setHistoryPage(1);
     } catch (err) {
       toast({ title: 'Lỗi', description: (err as Error).message, variant: 'destructive' });
       setHistory([]);
@@ -363,14 +401,17 @@ export default function FlashSaleAutoSetupPage() {
     }
   };
 
+  const isFlashSaleNotExistError = (error: string) =>
+    error.includes('not_exist') || error.includes('not_found') || error.includes('not found');
+
   // Delete history record (xóa cả flash sale trên Shopee nếu có)
   const deleteRecord = async (id: string) => {
     const record = history.find(h => h.id === id);
     if (!record) return;
 
     try {
-      // Nếu có flash_sale_id, xóa flash sale trên Shopee trước
-      if (record.flash_sale_id) {
+      // Nếu có flash_sale_id hợp lệ, xóa flash sale trên Shopee trước
+      if (record.flash_sale_id && Number(record.flash_sale_id) > 0) {
         const { data, error: deleteError } = await supabase.functions.invoke('apishopee-flash-sale', {
           body: {
             action: 'delete-flash-sale',
@@ -379,10 +420,9 @@ export default function FlashSaleAutoSetupPage() {
           },
         });
 
-        // Chỉ báo lỗi nếu không phải lỗi "không tìm thấy" (flash sale đã bị xóa trước đó)
         if (deleteError) {
           console.error('Delete flash sale error:', deleteError);
-        } else if (data?.error && !data.error.includes('not_found') && !data.error.includes('not found')) {
+        } else if (data?.error && !isFlashSaleNotExistError(data.error)) {
           console.error('Delete flash sale API error:', data.error);
         }
       }
@@ -410,20 +450,24 @@ export default function FlashSaleAutoSetupPage() {
   const clearAllHistory = async () => {
     setShowClearAllConfirm(false);
     try {
-      // Xóa từng flash sale trên Shopee
-      const recordsWithFlashSale = history.filter(h => h.flash_sale_id);
+      // Xóa từng flash sale trên Shopee (chỉ những record có flash_sale_id hợp lệ)
+      const recordsWithFlashSale = history.filter(h => h.flash_sale_id && Number(h.flash_sale_id) > 0);
       let deletedCount = 0;
 
       for (const record of recordsWithFlashSale) {
         try {
-          await supabase.functions.invoke('apishopee-flash-sale', {
+          const { data } = await supabase.functions.invoke('apishopee-flash-sale', {
             body: {
               action: 'delete-flash-sale',
               shop_id: selectedShopId,
               flash_sale_id: record.flash_sale_id,
             },
           });
-          deletedCount++;
+          if (!data?.error || isFlashSaleNotExistError(data.error)) {
+            deletedCount++;
+          } else {
+            console.error(`Failed to delete flash sale ${record.flash_sale_id}:`, data.error);
+          }
         } catch (err) {
           console.error(`Failed to delete flash sale ${record.flash_sale_id}:`, err);
         }
@@ -458,7 +502,7 @@ export default function FlashSaleAutoSetupPage() {
     if (selectedShopId) {
       fetchHistory();
     }
-  }, [selectedShopId, statusFilter]);
+  }, [selectedShopId, statusFilter, dateFilter]);
 
   // Realtime subscription: auto-refresh khi scheduler hoàn thành jobs
   useEffect(() => {
@@ -854,51 +898,56 @@ export default function FlashSaleAutoSetupPage() {
             {/* Header with Filter and Actions */}
             <div className="border-b">
               <div className="flex items-center justify-between px-4 py-3">
-                {/* Filter Dropdown - left side */}
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[
-                      { value: 'all', label: 'Tất cả', count: stats.total },
-                      { value: 'success', label: 'Thành công', count: stats.success },
-                      { value: 'error', label: 'Lỗi', count: stats.error },
-                      { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
-                    ].map((tab) => (
-                      <SelectItem key={tab.value} value={tab.value}>
-                        {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* Action Buttons - right side */}
+                {/* Filters - left side */}
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={fetchHistory} disabled={loadingHistory}>
-                    <RefreshCw className={cn("h-4 w-4 mr-2", loadingHistory && "animate-spin")} />
-                    Làm mới
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowClearAllConfirm(true)} disabled={history.length === 0} className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Xóa hết
-                  </Button>
-                  {isRunning ? (
-                    <Button variant="destructive" size="sm" onClick={stopAutoSetup}>
-                      <Square className="h-4 w-4 mr-2" />
-                      Dừng
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={handleStartClick}
-                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[160px] h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[
+                        { value: 'all', label: 'Tất cả', count: stats.total },
+                        { value: 'success', label: 'Thành công', count: stats.success },
+                        { value: 'error', label: 'Lỗi', count: stats.error },
+                        { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
+                      ].map((tab) => (
+                        <SelectItem key={tab.value} value={tab.value}>
+                          {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        data-empty={!dateFilter}
+                        className="w-[180px] justify-between text-left font-normal data-[empty=true]:text-muted-foreground"
+                      >
+                        {dateFilter ? format(dateFilter, 'dd/MM/yyyy', { locale: vi }) : 'Lọc theo ngày'}
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dateFilter}
+                        onSelect={setDateFilter}
+                        defaultMonth={dateFilter}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  {dateFilter && (
+                    <button
+                      onClick={() => setDateFilter(undefined)}
+                      className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
                     >
-                      <Play className="h-4 w-4 mr-2" />
-                      Tạo mới
-                    </Button>
+                      Xóa lọc
+                    </button>
                   )}
                 </div>
+
               </div>
             </div>
 
@@ -961,29 +1010,22 @@ export default function FlashSaleAutoSetupPage() {
               </div>
             ) : (
               <div className="divide-y">
-                {history.map((record) => {
+                {pagedHistory.map((record) => {
                   const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
-                  const startDate = new Date(record.slot_start_time * 1000);
-                  const endDate = new Date(record.slot_end_time * 1000);
-                  const dateStr = startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                  const startTimeStr = startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                  const endTimeStr = endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                  const dateStr = formatDate(record.slot_start_time);
+                  const endDateStr = formatDate(record.slot_end_time);
+                  const startTimeStr = formatTime(record.slot_start_time);
+                  const endTimeStr = formatTime(record.slot_end_time);
 
                   return (
                     <div key={record.id} className="p-4 bg-white">
                       {/* Row 1: Date + Time + Status Badge */}
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3 text-sm text-slate-600">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            {dateStr}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            {startTimeStr} - {endTimeStr}
-                          </span>
+                        <div className="flex items-center gap-1 text-sm text-slate-700 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                          <span>{startTimeStr} {dateStr} – {dateStr === endDateStr ? endTimeStr : `${endTimeStr} ${endDateStr}`}</span>
                         </div>
-                        <Badge className={cn("flex items-center gap-1 text-[10px] px-1.5 py-0.5", statusConfig.color)}>
+                        <Badge variant="outline" className={cn("flex items-center gap-1", statusConfig.color)}>
                           {statusConfig.icon}
                           {statusConfig.label}
                         </Badge>
@@ -1007,14 +1049,6 @@ export default function FlashSaleAutoSetupPage() {
                             </span>
                           )}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteConfirmId(record.id)}
-                          className="text-slate-400 hover:text-red-500 h-7 w-7 p-0"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
                       </div>
 
                       {/* Error message if any */}
@@ -1033,6 +1067,25 @@ export default function FlashSaleAutoSetupPage() {
                     </div>
                   );
                 })}
+                {historyTotalPages > 1 && (
+                  <div className="px-4 py-3 border-t">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious onClick={() => setHistoryPage(p => Math.max(1, p - 1))} className={historyPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'} />
+                        </PaginationItem>
+                        {Array.from({ length: historyTotalPages }, (_, i) => i + 1).map(p => (
+                          <PaginationItem key={p}>
+                            <PaginationLink isActive={historyPage === p} onClick={() => setHistoryPage(p)} className="cursor-pointer">{p}</PaginationLink>
+                          </PaginationItem>
+                        ))}
+                        <PaginationItem>
+                          <PaginationNext onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))} className={historyPage === historyTotalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'} />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1049,78 +1102,85 @@ export default function FlashSaleAutoSetupPage() {
                   <p>Chưa có lịch sử nào</p>
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 sticky top-0 z-10">
-                    <tr className="border-b">
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Trạng thái</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Chi tiết</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Khung giờ</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo trước</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Số SP</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Tạo lúc</th>
-                      <th className="text-left px-4 py-3 font-medium text-slate-600">Thực hiện</th>
-                      <th className="text-center px-4 py-3 font-medium text-slate-600 w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {history.map((record) => {
+                <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[200px]">Khung giờ</TableHead>
+                      <TableHead className="w-[140px]">Trạng thái</TableHead>
+                      <TableHead>Ghi chú</TableHead>
+                      <TableHead className="w-[110px]">Cài trước</TableHead>
+                      <TableHead className="w-[160px]">Đặt lịch lúc</TableHead>
+                      <TableHead className="w-[160px]">Đã chạy lúc</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedHistory.map((record) => {
                       const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
                       return (
-                        <tr key={record.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <Badge className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
+                        <TableRow key={record.id}>
+                          <TableCell className="font-medium">
+                            {formatTime(record.slot_start_time)}{" "}
+                            {formatDate(record.slot_start_time)} –{" "}
+                            {formatDate(record.slot_start_time) === formatDate(record.slot_end_time)
+                              ? formatTime(record.slot_end_time)
+                              : `${formatTime(record.slot_end_time)} ${formatDate(record.slot_end_time)}`}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
                               {statusConfig.icon}
                               {statusConfig.label}
                             </Badge>
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell>
                             {record.status === 'success' && record.flash_sale_id ? (
-                              <span className="text-green-600 text-xs">FS #{record.flash_sale_id}</span>
+                              <span className="text-emerald-600 text-xs font-mono">FS #{record.flash_sale_id}</span>
                             ) : record.status === 'error' && record.error_message ? (
                               <p className="text-xs text-red-500 max-w-[250px]" title={record.error_message}>
                                 {record.error_message}
                               </p>
-                            ) : record.status === 'scheduled' ? (
-                              <span className="text-xs text-blue-500">Chờ đến {record.scheduled_at ? formatDateTime(record.scheduled_at) : '-'}</span>
+                            ) : record.status === 'scheduled' && record.scheduled_at ? (
+                              <span className="text-xs text-blue-500">Chờ đến {formatDateTime(record.scheduled_at)}</span>
                             ) : (
-                              <span className="text-slate-400 text-xs">-</span>
+                              <span className="text-muted-foreground text-xs">—</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-slate-700">
-                              {formatDate(record.slot_start_time)}
-                            </div>
-                            <div className="text-slate-500 text-xs">
-                              {formatTime(record.slot_start_time)} - {formatTime(record.slot_end_time)}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell>
                             {record.lead_time_minutes > 0 ? (
-                              <span className="text-blue-600">{record.lead_time_minutes} phút</span>
+                              <span className="text-blue-600 whitespace-nowrap">{record.lead_time_minutes} phút trước</span>
                             ) : (
-                              <span className="text-slate-400">Ngay</span>
+                              <span className="text-muted-foreground whitespace-nowrap">Ngay lập tức</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{record.items_count}</td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">{formatDateTime(record.created_at)}</td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">
-                            {record.executed_at ? formatDateTime(record.executed_at) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteConfirmId(record.id)}
-                              className="text-slate-400 hover:text-red-500 h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">{formatDateTime(record.created_at)}</TableCell>
+                          <TableCell className="text-muted-foreground text-xs">
+                            {record.executed_at ? formatDateTime(record.executed_at) : '—'}
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
+                {historyTotalPages > 1 && (
+                  <div className="border-t px-4 py-3">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious onClick={() => setHistoryPage(p => Math.max(1, p - 1))} className={historyPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'} />
+                        </PaginationItem>
+                        {Array.from({ length: historyTotalPages }, (_, i) => i + 1).map(p => (
+                          <PaginationItem key={p}>
+                            <PaginationLink isActive={historyPage === p} onClick={() => setHistoryPage(p)} className="cursor-pointer">{p}</PaginationLink>
+                          </PaginationItem>
+                        ))}
+                        <PaginationItem>
+                          <PaginationNext onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))} className={historyPage === historyTotalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'} />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+                </>
               )}
             </div>
           </div>
@@ -1160,7 +1220,7 @@ export default function FlashSaleAutoSetupPage() {
                   </div>
                 ) : timeSlots.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-slate-400">
-                    <Calendar className="h-8 w-8 mb-2" />
+                    <CalendarIcon className="h-8 w-8 mb-2" />
                     <p className="text-sm">Không có khung giờ</p>
                   </div>
                 ) : (
