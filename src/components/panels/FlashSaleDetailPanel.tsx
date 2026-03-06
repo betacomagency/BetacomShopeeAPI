@@ -124,13 +124,20 @@ export function FlashSaleDetailPanel({
       const count = data?.response?.total_count ?? itemInfoList.length;
 
       const itemsWithModels = itemInfoList.map((item: FlashSaleItemData) => {
-        const itemModels = modelsList.filter(
-          (m: { item_id: number }) => m.item_id === item.item_id,
-        );
+        const itemModels = modelsList
+          .filter((m: { item_id: number }) => m.item_id === item.item_id)
+          .filter((m: { status?: number }) => m.status === 1);
         return {
           ...item,
           models: itemModels.length > 0 ? itemModels : undefined,
         };
+      }).filter((item: FlashSaleItemData) => {
+        // Giữ item nếu có model tham gia, hoặc item đơn (không có models) với status=1
+        if (item.models && item.models.length > 0) return true;
+        if (!modelsList.some((m: { item_id: number }) => m.item_id === item.item_id)) {
+          return item.status === 1;
+        }
+        return false; // Có models nhưng không model nào tham gia
       });
 
       setItems(itemsWithModels);

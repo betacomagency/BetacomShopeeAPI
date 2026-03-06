@@ -4,7 +4,8 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Clock, Calendar, Package, Play, RefreshCw, Zap, CheckCircle2, XCircle } from 'lucide-react';
+import { Clock, Calendar, Package, Play, RefreshCw, Zap, CheckCircle2, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ImageWithZoom } from '@/components/ui/image-with-zoom';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -24,18 +25,28 @@ interface TimeSlot {
 interface FlashSaleItem {
   item_id: number;
   item_name?: string;
+  image?: string;
+  image_url?: string;
+  item_image?: string;
   status: number;
   purchase_limit: number;
   campaign_stock?: number;
+  original_price?: number;
   input_promotion_price?: number;
+  promotion_price_with_tax?: number;
   models?: FlashSaleModel[];
 }
 
 interface FlashSaleModel {
   model_id: number;
+  model_name?: string;
   item_id: number;
   input_promotion_price: number;
+  promotion_price_with_tax?: number;
+  original_price?: number;
   campaign_stock: number;
+  stock?: number;
+  purchase_limit?: number;
   status?: number;
 }
 
@@ -54,6 +65,23 @@ function formatTime(timestamp: number): string {
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function getItemImage(item: FlashSaleItem): string | undefined {
+  const imageId = item.image || item.image_url || item.item_image;
+  if (!imageId) return undefined;
+  if (imageId.startsWith('http')) return imageId;
+  return `https://cf.shopee.vn/file/${imageId}`;
+}
+
+function formatPrice(price?: number): string {
+  if (!price) return '-';
+  return `₫${price.toLocaleString('vi-VN')}`;
+}
+
+function calcDiscount(original?: number, promo?: number): number {
+  if (!original || !promo || original <= 0) return 0;
+  return Math.round(((original - promo) / original) * 100);
 }
 
 export function AutoSetupDialog({
@@ -619,7 +647,6 @@ export function AutoSetupDialog({
                 <SelectContent>
                   <SelectItem value="0">Tạo ngay lập tức</SelectItem>
                   <SelectItem value="10">10 phút trước khung giờ</SelectItem>
-                  <SelectItem value="30">30 phút trước khung giờ</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
@@ -658,6 +685,11 @@ export function AutoSetupDialog({
               )}
             </div>
           </div>}
+
+          {/* Product Table - shown when not running and has items */}
+          {!isRunning && templateItems.length > 0 && (
+            <TemplateItemsTable items={templateItems} />
+          )}
 
           {/* Bottom: Time Slots - hidden when running */}
           {!isRunning && <div className="space-y-3">
@@ -763,5 +795,168 @@ export function AutoSetupDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ==================== TEMPLATE ITEMS TABLE ====================
+
+function TemplateItemsTable({ items }: { items: FlashSaleItem[] }) {
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+
+  const toggleExpand = (itemId: number) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="flex items-center gap-2">
+        <Package className="h-4 w-4 text-orange-600" />
+        Chi tiết sản phẩm ({items.length})
+      </Label>
+      <div className="border rounded-lg max-h-[350px] overflow-y-auto">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '12%' }} />
+          </colgroup>
+          <thead className="bg-slate-50 border-b sticky top-0 z-10">
+            <tr>
+              <th className="h-9 px-3 text-left font-medium text-slate-600 text-xs">Sản phẩm</th>
+              <th className="h-9 px-2 text-right font-medium text-slate-600 text-xs">Giá gốc</th>
+              <th className="h-9 px-2 text-right font-medium text-slate-600 text-xs">Giá KM</th>
+              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">Giảm</th>
+              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">SL KM</th>
+              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">Kho</th>
+              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">Giới hạn</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(item => (
+              <TemplateItemRow
+                key={item.item_id}
+                item={item}
+                expanded={expandedItems.has(item.item_id)}
+                onToggleExpand={() => toggleExpand(item.item_id)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TemplateItemRow({ item, expanded, onToggleExpand }: {
+  item: FlashSaleItem;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const hasModels = item.models && item.models.length > 0;
+  const modelsToShow = expanded ? item.models : item.models?.slice(0, 3);
+  const itemImage = getItemImage(item);
+
+  return (
+    <>
+      {/* Item header */}
+      <tr className="border-b bg-slate-50/50">
+        <td colSpan={7} className="px-3 py-2">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+              {itemImage ? (
+                <ImageWithZoom
+                  src={itemImage}
+                  alt={item.item_name || `Item #${item.item_id}`}
+                  className="w-full h-full object-cover"
+                  zoomSize={200}
+                />
+              ) : (
+                <div className="w-5 h-5 bg-slate-200 rounded" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-medium text-slate-700 truncate block">
+                {item.item_name || `Item #${item.item_id}`}
+              </span>
+              <span className="text-[10px] text-slate-400">ID: {item.item_id}</span>
+            </div>
+          </div>
+        </td>
+      </tr>
+
+      {/* Model rows or single item */}
+      {hasModels ? (
+        <>
+          {modelsToShow?.map(model => {
+            const promoPrice = model.input_promotion_price || model.promotion_price_with_tax;
+            const discount = calcDiscount(model.original_price, promoPrice);
+            return (
+              <tr key={model.model_id} className="border-b hover:bg-slate-50/50">
+                <td className="px-3 py-1.5">
+                  <span className="text-xs text-slate-600 truncate block">{model.model_name || `#${model.model_id}`}</span>
+                </td>
+                <td className="px-2 py-1.5 text-xs text-slate-500 text-right">{formatPrice(model.original_price)}</td>
+                <td className="px-2 py-1.5 text-xs text-slate-700 text-right font-medium">{formatPrice(promoPrice)}</td>
+                <td className="px-2 py-1.5 text-center">
+                  {discount > 0 && (
+                    <span className="px-1 py-0.5 text-[10px] font-medium text-orange-600 border border-orange-300 rounded">-{discount}%</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-xs text-orange-600 font-medium text-center">{model.campaign_stock ?? 0}</td>
+                <td className="px-2 py-1.5 text-xs text-slate-600 text-center">{model.stock ?? 0}</td>
+                <td className="px-2 py-1.5 text-xs text-slate-600 text-center">
+                  {(model.purchase_limit ?? item.purchase_limit) > 0 ? (model.purchase_limit ?? item.purchase_limit) : '-'}
+                </td>
+              </tr>
+            );
+          })}
+          {item.models && item.models.length > 3 && (
+            <tr className="border-b">
+              <td colSpan={7} className="px-3 py-1">
+                <button
+                  onClick={onToggleExpand}
+                  className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer"
+                >
+                  {expanded ? (
+                    <>Thu gọn <ChevronUp className="h-3 w-3" /></>
+                  ) : (
+                    <>Xem thêm {item.models.length - 3} phân loại <ChevronDown className="h-3 w-3" /></>
+                  )}
+                </button>
+              </td>
+            </tr>
+          )}
+        </>
+      ) : (
+        <tr className="border-b hover:bg-slate-50/50">
+          <td className="px-3 py-1.5"><span className="text-xs text-slate-600">-</span></td>
+          <td className="px-2 py-1.5 text-xs text-slate-500 text-right">{formatPrice(item.original_price)}</td>
+          <td className="px-2 py-1.5 text-xs text-slate-700 text-right font-medium">
+            {formatPrice(item.input_promotion_price || item.promotion_price_with_tax)}
+          </td>
+          <td className="px-2 py-1.5 text-center">
+            {calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax) > 0 && (
+              <span className="px-1 py-0.5 text-[10px] font-medium text-orange-600 border border-orange-300 rounded">
+                -{calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax)}%
+              </span>
+            )}
+          </td>
+          <td className="px-2 py-1.5 text-xs text-orange-600 font-medium text-center">{item.campaign_stock ?? 0}</td>
+          <td className="px-2 py-1.5 text-xs text-slate-600 text-center">0</td>
+          <td className="px-2 py-1.5 text-xs text-slate-600 text-center">
+            {item.purchase_limit > 0 ? item.purchase_limit : '-'}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

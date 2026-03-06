@@ -17,6 +17,7 @@ import {
   Play,
   Square,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -450,26 +451,36 @@ export default function FlashSaleAutoSetupPage() {
   const clearAllHistory = async () => {
     setShowClearAllConfirm(false);
     try {
-      // Xóa từng flash sale trên Shopee (chỉ những record có flash_sale_id hợp lệ)
-      const recordsWithFlashSale = history.filter(h => h.flash_sale_id && Number(h.flash_sale_id) > 0);
+      // Deduplicate: chỉ gọi delete 1 lần cho mỗi flash_sale_id duy nhất
+      const uniqueFlashSaleIds = [
+        ...new Set(
+          history
+            .map(h => Number(h.flash_sale_id))
+            .filter(id => id > 0)
+        ),
+      ];
       let deletedCount = 0;
 
-      for (const record of recordsWithFlashSale) {
+      for (const flashSaleId of uniqueFlashSaleIds) {
         try {
           const { data } = await supabase.functions.invoke('apishopee-flash-sale', {
             body: {
               action: 'delete-flash-sale',
               shop_id: selectedShopId,
-              flash_sale_id: record.flash_sale_id,
+              flash_sale_id: flashSaleId,
             },
           });
           if (!data?.error || isFlashSaleNotExistError(data.error)) {
             deletedCount++;
           } else {
-            console.error(`Failed to delete flash sale ${record.flash_sale_id}:`, data.error);
+            console.error(`Failed to delete flash sale ${flashSaleId}:`, data.error);
           }
         } catch (err) {
-          console.error(`Failed to delete flash sale ${record.flash_sale_id}:`, err);
+          console.error(`Failed to delete flash sale ${flashSaleId}:`, err);
+        }
+        // Delay 300ms giữa các lần gọi để tránh rate limit
+        if (uniqueFlashSaleIds.length > 1) {
+          await new Promise(r => setTimeout(r, 300));
         }
       }
 
@@ -1049,6 +1060,16 @@ export default function FlashSaleAutoSetupPage() {
                             </span>
                           )}
                         </div>
+                        {(record.status === 'scheduled' || record.status === 'pending') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-slate-400 hover:text-red-500 cursor-pointer"
+                            onClick={() => setDeleteConfirmId(record.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
 
                       {/* Error message if any */}
@@ -1112,6 +1133,7 @@ export default function FlashSaleAutoSetupPage() {
                       <TableHead className="w-[110px]">Cài trước</TableHead>
                       <TableHead className="w-[160px]">Đặt lịch lúc</TableHead>
                       <TableHead className="w-[160px]">Đã chạy lúc</TableHead>
+                      <TableHead className="w-[60px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1155,6 +1177,18 @@ export default function FlashSaleAutoSetupPage() {
                           <TableCell className="text-muted-foreground text-xs">{formatDateTime(record.created_at)}</TableCell>
                           <TableCell className="text-muted-foreground text-xs">
                             {record.executed_at ? formatDateTime(record.executed_at) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            {(record.status === 'scheduled' || record.status === 'pending') && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-slate-400 hover:text-red-500 cursor-pointer"
+                                onClick={() => setDeleteConfirmId(record.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -1295,7 +1329,6 @@ export default function FlashSaleAutoSetupPage() {
                 <SelectContent>
                   <SelectItem value="0">Tạo ngay lập tức</SelectItem>
                   <SelectItem value="10">10 phút trước khung giờ</SelectItem>
-                  <SelectItem value="30">30 phút trước khung giờ</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
