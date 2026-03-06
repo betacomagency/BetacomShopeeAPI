@@ -37,15 +37,16 @@ function dateRangeToDays(range?: string): number {
   }
 }
 
-export function useApiCallStats(filters: { shopId?: number; dateRange?: string }) {
+export function useApiCallStats(filters: { shopId?: number; partnerId?: number; dateRange?: string }) {
   const days = dateRangeToDays(filters.dateRange);
 
   return useQuery({
-    queryKey: ['api-call-stats', filters.shopId, days],
+    queryKey: ['api-call-stats', filters.shopId, filters.partnerId, days],
     queryFn: async (): Promise<{ dailyStats: DailyStat[]; summary: ApiCallSummary }> => {
       const { data, error } = await supabase.rpc('get_api_call_daily_stats', {
         p_shop_id: filters.shopId ?? null,
         p_days: days,
+        p_partner_id: filters.partnerId ?? null,
       });
 
       if (error) throw error;

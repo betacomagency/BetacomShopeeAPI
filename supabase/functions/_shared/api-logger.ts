@@ -12,6 +12,7 @@ export type TriggeredBy = 'user' | 'cron' | 'scheduler' | 'webhook' | 'system';
 
 export interface LogApiCallParams {
   shopId?: number;
+  partnerId?: number;
   edgeFunction: string;
   apiEndpoint: string;
   httpMethod?: string;
@@ -59,6 +60,7 @@ export function logApiCall(
 ): void {
   const insertData = {
     shop_id: params.shopId || null,
+    partner_id: params.partnerId || null,
     edge_function: params.edgeFunction,
     api_endpoint: params.apiEndpoint,
     http_method: params.httpMethod || 'GET',

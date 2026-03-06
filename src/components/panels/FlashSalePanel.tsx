@@ -4,6 +4,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { RefreshCw, Trash2, Eye, Clock, Calendar as CalendarIcon, Copy, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -147,6 +148,7 @@ function getPageNumbers(
 
 export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // State
   const [activeTab, setActiveTab] = useState<FilterType>("0");
@@ -156,9 +158,6 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [view, setView] = useState<"list" | "create">("list");
   const [showAutoSetupDialog, setShowAutoSetupDialog] = useState(false);
-  const [copyFromFlashSaleId, setCopyFromFlashSaleId] = useState<number | null>(
-    null,
-  );
   const [detailFlashSale, setDetailFlashSale] = useState<FlashSale | null>(
     null,
   );
@@ -421,12 +420,10 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
   const handleViewDetail = (sale: FlashSale) => setDetailFlashSale(sale);
   const handleBackToList = () => setView("list");
   const handleCopy = (sale: FlashSale) => {
-    setCopyFromFlashSaleId(sale.flash_sale_id);
-    setShowAutoSetupDialog(true);
+    navigate(`/flash-sale/copy/${sale.flash_sale_id}`);
   };
   const handleAutoSetupClose = (open: boolean) => {
     setShowAutoSetupDialog(open);
-    if (!open) setCopyFromFlashSaleId(null);
   };
   const handleAutoSetupSuccess = async () => {
     await triggerSync(true);
@@ -979,7 +976,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
         onOpenChange={handleAutoSetupClose}
         shopId={shopId}
         userId={userId}
-        copyFromFlashSaleId={copyFromFlashSaleId}
+        copyFromFlashSaleId={null}
         onSuccess={handleAutoSetupSuccess}
       />
 

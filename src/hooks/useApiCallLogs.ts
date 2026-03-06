@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 export interface ApiCallLog {
   id: string;
   shop_id: number | null;
+  partner_id: number | null;
   edge_function: string;
   api_endpoint: string;
   http_method: string | null;
@@ -34,6 +35,7 @@ export type ApiCallLogListItem = Omit<ApiCallLog, 'request_params' | 'response_s
 export interface ApiCallLogFilters {
   search?: string;
   shopId?: number;
+  partnerId?: number;
   category?: string;
   status?: string;
   edgeFunction?: string;
@@ -47,7 +49,7 @@ export interface ApiCallLogFilters {
   pageSize: number;
 }
 
-const LIST_COLUMNS = 'id, shop_id, edge_function, api_endpoint, http_method, api_category, status, shopee_error, shopee_message, http_status_code, duration_ms, retry_count, was_token_refreshed, user_id, user_email, triggered_by, created_at';
+const LIST_COLUMNS = 'id, shop_id, partner_id, edge_function, api_endpoint, http_method, api_category, status, shopee_error, shopee_message, http_status_code, duration_ms, retry_count, was_token_refreshed, user_id, user_email, triggered_by, created_at';
 
 function getDateFilter(range?: string): string | null {
   if (!range || range === 'all') return null;
@@ -70,7 +72,7 @@ export function useApiCallLogs(filters: ApiCallLogFilters) {
   return useQuery({
     queryKey: ['api-call-logs', filters],
     queryFn: async (): Promise<{ logs: ApiCallLogListItem[]; totalCount: number }> => {
-      const { shopId, category, status, edgeFunction, userEmail, triggeredBy, search, dateRange, dateFrom, dateTo, page, pageSize } = filters;
+      const { shopId, partnerId, category, status, edgeFunction, userEmail, triggeredBy, search, dateRange, dateFrom, dateTo, page, pageSize } = filters;
       const dateFilter = dateFrom ? null : getDateFilter(dateRange);
 
       // Count query
@@ -89,6 +91,10 @@ export function useApiCallLogs(filters: ApiCallLogFilters) {
       if (shopId) {
         countQuery = countQuery.eq('shop_id', shopId);
         dataQuery = dataQuery.eq('shop_id', shopId);
+      }
+      if (partnerId) {
+        countQuery = countQuery.eq('partner_id', partnerId);
+        dataQuery = dataQuery.eq('partner_id', partnerId);
       }
       if (category && category !== 'all') {
         countQuery = countQuery.eq('api_category', category);

@@ -22,6 +22,10 @@ const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
+// In-memory cache để tránh gọi delete trùng lặp cho cùng flash_sale_id
+const recentlyDeletedCache = new Map<string, number>(); // key: "shopId:flashSaleId" -> timestamp
+const DELETE_CACHE_TTL = 60_000; // 60 giây
+
 // Interface cho partner credentials
 interface PartnerCredentials {
   partnerId: number;
@@ -189,6 +193,7 @@ async function callShopeeAPIWithRetry(
   }) => {
     logApiCall(supabase, {
       shopId,
+      partnerId: credentials.partnerId,
       edgeFunction: 'apishopee-flash-sale',
       apiEndpoint: path,
       httpMethod: method,
@@ -497,6 +502,21 @@ serve(async (req) => {
 
         // Đảm bảo flash_sale_id là số nguyên
         const flashSaleIdNum = Number(flash_sale_id);
+        if (isNaN(flashSaleIdNum) || flashSaleIdNum <= 0) {
+          return new Response(JSON.stringify({ error: 'flash_sale_id must be a valid positive number' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Kiểm tra cache: nếu đã delete gần đây thì skip gọi Shopee API
+        const cacheKey = `${shop_id}:${flashSaleIdNum}`;
+        const cachedAt = recentlyDeletedCache.get(cacheKey);
+        if (cachedAt && Date.now() - cachedAt < DELETE_CACHE_TTL) {
+          console.log(`[FLASH-SALE] Skip duplicate delete for FS #${flashSaleIdNum} (cached ${Math.round((Date.now() - cachedAt) / 1000)}s ago)`);
+          result = { error: '', message: '', warning: 'Already deleted (cached)' };
+          break;
+        }
 
         result = await callShopeeAPIWithRetry(
           supabase,
@@ -511,6 +531,17 @@ serve(async (req) => {
           callerUserEmail,
           triggeredBy
         );
+
+        // Cache kết quả: cả success lẫn not_exist đều không cần gọi lại
+        const deleteResult = result as { error?: string };
+        if (!deleteResult.error || deleteResult.error === 'shop_flash_sale_not_exist') {
+          recentlyDeletedCache.set(cacheKey, Date.now());
+          // Cleanup cache entries cũ
+          for (const [key, ts] of recentlyDeletedCache) {
+            if (Date.now() - ts > DELETE_CACHE_TTL) recentlyDeletedCache.delete(key);
+          }
+        }
+
         break;
       }
 

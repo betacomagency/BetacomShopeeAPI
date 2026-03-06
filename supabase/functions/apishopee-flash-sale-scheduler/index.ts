@@ -176,6 +176,7 @@ async function callShopeeAPI(
   }) => {
     logApiCall(supabase, {
       shopId,
+      partnerId: credentials.partnerId,
       edgeFunction: 'apishopee-flash-sale-scheduler',
       apiEndpoint: path,
       httpMethod: method,
@@ -441,10 +442,10 @@ async function getTemplateItems(
       triggeredBy
     ) as { response?: { item_info?: FlashSaleItem[]; models?: FlashSaleModel[] }; error?: string; message?: string };
 
-    // Thoát sớm nếu Shopee trả lỗi not_exist hoặc not_enabled → không cần thử tiếp
+    // FS không còn tồn tại trên Shopee → skip candidate này, thử tiếp
     if (result.error === 'shop_flash_sale_not_exist' || result.error === 'shop_flash_sale_is_not_enabled_or_upcoming') {
-      console.log(`[SCHEDULER] FS ${fs.flash_sale_id} no longer exists on Shopee (${result.error}), skipping remaining candidates`);
-      break;
+      console.log(`[SCHEDULER] FS ${fs.flash_sale_id} no longer exists on Shopee (${result.error}), trying next candidate`);
+      continue;
     }
 
     const items = parseFlashSaleItems(result);
@@ -457,11 +458,47 @@ async function getTemplateItems(
     console.log(`[SCHEDULER] FS ${fs.flash_sale_id} returned 0 valid items, trying next...`);
   }
 
-  // Fallback: lấy từ history thành công
+  // Fallback 1: lấy từ history thành công
   console.log('[SCHEDULER] No items from any template FS, trying fallback from successful history');
   const historyItems = await getItemsFromSuccessfulHistory(supabase, shopId);
   if (historyItems.length > 0) {
     return historyItems;
+  }
+
+  // Fallback 2: gọi trực tiếp Shopee API lấy FS list live, rồi lấy items từ FS đang upcoming/running
+  console.log('[SCHEDULER] No history items, trying live Shopee API fallback');
+  const liveResult = await callShopeeAPI(
+    supabase, credentials,
+    '/api/v2/shop_flash_sale/get_shop_flash_sale_list',
+    'GET', shopId, token, undefined,
+    { type: 0, offset: 0, limit: 50 },
+    callerUserId, callerUserEmail, triggeredBy
+  ) as { response?: { flash_sale_list?: Array<{ flash_sale_id: number; type: number; item_count: number }> } };
+
+  const liveList = (liveResult?.response?.flash_sale_list || [])
+    .filter(fs => (fs.type === 1 || fs.type === 2) && fs.item_count > 0)
+    .sort((a, b) => a.type - b.type); // upcoming (1) first
+
+  for (const fs of liveList) {
+    console.log(`[SCHEDULER] Live fallback: trying FS ${fs.flash_sale_id} (type ${fs.type}, ${fs.item_count} items)`);
+    const itemResult = await callShopeeAPI(
+      supabase, credentials,
+      '/api/v2/shop_flash_sale/get_shop_flash_sale_items',
+      'GET', shopId, token, undefined,
+      { flash_sale_id: fs.flash_sale_id, offset: 0, limit: 100 },
+      callerUserId, callerUserEmail, triggeredBy
+    ) as { response?: { item_info?: FlashSaleItem[]; models?: FlashSaleModel[] }; error?: string; message?: string };
+
+    if (itemResult.error) {
+      console.log(`[SCHEDULER] Live fallback: FS ${fs.flash_sale_id} error: ${itemResult.error}, trying next`);
+      continue;
+    }
+
+    const items = parseFlashSaleItems(itemResult);
+    if (items.length > 0) {
+      console.log(`[SCHEDULER] Live fallback: got ${items.length} items from FS ${fs.flash_sale_id}`);
+      return items;
+    }
   }
 
   return [];

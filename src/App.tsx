@@ -32,6 +32,7 @@ import ShopInfoPage from '@/pages/settings/ShopInfoPage';
 import FlashSalePage from '@/pages/FlashSalePage';
 import FlashSaleDetailPage from '@/pages/FlashSaleDetailPage';
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
+import FlashSaleCopyPage from '@/pages/FlashSaleCopyPage';
 import FlashSaleOverviewPage from '@/pages/FlashSaleOverviewPage';
 import ProductsPage from '@/pages/ProductsPage';
 import DocsPage from '@/pages/DocsPage';
@@ -86,6 +87,7 @@ function App() {
                   <Route path="/flash-sale" element={<FlashSalePage />} />
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
+                  <Route path="/flash-sale/copy/:flashSaleId" element={<FlashSaleCopyPage />} />
                   <Route path="/notifications/penalties" element={<PenaltyPage />} />
                   <Route path="/shop-performance" element={<ShopPerformancePage />} />
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />

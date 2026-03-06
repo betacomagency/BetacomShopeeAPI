@@ -179,6 +179,7 @@ async function callShopeeAPI(
   }) => {
     logApiCall(supabase, {
       shopId,
+      partnerId: credentials.partnerId,
       edgeFunction: 'apishopee-product',
       apiEndpoint: path,
       httpMethod: method,

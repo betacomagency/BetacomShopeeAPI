@@ -212,6 +212,7 @@ async function callShopeeAPIWithRetry(
   }) => {
     logApiCall(supabase, {
       shopId,
+      partnerId: credentials.partnerId,
       edgeFunction: 'shopee-shop',
       apiEndpoint: path,
       httpMethod: method,

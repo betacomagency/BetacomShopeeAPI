@@ -291,6 +291,7 @@ serve(async (req) => {
       // Log the failed call so it's never missed
       logApiCall(supabase, {
         shopId: shop_id || undefined,
+        partnerId: partner_id || undefined,
         edgeFunction: 'apishopee-proxy',
         apiEndpoint: api_path,
         httpMethod: method,
@@ -316,6 +317,7 @@ serve(async (req) => {
     const callStatus = getApiCallStatus(responseData);
     logApiCall(supabase, {
       shopId: shop_id || undefined,
+      partnerId: partner_id || undefined,
       edgeFunction: 'apishopee-proxy',
       apiEndpoint: api_path,
       httpMethod: method,

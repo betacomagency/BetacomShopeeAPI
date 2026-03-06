@@ -343,6 +343,7 @@ serve(async (req) => {
         // Log API call
         logApiCall(supabase, {
           shopId: representative.shop_id,
+          partnerId: representative.partner_id,
           edgeFunction: 'shopee-token-refresh',
           apiEndpoint: '/api/v2/auth/access_token/get',
           httpMethod: 'POST',
@@ -510,6 +511,7 @@ serve(async (req) => {
         // Log API call
         logApiCall(supabase, {
           shopId: shop.shop_id,
+          partnerId: shop.partner_id,
           edgeFunction: 'shopee-token-refresh',
           apiEndpoint: '/api/v2/auth/access_token/get',
           httpMethod: 'POST',
@@ -667,6 +669,7 @@ serve(async (req) => {
           // Log API call for app token refresh
           logApiCall(supabase, {
             shopId: rep.shop_id,
+            partnerId: appInfo.partner_id,
             edgeFunction: 'shopee-token-refresh',
             apiEndpoint: '/api/v2/auth/access_token/get',
             httpMethod: 'POST',
@@ -731,6 +734,7 @@ serve(async (req) => {
           // Log API call for standalone app token refresh
           logApiCall(supabase, {
             shopId: at.shop_id,
+            partnerId: appInfo.partner_id,
             edgeFunction: 'shopee-token-refresh',
             apiEndpoint: '/api/v2/auth/access_token/get',
             httpMethod: 'POST',

@@ -3,7 +3,7 @@
  * Theo dõi các lệnh gọi Shopee API từ hệ thống
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   useApiCallLogs,
   fetchApiCallLogDetail,
@@ -13,6 +13,7 @@ import {
 } from '@/hooks/useApiCallLogs';
 import { useApiCallStats } from '@/hooks/useApiCallStats';
 import { useShopeeAuth } from '@/contexts/ShopeeAuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -247,6 +248,12 @@ function CollapsibleJson({
   );
 }
 
+interface PartnerApp {
+  partner_id: number;
+  partner_name: string;
+  app_category: string;
+}
+
 export function ApiCallLogsPanel() {
   const { shops } = useShopeeAuth();
   const [filters, setFilters] = useState<ApiCallLogFilters>({
@@ -257,12 +264,23 @@ export function ApiCallLogsPanel() {
   const [searchInput, setSearchInput] = useState('');
   const [selectedLog, setSelectedLog] = useState<ApiCallLog | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [partnerApps, setPartnerApps] = useState<PartnerApp[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from('apishopee_partner_apps')
+      .select('partner_id, partner_name, app_category')
+      .then(({ data }) => {
+        if (data) setPartnerApps(data as PartnerApp[]);
+      });
+  }, []);
 
   const { data, isLoading, refetch, isFetching } = useApiCallLogs(filters);
 
   // Daily stats for summary cards
   const { data: statsData, isLoading: statsLoading } = useApiCallStats({
     shopId: filters.shopId,
+    partnerId: filters.partnerId,
     dateRange: filters.dateRange,
   });
   const summary = statsData?.summary;
@@ -312,6 +330,12 @@ export function ApiCallLogsPanel() {
   const getShopName = (shopId: number | null) => {
     if (!shopId) return '-';
     return shopNameMap.get(shopId) || shopId.toString();
+  };
+
+  const getPartnerName = (partnerId: number | null) => {
+    if (!partnerId) return null;
+    const app = partnerApps.find(p => p.partner_id === partnerId);
+    return app ? app.partner_name : partnerId.toString();
   };
 
   return (
@@ -425,6 +449,27 @@ export function ApiCallLogsPanel() {
                 {shopOptions.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value} className="cursor-pointer">
                     {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Partner filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Partner</label>
+            <Select
+              value={filters.partnerId?.toString() || 'all'}
+              onValueChange={(v) => updateFilter('partnerId', v === 'all' ? undefined : Number(v))}
+            >
+              <SelectTrigger className="w-[150px] h-8 text-sm cursor-pointer">
+                <SelectValue placeholder="Partner" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả</SelectItem>
+                {partnerApps.map((p) => (
+                  <SelectItem key={p.partner_id} value={p.partner_id.toString()} className="cursor-pointer">
+                    {p.partner_name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -614,6 +659,7 @@ export function ApiCallLogsPanel() {
                 <tr>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Thời gian</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Shop</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Partner</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">API Endpoint</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Category</th>
                   <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Status</th>
@@ -633,6 +679,15 @@ export function ApiCallLogsPanel() {
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-600 whitespace-nowrap max-w-[120px] truncate">
                       {getShopName(log.shop_id)}
+                    </td>
+                    <td className="px-4 py-2 text-xs whitespace-nowrap">
+                      {getPartnerName(log.partner_id) ? (
+                        <span className="inline-flex px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-xs font-medium">
+                          {getPartnerName(log.partner_id)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-700 truncate max-w-[250px] font-mono" title={log.api_endpoint}>
                       {formatEndpoint(log.api_endpoint)}
@@ -718,6 +773,9 @@ export function ApiCallLogsPanel() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <DetailItem label="Thời gian" value={formatFullDate(selectedLog.created_at)} />
                   <DetailItem label="Shop" value={getShopName(selectedLog.shop_id)} />
+                  {selectedLog.partner_id && (
+                    <DetailItem label="Partner" value={getPartnerName(selectedLog.partner_id) || selectedLog.partner_id.toString()} />
+                  )}
                   <DetailItem label="API Endpoint" value={selectedLog.api_endpoint} />
                   <DetailItem label="HTTP Method" value={selectedLog.http_method || 'GET'} />
                   <DetailItem label="Edge Function" value={selectedLog.edge_function} />
