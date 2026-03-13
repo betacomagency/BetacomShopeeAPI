@@ -7,11 +7,34 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
+export interface PartnerOption {
+  value: string;
+  label: string;
+}
+
+export function usePartnerIds() {
+  return useQuery({
+    queryKey: ['api-registry-partners'],
+    queryFn: async (): Promise<PartnerOption[]> => {
+      const { data, error } = await supabase
+        .from('api_call_logs')
+        .select('partner_id')
+        .not('partner_id', 'is', null)
+        .limit(1000);
+      if (error) throw error;
+      const unique = [...new Set((data || []).map((r: { partner_id: number }) => r.partner_id))].sort();
+      return unique.map(id => ({ value: String(id), label: String(id) }));
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export interface ApiRegistryEntry {
   api_endpoint: string;
   http_method: string;
   api_category: string;
   edge_function: string;
+  partner_id: number | null;
   total_calls: number;
   success_count: number;
   failed_count: number;
@@ -27,6 +50,7 @@ export type SortField = 'total_calls' | 'success_rate' | 'avg_duration' | 'last_
 
 export interface ApiRegistryFilters {
   category?: string;
+  partnerId?: string;
   /** Custom date range - takes priority over dateRange preset */
   from?: Date;
   to?: Date;
@@ -39,10 +63,11 @@ export function useApiRegistry(filters: ApiRegistryFilters) {
   const toISO = filters.to ? new Date(filters.to.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString() : null; // end of day
 
   return useQuery({
-    queryKey: ['api-registry', fromISO, toISO, filters.category],
+    queryKey: ['api-registry', fromISO, toISO, filters.category, filters.partnerId],
     queryFn: async (): Promise<ApiRegistryEntry[]> => {
       const params: Record<string, unknown> = {
         p_category: filters.category && filters.category !== 'all' ? filters.category : null,
+        p_partner_id: filters.partnerId && filters.partnerId !== 'all' ? Number(filters.partnerId) : null,
       };
 
       if (hasCustomRange) {
@@ -59,6 +84,7 @@ export function useApiRegistry(filters: ApiRegistryFilters) {
         http_method: row.http_method as string,
         api_category: row.api_category as string,
         edge_function: row.edge_function as string,
+        partner_id: row.partner_id ? Number(row.partner_id) : null,
         total_calls: Number(row.total_calls),
         success_count: Number(row.success_count),
         failed_count: Number(row.failed_count),

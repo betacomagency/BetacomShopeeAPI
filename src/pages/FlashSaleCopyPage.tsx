@@ -62,6 +62,16 @@ interface CriteriaData {
   must_not_pre_order?: boolean;
 }
 
+const DEFAULT_CRITERIA: CriteriaData = {
+  min_discount: 5,
+  max_discount: 90,
+  min_promo_stock: 5,
+  max_promo_stock: 10000,
+  min_product_rating: 4,
+  max_days_to_ship: 2,
+  must_not_pre_order: true,
+};
+
 interface FlashSaleItem {
   item_id: number;
   item_name?: string;
@@ -157,7 +167,7 @@ export default function FlashSaleCopyPage() {
   const [excludedModels, setExcludedModels] = useState<Set<string>>(new Set()); // "itemId:modelId"
 
   // Criteria state
-  const [criteria, setCriteria] = useState<CriteriaData | null>(null);
+  const [criteria, setCriteria] = useState<CriteriaData>(DEFAULT_CRITERIA);
   const [loadingCriteria, setLoadingCriteria] = useState(false);
   const [failedModels, setFailedModels] = useState<Set<string>>(new Set()); // "itemId:modelId" that fail criteria
 
@@ -298,8 +308,7 @@ export default function FlashSaleCopyPage() {
       });
       if (error) throw error;
       if (data?.error) {
-        console.warn('[CRITERIA] API error:', data.error);
-        setCriteria(null);
+        console.warn('[CRITERIA] API error, using defaults:', data.error);
         return;
       }
       const criteriaList = data?.response?.criteria;
@@ -603,10 +612,11 @@ export default function FlashSaleCopyPage() {
         if (!newFsId) throw new Error('Không nhận được flash_sale_id');
 
         setProgressStep(`Thêm ${itemsToAdd.length} SP vào ${slotLabel}`);
-        const { error: addError } = await supabase.functions.invoke('apishopee-flash-sale', {
+        const { data: addData, error: addError } = await supabase.functions.invoke('apishopee-flash-sale', {
           body: { action: 'add-items', shop_id: selectedShopId, flash_sale_id: newFsId, items: itemsToAdd },
         });
         if (addError) throw addError;
+        if (addData?.error) throw new Error(addData.message || addData.error);
 
         if (historyId) {
           await supabase.from('apishopee_flash_sale_auto_history').update({
@@ -744,7 +754,7 @@ export default function FlashSaleCopyPage() {
 
                   {/* Slot Picker Dialog */}
                   <Dialog open={showSlotPicker} onOpenChange={setShowSlotPicker}>
-                    <DialogContent className="max-w-lg">
+                    <DialogContent className="max-w-2xl">
                       <DialogHeader>
                         <DialogTitle className="flex items-center justify-between">
                           <span>Chọn khung giờ</span>
@@ -771,7 +781,7 @@ export default function FlashSaleCopyPage() {
                           </div>
                         </DialogTitle>
                       </DialogHeader>
-                      <div className="max-h-[400px] overflow-y-auto border rounded-lg">
+                      <div className="max-h-[60vh] overflow-y-auto border rounded-lg">
                         {loadingSlots ? (
                           <div className="flex items-center justify-center py-8">
                             <Spinner className="h-5 w-5" />
@@ -1199,7 +1209,7 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
             const noStock = (model.stock ?? 0) === 0;
 
             return (
-              <tr key={model.model_id} className={cn("border-b hover:bg-slate-50/50", (excluded || noStock) && "opacity-40")}>
+              <tr key={model.model_id} className={cn("border-b hover:bg-slate-50/50", (excluded || noStock || isFailed) && "opacity-40")}>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2 pl-2">
                     <TooltipProvider>

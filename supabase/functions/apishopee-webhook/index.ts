@@ -180,12 +180,13 @@ async function handleAuthorizationPush(
   // Upsert từng shop: tạo mới nếu chưa có, update status nếu đã có
   let created = 0;
   let updated = 0;
+  const newShopIds: number[] = [];
 
   for (const sid of shopIds) {
     // Check shop có tồn tại chưa
     const { data: existing } = await supabase
       .from('apishopee_shops')
-      .select('shop_id')
+      .select('shop_id, access_token')
       .eq('shop_id', sid)
       .single();
 
@@ -200,6 +201,11 @@ async function handleAuthorizationPush(
         })
         .eq('shop_id', sid);
       updated++;
+
+      // Shop tồn tại nhưng chưa có token → cũng cần lấy token
+      if (!existing.access_token) {
+        newShopIds.push(sid);
+      }
     } else {
       // Shop mới → insert record cơ bản
       const { error: insertError } = await supabase
@@ -219,11 +225,88 @@ async function handleAuthorizationPush(
         console.error(`[WEBHOOK] Failed to insert shop ${sid}:`, insertError);
       } else {
         created++;
+        newShopIds.push(sid);
       }
     }
   }
 
-  return `authorized: ${shopIds.length} shops (${created} new, ${updated} updated), merchant: ${merchantId || 'none'}`;
+  // === Auto-provision token cho shop mới từ merchant đã có token ===
+  let tokenProvisioned = 0;
+  if (newShopIds.length > 0 && merchantId && partnerId && partnerKey) {
+    console.log(`[WEBHOOK] Auto-provisioning token for ${newShopIds.length} new shops via merchant ${merchantId}`);
+
+    // Tìm 1 shop cùng merchant đã có refresh_token
+    const { data: existingShop } = await supabase
+      .from('apishopee_shops')
+      .select('shop_id, refresh_token, partner_id, partner_key')
+      .eq('merchant_id', merchantId)
+      .not('refresh_token', 'is', null)
+      .not('partner_id', 'is', null)
+      .not('partner_key', 'is', null)
+      .limit(1)
+      .single();
+
+    if (existingShop) {
+      // Refresh token bằng merchant_id → token dùng chung cho tất cả shop cùng merchant
+      const refreshResult = await refreshShopToken(
+        existingShop.partner_id,
+        existingShop.partner_key,
+        existingShop.refresh_token,
+        undefined, // không gửi shop_id
+        merchantId
+      );
+
+      if (refreshResult.success && refreshResult.data) {
+        const now = Date.now();
+        const expireIn = (refreshResult.data.expire_in as number) || 0;
+        const newExpiredAt = now + expireIn * 1000;
+
+        // Cập nhật token cho tất cả shop mới
+        const { error: updateError } = await supabase
+          .from('apishopee_shops')
+          .update({
+            access_token: refreshResult.data.access_token,
+            refresh_token: refreshResult.data.refresh_token,
+            expire_in: expireIn,
+            expired_at: newExpiredAt,
+            access_token_expired_at: newExpiredAt,
+            partner_id: existingShop.partner_id,
+            partner_key: existingShop.partner_key,
+            token_updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .in('shop_id', newShopIds);
+
+        if (updateError) {
+          console.error(`[WEBHOOK] Failed to provision tokens for new shops:`, updateError);
+        } else {
+          tokenProvisioned = newShopIds.length;
+          console.log(`[WEBHOOK] Token provisioned for ${newShopIds.length} new shops, expires: ${new Date(newExpiredAt).toISOString()}`);
+        }
+
+        // Cập nhật luôn token cho shop cũ cùng merchant (đồng bộ)
+        await supabase
+          .from('apishopee_shops')
+          .update({
+            access_token: refreshResult.data.access_token,
+            refresh_token: refreshResult.data.refresh_token,
+            expire_in: expireIn,
+            expired_at: newExpiredAt,
+            access_token_expired_at: newExpiredAt,
+            token_updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('merchant_id', merchantId)
+          .not('shop_id', 'in', `(${newShopIds.join(',')})`);
+      } else {
+        console.error(`[WEBHOOK] Failed to refresh merchant token for new shops:`, refreshResult.error);
+      }
+    } else {
+      console.log(`[WEBHOOK] No existing shop with token found for merchant ${merchantId}, new shops need manual auth`);
+    }
+  }
+
+  return `authorized: ${shopIds.length} shops (${created} new, ${updated} updated, ${tokenProvisioned} token-provisioned), merchant: ${merchantId || 'none'}`;
 }
 
 /**

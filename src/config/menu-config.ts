@@ -13,7 +13,6 @@ import {
   Package,
   Clock,
   Bell,
-  ShieldAlert,
   TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
@@ -80,7 +79,6 @@ export const menuItems: MenuItem[] = [
     permissionKey: 'notifications',
     description: 'Thông báo từ Shopee',
     children: [
-      { title: 'Vi phạm Shop', icon: ShieldAlert, path: '/notifications/penalties', permissionKey: 'notifications' },
     ],
   },
   {

@@ -41,9 +41,6 @@ import DocsPage from '@/pages/DocsPage';
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AdminActivityPage from '@/pages/admin/AdminActivityPage';
 
-// Notification Pages
-import PenaltyPage from '@/pages/notifications/PenaltyPage';
-
 // Shop Performance Page
 import ShopPerformancePage from '@/pages/ShopPerformancePage';
 
@@ -88,7 +85,6 @@ function App() {
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
                   <Route path="/flash-sale/copy/:flashSaleId" element={<FlashSaleCopyPage />} />
-                  <Route path="/notifications/penalties" element={<PenaltyPage />} />
                   <Route path="/shop-performance" element={<ShopPerformancePage />} />
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />

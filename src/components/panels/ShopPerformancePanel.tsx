@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useShopPerformance } from '@/hooks/useShopPerformance';
 import { useShopeeAuth } from '@/contexts/ShopeeAuthContext';
+import { usePermissionsContext } from '@/contexts/PermissionsContext';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import {
@@ -106,33 +107,29 @@ function isMetricFailed(m: ShopPerformanceMetricRow): boolean {
   }
 }
 
-// ─── Metric Row ──────────────────────────────────────────────────────────────
+// ─── Metric Card ──────────────────────────────────────────────────────────────
 
-function MetricRow({ m }: { m: ShopPerformanceMetricRow }) {
+function MetricCard({ m }: { m: ShopPerformanceMetricRow }) {
   const failed = isMetricFailed(m);
 
   return (
-    <tr className={`hover:bg-slate-50/60 transition-colors ${failed ? 'bg-red-50/30' : ''}`}>
-      <td className="px-4 py-2.5 text-sm text-slate-700">
+    <div className={`rounded-lg border p-3 flex flex-col gap-1.5 ${failed ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="text-xs text-slate-500 leading-tight min-h-[2.5rem] flex items-start">
         <span>{getMetricLabel(m.metric_id, m.metric_name)}</span>
-        {m.exemption_end_date && (
-          <span className="ml-2 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Miễn trừ đến {m.exemption_end_date}</span>
+      </div>
+      {m.exemption_end_date && (
+        <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded self-start">Miễn trừ đến {m.exemption_end_date}</span>
+      )}
+      <div className={`text-lg font-semibold ${failed ? 'text-red-600' : 'text-slate-800'}`}>
+        {formatValue(m.current_period, m.unit)}
+      </div>
+      <div className="flex justify-between text-xs text-slate-400 border-t border-slate-100 pt-1.5 mt-auto">
+        <span>Kỳ trước: <span className="text-slate-600">{formatValue(m.last_period, m.unit)}</span></span>
+        {m.target_comparator && m.target_value !== null && (
+          <span>Mục tiêu: <span className="text-slate-600">{m.target_comparator} {formatValue(m.target_value, m.unit)}</span></span>
         )}
-      </td>
-      <td className="px-4 py-2.5 text-sm text-right font-medium">
-        <span className={failed ? 'text-red-600' : 'text-slate-800'}>
-          {formatValue(m.current_period, m.unit)}
-        </span>
-      </td>
-      <td className="px-4 py-2.5 text-sm text-right text-slate-500">
-        {formatValue(m.last_period, m.unit)}
-      </td>
-      <td className="px-4 py-2.5 text-sm text-right text-slate-500">
-        {m.target_comparator && m.target_value !== null
-          ? `${m.target_comparator} ${formatValue(m.target_value, m.unit)}`
-          : '-'}
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }
 
@@ -164,20 +161,8 @@ function CategorySection({ title, metricType, metrics }: { title: string; metric
       </button>
 
       {!collapsed && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-slate-100">
-              <tr className="text-xs text-slate-500">
-                <th className="text-left px-4 py-2 font-medium">Chỉ số</th>
-                <th className="text-right px-4 py-2 font-medium">Kỳ hiện tại</th>
-                <th className="text-right px-4 py-2 font-medium">Kỳ trước</th>
-                <th className="text-right px-4 py-2 font-medium">Mục tiêu</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {categoryMetrics.map(m => <MetricRow key={m.id} m={m} />)}
-            </tbody>
-          </table>
+        <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+          {categoryMetrics.map(m => <MetricCard key={m.id} m={m} />)}
         </div>
       )}
     </div>
@@ -204,6 +189,7 @@ function OverviewTab({ metrics }: {
 
 export function ShopPerformancePanel() {
   const { selectedShopId: shopId, shops } = useShopeeAuth();
+  const { isAdmin } = usePermissionsContext();
 
   const {
     metrics,
@@ -242,16 +228,18 @@ export function ShopPerformancePanel() {
     <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex justify-end gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => syncAllShops(activeShops)}
-          disabled={isSyncing}
-          className="cursor-pointer"
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${syncAllInProgress ? 'animate-spin' : ''}`} />
-          Đồng bộ tất cả ({activeShops.length})
-        </Button>
+        {isAdmin && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => syncAllShops(activeShops)}
+            disabled={isSyncing}
+            className="cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncAllInProgress ? 'animate-spin' : ''}`} />
+            Đồng bộ tất cả ({activeShops.length})
+          </Button>
+        )}
         <Button
           size="sm"
           onClick={syncPerformance}

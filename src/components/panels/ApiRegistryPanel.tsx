@@ -8,6 +8,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useApiRegistry,
+  usePartnerIds,
   type ApiRegistryEntry,
   type ApiRegistryFilters,
   type SortField,
@@ -77,13 +78,16 @@ export function ApiRegistryPanel() {
     to: today,
   });
   const [category, setCategory] = useState('all');
+  const [partnerId, setPartnerId] = useState('all');
   const [search, setSearch] = useState('');
+  const { data: partnerOptions } = usePartnerIds();
   const [sortBy, setSortBy] = useState<SortField>('total_calls');
   const [sortDesc, setSortDesc] = useState(true);
   const navigate = useNavigate();
 
   const filters: ApiRegistryFilters = {
     category,
+    partnerId,
     from: dateRange?.from,
     to: dateRange?.to,
   };
@@ -175,6 +179,21 @@ export function ApiRegistryPanel() {
             </SelectTrigger>
             <SelectContent>
               {CATEGORY_OPTIONS.map(o => (
+                <SelectItem key={o.value} value={o.value} className="cursor-pointer">{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Partner</label>
+          <Select value={partnerId} onValueChange={setPartnerId}>
+            <SelectTrigger className="w-[150px] h-8 text-sm cursor-pointer">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="cursor-pointer">Tất cả</SelectItem>
+              {(partnerOptions || []).map(o => (
                 <SelectItem key={o.value} value={o.value} className="cursor-pointer">{o.label}</SelectItem>
               ))}
             </SelectContent>
