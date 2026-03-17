@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ShopeeAuthProvider } from '@/contexts/ShopeeAuthContext';
 import { PermissionsProvider } from '@/contexts/PermissionsContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 // Layout
 import MainLayout from '@/components/layout/MainLayout';
 import AdminLayout from '@/components/layout/AdminLayout';
@@ -21,10 +22,7 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
 import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
-import PushLogsPage from '@/pages/settings/PushLogsPage';
 import ApiCallLogsPage from '@/pages/settings/ApiCallLogsPage';
-import ApiRegistryPage from '@/pages/admin/ApiRegistryPage';
-import ApiRegistryDetailPage from '@/pages/admin/ApiRegistryDetailPage';
 
 import ShopInfoPage from '@/pages/settings/ShopInfoPage';
 
@@ -39,10 +37,12 @@ import DocsPage from '@/pages/DocsPage';
 
 // Admin Pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
-import AdminActivityPage from '@/pages/admin/AdminActivityPage';
 
 // Shop Performance Page
 import ShopPerformancePage from '@/pages/ShopPerformancePage';
+
+// Demo Pages
+import TableDemoPage from '@/pages/TableDemoPage';
 
 function App() {
   const [queryClient] = useState(
@@ -62,19 +62,20 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <PermissionsProvider>
-        <ShopeeAuthProvider>
-            <TooltipProvider>
-            <Toaster />
-            <Sonner />
+      <ThemeProvider defaultTheme="light">
+        <AuthProvider>
+          <PermissionsProvider>
+            <ShopeeAuthProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
             <BrowserRouter>
               <Routes>
                 {/* Public routes */}
                 <Route path="/" element={<Navigate to="/auth" replace />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
-                {/* Standalone protected route - no MainLayout */}
+                {/* Standalone pages (no sidebar) */}
                 <Route path="/docs" element={<DocsPage />} />
 
                 {/* Protected routes with MainLayout (user pages) */}
@@ -88,6 +89,7 @@ function App() {
                   <Route path="/shop-performance" element={<ShopPerformancePage />} />
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />
+                  <Route path="/demo/tables" element={<TableDemoPage />} />
                 </Route>
 
                 {/* Admin Panel with AdminLayout */}
@@ -95,10 +97,6 @@ function App() {
                   <Route path="/admin" element={<AdminDashboardPage />} />
                   <Route path="/admin/flash-sale" element={<FlashSaleOverviewPage />} />
                   <Route path="/admin/api-logs" element={<ApiCallLogsPage />} />
-                  <Route path="/admin/api-registry" element={<ApiRegistryPage />} />
-                  <Route path="/admin/api-registry/detail" element={<ApiRegistryDetailPage />} />
-                  <Route path="/admin/push-logs" element={<PushLogsPage />} />
-                  <Route path="/admin/activity" element={<AdminActivityPage />} />
                   <Route path="/admin/shops" element={<ShopsSettingsPage />} />
                   <Route path="/admin/shops/:shopId" element={<ShopInfoPage />} />
                   <Route path="/admin/users" element={<UsersSettingsPage />} />
@@ -106,7 +104,6 @@ function App() {
 
                 {/* Backwards compat redirects */}
                 <Route path="/settings/api-logs" element={<Navigate to="/admin/api-logs" replace />} />
-                <Route path="/settings/push-logs" element={<Navigate to="/admin/push-logs" replace />} />
                 <Route path="/settings/shops" element={<Navigate to="/admin/shops" replace />} />
                 <Route path="/settings/users" element={<Navigate to="/admin/users" replace />} />
                 <Route path="/flash-sale/overview" element={<Navigate to="/admin/flash-sale" replace />} />
@@ -114,11 +111,12 @@ function App() {
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
-            </BrowserRouter>
-            </TooltipProvider>
-        </ShopeeAuthProvider>
-        </PermissionsProvider>
-      </AuthProvider>
+              </BrowserRouter>
+              </TooltipProvider>
+            </ShopeeAuthProvider>
+          </PermissionsProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

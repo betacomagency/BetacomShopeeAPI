@@ -567,7 +567,7 @@ export function AutoSetupDialog({
       <DialogContent className="sm:max-w-[900px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-green-600" />
+            <Zap className="h-5 w-5 text-success" />
             Cài đặt tự động tạo Flash Sale
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -581,12 +581,12 @@ export function AutoSetupDialog({
               {/* Progress bar */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600 font-medium">{progress.step}</span>
-                  <span className="text-slate-400">{progress.current}/{progress.total}</span>
+                  <span className="text-muted-foreground font-medium">{progress.step}</span>
+                  <span className="text-muted-foreground">{progress.current}/{progress.total}</span>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-300"
+                    className="h-full bg-gradient-to-r from-success to-success rounded-full transition-all duration-300"
                     style={{ width: `${(progress.current / progress.total) * 100}%` }}
                   />
                 </div>
@@ -600,17 +600,17 @@ export function AutoSetupDialog({
                     return (
                       <div key={idx} className="px-3 py-2 flex items-center gap-2 text-sm">
                         {result.status === 'success' ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                          <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
                         ) : (
-                          <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                          <XCircle className="h-4 w-4 text-destructive flex-shrink-0" />
                         )}
-                        <span className="text-slate-700">
+                        <span className="text-foreground">
                           {slot ? `${formatTime(slot.start_time)} - ${formatTime(slot.end_time)} ${formatDate(slot.start_time)}` : `Slot #${result.slotId}`}
                         </span>
                         {result.status === 'success' ? (
-                          <span className="text-green-600 text-xs ml-auto">Thành công</span>
+                          <span className="text-success text-xs ml-auto">Thành công</span>
                         ) : (
-                          <span className="text-red-500 text-xs ml-auto truncate max-w-[200px]" title={result.message}>
+                          <span className="text-destructive text-xs ml-auto truncate max-w-[200px]" title={result.message}>
                             {result.message || 'Lỗi'}
                           </span>
                         )}
@@ -626,7 +626,7 @@ export function AutoSetupDialog({
           {!isRunning && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-green-600" />
+                <Clock className="h-4 w-4 text-success" />
                 Thời gian tự động cài
               </Label>
               <Select
@@ -649,7 +649,7 @@ export function AutoSetupDialog({
                   <SelectItem value="10">10 phút trước khung giờ</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 {leadTimeMinutes === 0
                   ? 'Tất cả Flash Sale sẽ được tạo ngay lập tức'
                   : `Mỗi Flash Sale sẽ được tạo ${leadTimeMinutes} phút trước giờ bắt đầu`}
@@ -658,26 +658,26 @@ export function AutoSetupDialog({
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
-                <Package className="h-4 w-4 text-orange-600" />
+                <Package className="h-4 w-4 text-brand" />
                 Sản phẩm mẫu
                 <Button variant="ghost" size="sm" onClick={fetchLatestTemplate} disabled={loadingTemplate} className="ml-auto h-6 px-2">
                   <RefreshCw className={cn("h-3 w-3", loadingTemplate && "animate-spin")} />
                 </Button>
               </Label>
               {loadingTemplate ? (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <RefreshCw className="h-4 w-4 animate-spin" />
                   Đang tải...
                 </div>
               ) : templateItems.length === 0 ? (
-                <div className="text-sm text-red-500 bg-red-50 p-2 rounded">
+                <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
                   Không có sản phẩm mẫu. Cần có Flash Sale với sản phẩm đang bật.
                 </div>
               ) : (
-                <div className="text-sm text-slate-600 bg-green-50 p-2 rounded">
-                  <p className="font-medium text-green-700">{templateItems.length} sản phẩm</p>
+                <div className="text-sm text-muted-foreground bg-success/10 p-2 rounded">
+                  <p className="font-medium text-success">{templateItems.length} sản phẩm</p>
                   {latestFlashSaleId && latestFlashSaleTime && (
-                    <p className="text-xs text-green-600 mt-1">
+                    <p className="text-xs text-success mt-1">
                       Từ khung {new Date(latestFlashSaleTime.start * 1000).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })} - {new Date(latestFlashSaleTime.end * 1000).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   )}
@@ -695,7 +695,7 @@ export function AutoSetupDialog({
           {!isRunning && <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-blue-600" />
+                <Clock className="h-4 w-4 text-info" />
                 Chọn khung giờ ({selectedSlots.size}/{timeSlots.length})
               </Label>
               <div className="flex items-center gap-2">
@@ -710,13 +710,13 @@ export function AutoSetupDialog({
                 </Button>
               </div>
             </div>
-            <div className="border rounded-lg max-h-[400px] overflow-y-auto">
+            <div className="border border-border rounded-lg max-h-[400px] overflow-y-auto">
               {loadingSlots ? (
                 <div className="flex items-center justify-center py-8">
-                  <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                  <RefreshCw className="h-5 w-5 animate-spin text-info" />
                 </div>
               ) : timeSlots.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                   <Calendar className="h-8 w-8 mb-2" />
                   <p className="text-sm">Không có khung giờ</p>
                 </div>
@@ -730,34 +730,34 @@ export function AutoSetupDialog({
                     return (
                       <div key={date}>
                         <div
-                          className="px-3 py-2 bg-slate-50 text-xs font-medium text-slate-600 sticky top-0 flex items-center gap-2 cursor-pointer hover:bg-slate-100 transition-colors"
+                          className="px-3 py-2 bg-muted text-xs font-medium text-muted-foreground sticky top-0 flex items-center gap-2 cursor-pointer hover:bg-accent transition-colors"
                           onClick={() => toggleDateSlots(date)}
                         >
                           <Checkbox
                             checked={allSelected}
                             className={cn(
-                              "border-slate-400",
-                              someSelected && !allSelected && "data-[state=unchecked]:bg-slate-200"
+                              "border-border",
+                              someSelected && !allSelected && "data-[state=unchecked]:bg-muted"
                             )}
                             onClick={(e) => e.stopPropagation()}
                             onCheckedChange={() => toggleDateSlots(date)}
                           />
                           <span>{date}</span>
-                          <span className="text-slate-400 ml-auto">({slots.length} khung giờ)</span>
+                          <span className="text-muted-foreground ml-auto">({slots.length} khung giờ)</span>
                         </div>
                         <div className="divide-y">
                           {slots.map((slot) => (
-                            <div key={slot.timeslot_id} className="px-3 py-2 flex items-center gap-2 hover:bg-slate-50">
+                            <div key={slot.timeslot_id} className="px-3 py-2 flex items-center gap-2 hover:bg-muted">
                               <Checkbox
                                 checked={selectedSlots.has(slot.timeslot_id)}
                                 onCheckedChange={() => toggleSlot(slot.timeslot_id)}
-                                className="border-slate-400"
+                                className="border-border"
                               />
-                              <Clock className="h-3 w-3 text-slate-400" />
+                              <Clock className="h-3 w-3 text-muted-foreground" />
                               <span className="text-sm">
                                 {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
                               </span>
-                              <span className="text-xs text-slate-400 ml-auto">
+                              <span className="text-xs text-muted-foreground ml-auto">
                                 {formatDate(slot.start_time)}
                               </span>
                             </div>
@@ -778,7 +778,7 @@ export function AutoSetupDialog({
           <Button
             onClick={runAutoSetup}
             disabled={selectedSlots.size === 0 || templateItems.length === 0 || isRunning}
-            className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 w-full md:w-auto"
+            className="bg-gradient-to-r from-success to-success hover:from-success hover:to-success w-full md:w-auto"
           >
             {isRunning && progress ? (
               <>
@@ -815,10 +815,10 @@ function TemplateItemsTable({ items }: { items: FlashSaleItem[] }) {
   return (
     <div className="space-y-2">
       <Label className="flex items-center gap-2">
-        <Package className="h-4 w-4 text-orange-600" />
+        <Package className="h-4 w-4 text-brand" />
         Chi tiết sản phẩm ({items.length})
       </Label>
-      <div className="border rounded-lg max-h-[350px] overflow-y-auto">
+      <div className="border border-border rounded-lg max-h-[350px] overflow-y-auto">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: '30%' }} />
@@ -829,15 +829,15 @@ function TemplateItemsTable({ items }: { items: FlashSaleItem[] }) {
             <col style={{ width: '10%' }} />
             <col style={{ width: '12%' }} />
           </colgroup>
-          <thead className="bg-slate-50 border-b sticky top-0 z-10">
+          <thead className="bg-muted border-b sticky top-0 z-10">
             <tr>
-              <th className="h-9 px-3 text-left font-medium text-slate-600 text-xs">Sản phẩm</th>
-              <th className="h-9 px-2 text-right font-medium text-slate-600 text-xs">Giá gốc</th>
-              <th className="h-9 px-2 text-right font-medium text-slate-600 text-xs">Giá KM</th>
-              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">Giảm</th>
-              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">SL KM</th>
-              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">Kho</th>
-              <th className="h-9 px-2 text-center font-medium text-slate-600 text-xs">Giới hạn</th>
+              <th className="h-9 px-3 text-left font-medium text-muted-foreground text-xs">Sản phẩm</th>
+              <th className="h-9 px-2 text-right font-medium text-muted-foreground text-xs">Giá gốc</th>
+              <th className="h-9 px-2 text-right font-medium text-muted-foreground text-xs">Giá KM</th>
+              <th className="h-9 px-2 text-center font-medium text-muted-foreground text-xs">Giảm</th>
+              <th className="h-9 px-2 text-center font-medium text-muted-foreground text-xs">SL KM</th>
+              <th className="h-9 px-2 text-center font-medium text-muted-foreground text-xs">Kho</th>
+              <th className="h-9 px-2 text-center font-medium text-muted-foreground text-xs">Giới hạn</th>
             </tr>
           </thead>
           <tbody>
@@ -868,10 +868,10 @@ function TemplateItemRow({ item, expanded, onToggleExpand }: {
   return (
     <>
       {/* Item header */}
-      <tr className="border-b bg-slate-50/50">
+      <tr className="border-b bg-muted/50">
         <td colSpan={7} className="px-3 py-2">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+            <div className="w-8 h-8 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
               {itemImage ? (
                 <ImageWithZoom
                   src={itemImage}
@@ -880,14 +880,14 @@ function TemplateItemRow({ item, expanded, onToggleExpand }: {
                   zoomSize={200}
                 />
               ) : (
-                <div className="w-5 h-5 bg-slate-200 rounded" />
+                <div className="w-5 h-5 bg-muted rounded" />
               )}
             </div>
             <div className="min-w-0">
-              <span className="text-xs font-medium text-slate-700 truncate block">
+              <span className="text-xs font-medium text-foreground truncate block">
                 {item.item_name || `Item #${item.item_id}`}
               </span>
-              <span className="text-[10px] text-slate-400">ID: {item.item_id}</span>
+              <span className="text-[10px] text-muted-foreground">ID: {item.item_id}</span>
             </div>
           </div>
         </td>
@@ -900,20 +900,20 @@ function TemplateItemRow({ item, expanded, onToggleExpand }: {
             const promoPrice = model.input_promotion_price || model.promotion_price_with_tax;
             const discount = calcDiscount(model.original_price, promoPrice);
             return (
-              <tr key={model.model_id} className="border-b hover:bg-slate-50/50">
+              <tr key={model.model_id} className="border-b hover:bg-muted/50">
                 <td className="px-3 py-1.5">
-                  <span className="text-xs text-slate-600 truncate block">{model.model_name || `#${model.model_id}`}</span>
+                  <span className="text-xs text-muted-foreground truncate block">{model.model_name || `#${model.model_id}`}</span>
                 </td>
-                <td className="px-2 py-1.5 text-xs text-slate-500 text-right">{formatPrice(model.original_price)}</td>
-                <td className="px-2 py-1.5 text-xs text-slate-700 text-right font-medium">{formatPrice(promoPrice)}</td>
+                <td className="px-2 py-1.5 text-xs text-muted-foreground text-right">{formatPrice(model.original_price)}</td>
+                <td className="px-2 py-1.5 text-xs text-foreground text-right font-medium">{formatPrice(promoPrice)}</td>
                 <td className="px-2 py-1.5 text-center">
                   {discount > 0 && (
-                    <span className="px-1 py-0.5 text-[10px] font-medium text-orange-600 border border-orange-300 rounded">-{discount}%</span>
+                    <span className="px-1 py-0.5 text-[10px] font-medium text-brand border border-brand/30 rounded">-{discount}%</span>
                   )}
                 </td>
-                <td className="px-2 py-1.5 text-xs text-orange-600 font-medium text-center">{model.campaign_stock ?? 0}</td>
-                <td className="px-2 py-1.5 text-xs text-slate-600 text-center">{model.stock ?? 0}</td>
-                <td className="px-2 py-1.5 text-xs text-slate-600 text-center">
+                <td className="px-2 py-1.5 text-xs text-brand font-medium text-center">{model.campaign_stock ?? 0}</td>
+                <td className="px-2 py-1.5 text-xs text-muted-foreground text-center">{model.stock ?? 0}</td>
+                <td className="px-2 py-1.5 text-xs text-muted-foreground text-center">
                   {(model.purchase_limit ?? item.purchase_limit) > 0 ? (model.purchase_limit ?? item.purchase_limit) : '-'}
                 </td>
               </tr>
@@ -924,7 +924,7 @@ function TemplateItemRow({ item, expanded, onToggleExpand }: {
               <td colSpan={7} className="px-3 py-1">
                 <button
                   onClick={onToggleExpand}
-                  className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
                 >
                   {expanded ? (
                     <>Thu gọn <ChevronUp className="h-3 w-3" /></>
@@ -937,22 +937,22 @@ function TemplateItemRow({ item, expanded, onToggleExpand }: {
           )}
         </>
       ) : (
-        <tr className="border-b hover:bg-slate-50/50">
-          <td className="px-3 py-1.5"><span className="text-xs text-slate-600">-</span></td>
-          <td className="px-2 py-1.5 text-xs text-slate-500 text-right">{formatPrice(item.original_price)}</td>
-          <td className="px-2 py-1.5 text-xs text-slate-700 text-right font-medium">
+        <tr className="border-b hover:bg-muted/50">
+          <td className="px-3 py-1.5"><span className="text-xs text-muted-foreground">-</span></td>
+          <td className="px-2 py-1.5 text-xs text-muted-foreground text-right">{formatPrice(item.original_price)}</td>
+          <td className="px-2 py-1.5 text-xs text-foreground text-right font-medium">
             {formatPrice(item.input_promotion_price || item.promotion_price_with_tax)}
           </td>
           <td className="px-2 py-1.5 text-center">
             {calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax) > 0 && (
-              <span className="px-1 py-0.5 text-[10px] font-medium text-orange-600 border border-orange-300 rounded">
+              <span className="px-1 py-0.5 text-[10px] font-medium text-brand border border-brand/30 rounded">
                 -{calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax)}%
               </span>
             )}
           </td>
-          <td className="px-2 py-1.5 text-xs text-orange-600 font-medium text-center">{item.campaign_stock ?? 0}</td>
-          <td className="px-2 py-1.5 text-xs text-slate-600 text-center">0</td>
-          <td className="px-2 py-1.5 text-xs text-slate-600 text-center">
+          <td className="px-2 py-1.5 text-xs text-brand font-medium text-center">{item.campaign_stock ?? 0}</td>
+          <td className="px-2 py-1.5 text-xs text-muted-foreground text-center">0</td>
+          <td className="px-2 py-1.5 text-xs text-muted-foreground text-center">
             {item.purchase_limit > 0 ? item.purchase_limit : '-'}
           </td>
         </tr>

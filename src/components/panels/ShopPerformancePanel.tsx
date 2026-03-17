@@ -113,20 +113,20 @@ function MetricCard({ m }: { m: ShopPerformanceMetricRow }) {
   const failed = isMetricFailed(m);
 
   return (
-    <div className={`rounded-lg border p-3 flex flex-col gap-1.5 ${failed ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
-      <div className="text-xs text-slate-500 leading-tight min-h-[2.5rem] flex items-start">
+    <div className={`rounded-lg border p-3 flex flex-col gap-1.5 ${failed ? 'border-destructive/20 bg-destructive/10' : 'border-border bg-card'}`}>
+      <div className="text-xs text-muted-foreground leading-tight min-h-[2.5rem] flex items-start">
         <span>{getMetricLabel(m.metric_id, m.metric_name)}</span>
       </div>
       {m.exemption_end_date && (
-        <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded self-start">Miễn trừ đến {m.exemption_end_date}</span>
+        <span className="text-xs text-warning bg-warning/10 px-1.5 py-0.5 rounded self-start">Miễn trừ đến {m.exemption_end_date}</span>
       )}
-      <div className={`text-lg font-semibold ${failed ? 'text-red-600' : 'text-slate-800'}`}>
+      <div className={`text-lg font-semibold ${failed ? 'text-destructive' : 'text-foreground'}`}>
         {formatValue(m.current_period, m.unit)}
       </div>
-      <div className="flex justify-between text-xs text-slate-400 border-t border-slate-100 pt-1.5 mt-auto">
-        <span>Kỳ trước: <span className="text-slate-600">{formatValue(m.last_period, m.unit)}</span></span>
+      <div className="flex justify-between text-xs text-muted-foreground border-t border-border pt-1.5 mt-auto">
+        <span>Kỳ trước: <span className="text-foreground">{formatValue(m.last_period, m.unit)}</span></span>
         {m.target_comparator && m.target_value !== null && (
-          <span>Mục tiêu: <span className="text-slate-600">{m.target_comparator} {formatValue(m.target_value, m.unit)}</span></span>
+          <span>Mục tiêu: <span className="text-foreground">{m.target_comparator} {formatValue(m.target_value, m.unit)}</span></span>
         )}
       </div>
     </div>
@@ -143,21 +143,21 @@ function CategorySection({ title, metricType, metrics }: { title: string; metric
   const failedCount = categoryMetrics.filter(m => (m.metric_id ?? 0) >= 0 && isMetricFailed(m)).length;
 
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between px-4 py-3 bg-muted hover:bg-muted/80 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3">
-          <BarChart3 className="w-4 h-4 text-slate-500" />
-          <span className="font-medium text-slate-700 text-sm">{title}</span>
+          <BarChart3 className="w-4 h-4 text-muted-foreground" />
+          <span className="font-medium text-foreground text-sm">{title}</span>
           {failedCount > 0 && (
-            <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full font-medium">
               {failedCount} không đạt
             </span>
           )}
         </div>
-        {collapsed ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronUp className="w-4 h-4 text-slate-400" />}
+        {collapsed ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronUp className="w-4 h-4 text-muted-foreground" />}
       </button>
 
       {!collapsed && (
@@ -212,7 +212,7 @@ export function ShopPerformancePanel() {
 
   if (!shopIdNum) {
     return (
-      <div className="flex items-center justify-center h-48 text-slate-400">
+      <div className="flex items-center justify-center h-48 text-muted-foreground">
         <p>Vui lòng chọn shop để xem hiệu quả bán hàng</p>
       </div>
     );
@@ -253,8 +253,8 @@ export function ShopPerformancePanel() {
 
       {/* Sync All Progress */}
       {syncAllInProgress && p && (
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
-          <div className="flex justify-between text-sm text-blue-700">
+        <div className="p-3 bg-info/10 border border-info/20 rounded-lg space-y-2">
+          <div className="flex justify-between text-sm text-info">
             <span>Đang đồng bộ: <strong>{p.current}</strong></span>
             <span>{p.done}/{p.total}</span>
           </div>
@@ -264,16 +264,16 @@ export function ShopPerformancePanel() {
 
       {/* Sync All Done */}
       {syncAllDone && p && (
-        <div className={`p-3 border rounded-lg text-sm ${p.errors.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+        <div className={`p-3 border rounded-lg text-sm ${p.errors.length > 0 ? 'bg-warning/10 border-warning/20 text-warning' : 'bg-success/10 border-success/20 text-success'}`}>
           {p.errors.length === 0
             ? `Đồng bộ thành công ${p.total} shop`
             : (
               <div className="space-y-1">
                 <p>Hoàn thành: {p.total - p.errors.length}/{p.total} shop thành công</p>
                 {p.errors.map(e => (
-                  <p key={e.shopId} className="text-xs text-red-600">
+                  <p key={e.shopId} className="text-xs text-destructive">
                     {e.rateLimited ? '⏱' : '•'} {e.shopName}: {e.message}
-                    {e.rateLimited && <span className="ml-1 font-semibold text-orange-600">[Rate limit]</span>}
+                    {e.rateLimited && <span className="ml-1 font-semibold text-brand">[Rate limit]</span>}
                   </p>
                 ))}
               </div>
@@ -284,7 +284,7 @@ export function ShopPerformancePanel() {
 
       {/* Error */}
       {syncError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
           {syncError}
         </div>
       )}
@@ -292,16 +292,16 @@ export function ShopPerformancePanel() {
       {/* Loading Skeleton */}
       {isLoading && (
         <div className="space-y-3">
-          <div className="h-20 bg-slate-100 rounded-lg animate-pulse" />
-          <div className="h-48 bg-slate-100 rounded-lg animate-pulse" />
+          <div className="h-20 bg-muted rounded-lg animate-pulse" />
+          <div className="h-48 bg-muted rounded-lg animate-pulse" />
         </div>
       )}
 
       {/* No data */}
       {!isLoading && !hasSyncedData && !syncError && (
-        <div className="flex flex-col items-center justify-center h-48 text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
-          <TrendingUp className="w-10 h-10 mb-3 text-slate-300" />
-          <p className="font-medium text-slate-500">Chưa có dữ liệu</p>
+        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground border-2 border-dashed border-border rounded-lg">
+          <TrendingUp className="w-10 h-10 mb-3 text-muted-foreground/50" />
+          <p className="font-medium text-foreground">Chưa có dữ liệu</p>
           <p className="text-sm mt-1">Nhấn "Đồng bộ" để lấy dữ liệu hiệu quả bán hàng từ Shopee</p>
         </div>
       )}

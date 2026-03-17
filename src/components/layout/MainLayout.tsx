@@ -18,10 +18,10 @@ export default function MainLayout() {
   // If we have a session, don't show loading - let the page render
   if (isLoading && !session) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">Đang tải...</p>
+          <div className="w-10 h-10 border-4 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-muted-foreground text-sm">Đang tải...</p>
         </div>
       </div>
     );
@@ -33,7 +33,7 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       {/* Sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}

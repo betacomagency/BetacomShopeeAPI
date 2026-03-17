@@ -401,7 +401,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
         {/* Sticky Header Section */}
         <div className="flex-shrink-0">
           {/* Status Tabs + Search + Actions - All in one row */}
-          <div className="flex items-center justify-between border-b bg-white px-2 gap-2">
+          <div className="flex items-center justify-between border-b bg-card px-2 gap-2">
             {/* Left: Status Tabs */}
             <div className="flex items-center flex-shrink-0">
               {STATUS_TABS.map(tab => (
@@ -414,13 +414,13 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                   className={cn(
                     'px-3 md:px-4 py-3 text-xs md:text-sm whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer',
                     statusFilter === tab.key
-                      ? 'border-orange-500 text-orange-600 font-medium'
-                      : 'border-transparent text-slate-600 hover:text-slate-800'
+                      ? 'border-brand text-brand font-medium'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
                   )}
                 >
                   {tab.label}
                   {(statusCounts[tab.key] || 0) > 0 && (
-                    <span className="text-slate-400 ml-1">({statusCounts[tab.key]})</span>
+                    <span className="text-muted-foreground ml-1">({statusCounts[tab.key]})</span>
                   )}
                 </button>
               ))}
@@ -430,7 +430,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
             <div className="flex items-center gap-2 flex-shrink-0 py-2">
               {/* Search bar - hidden on mobile */}
               <div className="relative hidden md:block">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   placeholder="Tìm tên, SKU, ID..."
                   value={searchTerm}
@@ -440,7 +440,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
               </div>
 
               {/* Last sync time indicator - hide on mobile */}
-              <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400" title={syncStatus?.products_synced_at ? `Sync lúc: ${new Date(syncStatus.products_synced_at).toLocaleString('vi-VN')}` : 'Chưa đồng bộ'}>
+              <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground" title={syncStatus?.products_synced_at ? `Sync lúc: ${new Date(syncStatus.products_synced_at).toLocaleString('vi-VN')}` : 'Chưa đồng bộ'}>
                 <Database className="h-3.5 w-3.5" />
                 <span>Sync: {formatRelativeTime(syncStatus?.products_synced_at)}</span>
               </div>
@@ -461,9 +461,9 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
           </div>
 
           {/* Mobile Search - Only visible on small screens */}
-          <div className="md:hidden p-2 border-b bg-slate-50">
+          <div className="md:hidden p-2 border-b bg-muted">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Tìm theo tên, SKU hoặc ID..."
                 value={searchTerm}
@@ -474,7 +474,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
           </div>
 
           {/* Table Header - Desktop only */}
-          <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-slate-50 border-b text-sm font-medium text-slate-600">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-muted border-b text-sm font-medium text-muted-foreground">
             <div className="col-span-3">Sản phẩm</div>
             <div className="col-span-7">
               <div className="grid grid-cols-7 gap-2">
@@ -487,7 +487,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
           </div>
 
           {/* Mobile Header */}
-          <div className="md:hidden px-3 py-2 bg-slate-50 border-b text-xs font-medium text-slate-600">
+          <div className="md:hidden px-3 py-2 bg-muted border-b text-xs font-medium text-muted-foreground">
             Danh sách sản phẩm ({filteredProducts.length})
           </div>
         </div>
@@ -497,8 +497,8 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
           {/* Loading */}
           {(loading || syncing) && products.length === 0 && (
             <div className="flex items-center justify-center py-12">
-              <RefreshCw className="h-6 w-6 animate-spin text-orange-500" />
-              <span className="ml-2 text-slate-500">
+              <RefreshCw className="h-6 w-6 animate-spin text-brand" />
+              <span className="ml-2 text-muted-foreground">
                 {syncing ? 'Đang đồng bộ từ Shopee...' : 'Đang tải...'}
               </span>
             </div>
@@ -506,7 +506,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
 
           {/* Empty - chưa có data, cần sync */}
           {!loading && !syncing && products.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Package className="h-12 w-12 mb-3" />
               <p className="mb-4">Chưa có dữ liệu sản phẩm</p>
               <Button onClick={syncProducts} variant="outline" size="sm">
@@ -527,7 +527,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
           return (
             <div key={product.id} className="border-b last:border-b-0">
               {/* Desktop Layout */}
-              <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-4 hover:bg-slate-50/50">
+              <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-4 hover:bg-accent">
                 {/* Product Info */}
                 <div className="col-span-3 flex gap-3">
                   <div className="relative flex-shrink-0">
@@ -541,25 +541,25 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                         />
                       </div>
                     ) : (
-                      <div className="w-16 h-16 bg-slate-100 rounded border flex items-center justify-center ml-5">
-                        <Package className="w-6 h-6 text-slate-400" />
+                      <div className="w-16 h-16 bg-muted rounded border flex items-center justify-center ml-5">
+                        <Package className="w-6 h-6 text-muted-foreground" />
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-slate-800 line-clamp-2 mb-1">
+                    <h3 className="text-sm font-medium text-foreground line-clamp-2 mb-1">
                       {product.item_name}
                     </h3>
                     {product.brand_name && product.brand_name !== 'NoBrand' && (
-                      <div className="flex items-center gap-1 text-xs text-orange-600 mb-1">
-                        <span className="bg-orange-100 px-1 rounded">🏷</span>
+                      <div className="flex items-center gap-1 text-xs text-brand mb-1">
+                        <span className="bg-brand/10 px-1 rounded">🏷</span>
                         {product.brand_name}
                       </div>
                     )}
                     <div className="mt-1">
                       <span className={cn(
                         "text-xs",
-                        product.item_status === 'NORMAL' ? "text-green-600" : "text-slate-500"
+                        product.item_status === 'NORMAL' ? "text-success" : "text-muted-foreground"
                       )}>
                         {product.item_status === 'NORMAL' ? 'Hoạt động' : product.item_status}
                       </span>
@@ -576,7 +576,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                           key={model.id}
                           className={cn(
                             "grid grid-cols-7 gap-2 py-2.5",
-                            idx !== visibleModels.length - 1 && "border-b border-slate-100"
+                            idx !== visibleModels.length - 1 && "border-b border-border"
                           )}
                         >
                           <div className="col-span-3">
@@ -589,25 +589,25 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                                   zoomSize={200}
                                 />
                               ) : (
-                                <Link2 className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                                <Link2 className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                               )}
                               <div>
-                                <div className="text-sm font-medium text-slate-700">{model.model_name}</div>
-                                <div className="text-xs text-slate-400">{model.model_sku}</div>
+                                <div className="text-sm font-medium text-foreground">{model.model_name}</div>
+                                <div className="text-xs text-muted-foreground">{model.model_sku}</div>
                               </div>
                             </div>
                           </div>
                           <div className="col-span-2 text-right">
-                            <span className="text-sm font-medium text-orange-600">{formatPrice(model.current_price)}</span>
+                            <span className="text-sm font-medium text-brand">{formatPrice(model.current_price)}</span>
                             {model.original_price > model.current_price && (
-                              <div className="text-xs text-slate-400 line-through">{formatPrice(model.original_price)}</div>
+                              <div className="text-xs text-muted-foreground line-through">{formatPrice(model.original_price)}</div>
                             )}
                           </div>
                           <div className="col-span-2 text-center">
                             <span className={cn(
                               "text-sm",
-                              model.total_available_stock === 0 ? "text-red-500" :
-                              model.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
+                              model.total_available_stock === 0 ? "text-destructive" :
+                              model.total_available_stock <= 10 ? "text-warning" : "text-muted-foreground"
                             )}>
                               {model.total_available_stock}
                             </span>
@@ -616,10 +616,10 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                       ))}
 
                       {hasMoreModels && (
-                        <div className="py-2 border-t border-dashed border-slate-200">
+                        <div className="py-2 border-t border-dashed border-border">
                           <button
                             onClick={() => toggleExpand(product.item_id)}
-                            className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                           >
                             {isExpanded ? (
                               <>
@@ -640,20 +640,20 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                     <div className="grid grid-cols-7 gap-2 py-2">
                       <div className="col-span-3">
                         {product.item_sku && (
-                          <div className="text-xs text-slate-400">SKU: {product.item_sku}</div>
+                          <div className="text-xs text-muted-foreground">SKU: {product.item_sku}</div>
                         )}
                       </div>
                       <div className="col-span-2 text-right">
-                        <span className="text-sm font-medium text-orange-600">{formatPrice(product.current_price)}</span>
+                        <span className="text-sm font-medium text-brand">{formatPrice(product.current_price)}</span>
                         {product.original_price > product.current_price && (
-                          <div className="text-xs text-slate-400 line-through">{formatPrice(product.original_price)}</div>
+                          <div className="text-xs text-muted-foreground line-through">{formatPrice(product.original_price)}</div>
                         )}
                       </div>
                       <div className="col-span-2 text-center">
                         <span className={cn(
                           "text-sm",
-                          product.total_available_stock === 0 ? "text-red-500" :
-                          product.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
+                          product.total_available_stock === 0 ? "text-destructive" :
+                          product.total_available_stock <= 10 ? "text-warning" : "text-muted-foreground"
                         )}>
                           {product.total_available_stock}
                         </span>
@@ -663,16 +663,16 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 </div>
 
                 {/* Time */}
-                <div className="col-span-2 text-xs text-slate-500">
+                <div className="col-span-2 text-xs text-muted-foreground">
                   <div>Thời gian tạo</div>
-                  <div className="font-medium text-slate-700">{formatDateTime(product.create_time)}</div>
+                  <div className="font-medium text-foreground">{formatDateTime(product.create_time)}</div>
                   <div className="mt-2">Thời gian cập nhật</div>
-                  <div className="font-medium text-slate-700">{formatDateTime(product.update_time)}</div>
+                  <div className="font-medium text-foreground">{formatDateTime(product.update_time)}</div>
                 </div>
               </div>
 
               {/* Mobile Layout - Card style */}
-              <div className="md:hidden p-3 hover:bg-slate-50/50">
+              <div className="md:hidden p-3 hover:bg-accent">
                 {/* Product Header */}
                 <div className="flex gap-3 mb-3">
                   <div className="relative flex-shrink-0">
@@ -686,24 +686,24 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                         />
                       </div>
                     ) : (
-                      <div className="w-14 h-14 bg-slate-100 rounded border flex items-center justify-center ml-5">
-                        <Package className="w-5 h-5 text-slate-400" />
+                      <div className="w-14 h-14 bg-muted rounded border flex items-center justify-center ml-5">
+                        <Package className="w-5 h-5 text-muted-foreground" />
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-slate-800 line-clamp-2 leading-tight">
+                    <h3 className="text-sm font-medium text-foreground line-clamp-2 leading-tight">
                       {product.item_name}
                     </h3>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className={cn(
                         "text-[10px] px-1.5 py-0.5 rounded",
-                        product.item_status === 'NORMAL' ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-500"
+                        product.item_status === 'NORMAL' ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
                       )}>
                         {product.item_status === 'NORMAL' ? 'Hoạt động' : product.item_status}
                       </span>
                       {product.brand_name && product.brand_name !== 'NoBrand' && (
-                        <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] bg-brand/10 text-brand px-1.5 py-0.5 rounded">
                           {product.brand_name}
                         </span>
                       )}
@@ -718,7 +718,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                       <div
                         key={model.id}
                         className={cn(
-                          "flex items-center gap-2 py-2 px-2 bg-slate-50 rounded-lg",
+                          "flex items-center gap-2 py-2 px-2 bg-muted rounded-lg",
                           idx !== visibleModels.length - 1 && "mb-1"
                         )}
                       >
@@ -730,25 +730,25 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                             zoomSize={150}
                           />
                         ) : (
-                          <div className="w-10 h-10 bg-slate-200 rounded border flex items-center justify-center flex-shrink-0">
-                            <Link2 className="h-3 w-3 text-slate-400" />
+                          <div className="w-10 h-10 bg-background rounded border flex items-center justify-center flex-shrink-0">
+                            <Link2 className="h-3 w-3 text-muted-foreground" />
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-slate-700 truncate">{model.model_name}</div>
-                          <div className="text-[10px] text-slate-400 truncate">{model.model_sku}</div>
+                          <div className="text-xs font-medium text-foreground truncate">{model.model_name}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">{model.model_sku}</div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className="text-sm font-semibold text-orange-600">{formatPrice(model.current_price)}</div>
+                          <div className="text-sm font-semibold text-brand">{formatPrice(model.current_price)}</div>
                           {model.original_price > model.current_price && (
-                            <div className="text-[10px] text-slate-400 line-through">{formatPrice(model.original_price)}</div>
+                            <div className="text-[10px] text-muted-foreground line-through">{formatPrice(model.original_price)}</div>
                           )}
                         </div>
                         <div className="text-center flex-shrink-0 w-8">
                           <span className={cn(
                             "text-xs font-medium",
-                            model.total_available_stock === 0 ? "text-red-500" :
-                            model.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
+                            model.total_available_stock === 0 ? "text-destructive" :
+                            model.total_available_stock <= 10 ? "text-warning" : "text-muted-foreground"
                           )}>
                             {model.total_available_stock}
                           </span>
@@ -759,7 +759,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                     {hasMoreModels && (
                       <button
                         onClick={() => toggleExpand(product.item_id)}
-                        className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 py-1"
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 py-1"
                       >
                         {isExpanded ? (
                           <>
@@ -776,22 +776,22 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                     )}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between py-2 px-2 bg-slate-50 rounded-lg">
-                    <div className="text-xs text-slate-400">
+                  <div className="flex items-center justify-between py-2 px-2 bg-muted rounded-lg">
+                    <div className="text-xs text-muted-foreground">
                       {product.item_sku ? `SKU: ${product.item_sku}` : 'Không có SKU'}
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <span className="text-sm font-semibold text-orange-600">{formatPrice(product.current_price)}</span>
+                        <span className="text-sm font-semibold text-brand">{formatPrice(product.current_price)}</span>
                         {product.original_price > product.current_price && (
-                          <div className="text-[10px] text-slate-400 line-through">{formatPrice(product.original_price)}</div>
+                          <div className="text-[10px] text-muted-foreground line-through">{formatPrice(product.original_price)}</div>
                         )}
                       </div>
                       <div className="text-center w-8">
                         <span className={cn(
                           "text-xs font-medium",
-                          product.total_available_stock === 0 ? "text-red-500" :
-                          product.total_available_stock <= 10 ? "text-yellow-600" : "text-slate-600"
+                          product.total_available_stock === 0 ? "text-destructive" :
+                          product.total_available_stock <= 10 ? "text-warning" : "text-muted-foreground"
                         )}>
                           {product.total_available_stock}
                         </span>
@@ -801,7 +801,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 )}
 
                 {/* Time - collapsed on mobile */}
-                <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
+                <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
                   <span>Tạo: {formatDateTime(product.create_time)}</span>
                   <span>•</span>
                   <span>Cập nhật: {formatDateTime(product.update_time)}</span>
@@ -813,10 +813,10 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
 
           {/* Footer with Pagination */}
           {products.length > 0 && (
-            <div className="px-3 md:px-4 py-2 md:py-3 border-t bg-slate-50/50 flex items-center justify-between">
-            <div className="text-xs md:text-sm text-slate-500">
+            <div className="px-3 md:px-4 py-2 md:py-3 border-t bg-muted flex items-center justify-between">
+            <div className="text-xs md:text-sm text-muted-foreground">
               {syncing && (
-                <span className="text-orange-500 flex items-center gap-1 mr-2">
+                <span className="text-brand flex items-center gap-1 mr-2">
                   <RefreshCw className="h-3 w-3 animate-spin" />
                   <span className="hidden md:inline">Đang đồng bộ...</span>
                 </span>
@@ -832,7 +832,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 )}
               </span>
               {/* Last sync time on mobile */}
-              <span className="lg:hidden ml-2 text-slate-400" title={syncStatus?.products_synced_at ? new Date(syncStatus.products_synced_at).toLocaleString('vi-VN') : undefined}>
+              <span className="lg:hidden ml-2 text-muted-foreground" title={syncStatus?.products_synced_at ? new Date(syncStatus.products_synced_at).toLocaleString('vi-VN') : undefined}>
                 • Sync: {formatRelativeTime(syncStatus?.products_synced_at)}
               </span>
             </div>
@@ -871,7 +871,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                         onClick={() => setCurrentPage(pageNum)}
                         className={cn(
                           "h-8 w-8 p-0",
-                          currentPage === pageNum && "bg-orange-500 hover:bg-orange-600"
+                          currentPage === pageNum && "bg-brand hover:bg-brand/90"
                         )}
                       >
                         {pageNum}
@@ -881,7 +881,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 </div>
 
                 {/* Page indicator - Mobile */}
-                <span className="md:hidden text-xs text-slate-600 min-w-[60px] text-center">
+                <span className="md:hidden text-xs text-foreground min-w-[60px] text-center">
                   {currentPage} / {totalPages}
                 </span>
 

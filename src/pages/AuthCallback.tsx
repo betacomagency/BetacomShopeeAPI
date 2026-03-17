@@ -103,18 +103,18 @@ export default function AuthCallback() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center max-w-md p-8">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-slate-800 mb-2">Xác thực thất bại</h1>
-          <p className="text-slate-600 mb-4">{error}</p>
+          <h1 className="text-xl font-bold text-foreground mb-2">Xác thực thất bại</h1>
+          <p className="text-muted-foreground mb-4">{error}</p>
           <button
             onClick={() => navigate('/auth')}
-            className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+            className="px-6 py-2 bg-brand text-white rounded-lg hover:bg-brand/90 transition-colors"
           >
             Quay lại đăng nhập
           </button>
@@ -124,10 +124,10 @@ export default function AuthCallback() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+    <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="text-center">
-        <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-slate-600">Đang xác thực với Shopee...</p>
+        <div className="w-12 h-12 border-4 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-muted-foreground">Đang xác thực với Shopee...</p>
       </div>
     </div>
   );

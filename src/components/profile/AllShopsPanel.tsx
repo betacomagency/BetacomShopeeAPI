@@ -45,7 +45,6 @@ interface Shop {
   shop_logo: string | null;
   region: string | null;
   partner_id: number | null;
-  partner_key: string | null;
   partner_name: string | null;
   created_at: string;
   token_updated_at: string | null;
@@ -137,7 +136,7 @@ export function AllShopsPanel() {
       // Load tất cả shops, không filter theo user
       const { data, error } = await supabase
         .from('apishopee_shops')
-        .select('*')
+        .select('id, shop_id, shop_name, shop_logo, region, partner_id, partner_name, created_at, token_updated_at, expired_at, access_token_expired_at, expire_in, expire_time')
         .order('shop_name', { ascending: true });
 
       if (error) throw error;
@@ -212,19 +211,11 @@ export function AllShopsPanel() {
     }
   };
 
-  const handleReconnectShop = async (shop: Shop) => {
-    setReconnectingShop(shop.shop_id);
+  const handleReconnectShop = async (_shop: Shop) => {
+    setReconnectingShop(_shop.shop_id);
     try {
-      let partnerInfo = null;
-      if (shop.partner_id && shop.partner_key) {
-        partnerInfo = {
-          partner_id: shop.partner_id,
-          partner_key: shop.partner_key,
-          partner_name: shop.partner_name || undefined,
-        };
-      }
-
-      await login(undefined, undefined, partnerInfo || undefined);
+      // partner_key is not fetched from DB for security; user must reconnect via the connect dialog
+      await login(undefined, undefined, undefined);
     } catch (err) {
       toast({
         title: 'Lỗi',
@@ -644,7 +635,7 @@ export function AllShopsPanel() {
           <Button
             variant="outline"
             size="sm"
-            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-7 text-xs px-2"
+            className="text-info hover:text-info hover:bg-info/10 h-7 text-xs px-2"
             onClick={(e) => { e.stopPropagation(); handleOpenMembersDialog(shop); }}
           >
             <Users className="w-3.5 h-3.5 mr-1" />
@@ -653,7 +644,7 @@ export function AllShopsPanel() {
           <Button
             variant="outline"
             size="sm"
-            className="text-slate-600 hover:text-slate-800 h-7 text-xs px-2"
+            className="text-muted-foreground hover:text-foreground h-7 text-xs px-2"
             onClick={(e) => { e.stopPropagation(); handleReconnectShop(shop); }}
             disabled={reconnectingShop === shop.shop_id}
           >
@@ -669,7 +660,7 @@ export function AllShopsPanel() {
           <Button
             variant="ghost"
             size="sm"
-            className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 w-7 p-0"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0"
             onClick={(e) => {
               e.stopPropagation();
               setShopToDelete(shop);
@@ -688,7 +679,7 @@ export function AllShopsPanel() {
     return (
       <Card>
         <CardContent className="py-8">
-          <div className="text-center text-slate-500">
+          <div className="text-center text-muted-foreground">
             Bạn không có quyền truy cập trang này
           </div>
         </CardContent>
@@ -734,14 +725,14 @@ export function AllShopsPanel() {
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                className="text-green-600 hover:text-green-800 hover:bg-green-50"
+                className="text-success hover:text-success hover:bg-success/10"
                 onClick={handleOpenSyncDialog}
               >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Đồng bộ Shopee
               </Button>
               <Button
-                className="bg-orange-500 hover:bg-orange-600"
+                className="bg-brand hover:bg-brand/90"
                 onClick={handleConnectNewShop}
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -767,18 +758,18 @@ export function AllShopsPanel() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-red-600">Xác nhận xóa Shop</DialogTitle>
+            <DialogTitle className="text-destructive">Xác nhận xóa Shop</DialogTitle>
             <DialogDescription>
               Hành động này không thể hoàn tác. Tất cả dữ liệu liên quan đến shop sẽ bị xóa.
             </DialogDescription>
           </DialogHeader>
           {shopToDelete && (
             <div className="py-4">
-              <div className="bg-red-50 rounded-lg p-4">
-                <p className="font-medium text-slate-800">
+              <div className="bg-destructive/10 rounded-lg p-4">
+                <p className="font-medium text-foreground">
                   {shopToDelete.shop_name || `Shop ${shopToDelete.shop_id}`}
                 </p>
-                <p className="text-sm text-slate-500">ID: {shopToDelete.shop_id}</p>
+                <p className="text-sm text-muted-foreground">ID: {shopToDelete.shop_id}</p>
               </div>
             </div>
           )}
@@ -805,7 +796,7 @@ export function AllShopsPanel() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="partner_id">Partner ID <span className="text-red-500">*</span></Label>
+              <Label htmlFor="partner_id">Partner ID <span className="text-destructive">*</span></Label>
               <Input
                 id="partner_id"
                 value={partnerIdInput}
@@ -814,7 +805,7 @@ export function AllShopsPanel() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="partner_key">Partner Key <span className="text-red-500">*</span></Label>
+              <Label htmlFor="partner_key">Partner Key <span className="text-destructive">*</span></Label>
               <Input
                 id="partner_key"
                 type="password"
@@ -839,7 +830,7 @@ export function AllShopsPanel() {
               Hủy
             </Button>
             <Button
-              className="bg-orange-500 hover:bg-orange-600"
+              className="bg-brand hover:bg-brand/90"
               onClick={handleSubmitConnect}
               disabled={connecting || !partnerIdInput || !partnerKeyInput}
             >
@@ -879,14 +870,14 @@ export function AllShopsPanel() {
                 <ScrollArea className="flex-1 -mx-1">
                   <div className="space-y-1 px-1">
                     {availableProfiles.length === 0 ? (
-                      <p className="text-xs text-slate-500 text-center py-4">
+                      <p className="text-xs text-muted-foreground text-center py-4">
                         {searchQuery ? 'Không tìm thấy' : 'Tất cả đã có quyền'}
                       </p>
                     ) : (
                       availableProfiles.map((profile) => (
                         <div
                           key={profile.id}
-                          className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded cursor-pointer"
+                          className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
                           onClick={() => toggleProfileSelection(profile.id)}
                         >
                           <Checkbox
@@ -897,7 +888,7 @@ export function AllShopsPanel() {
                             <p className="text-sm font-medium truncate">
                               {profile.full_name || profile.email}
                             </p>
-                            <p className="text-xs text-slate-500 truncate">{profile.email}</p>
+                            <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
                           </div>
                         </div>
                       ))
@@ -920,7 +911,7 @@ export function AllShopsPanel() {
                     </SelectContent>
                   </Select>
                   <Button
-                    className="w-full bg-orange-500 hover:bg-orange-600 h-8 text-sm"
+                    className="w-full bg-brand hover:bg-brand/90 h-8 text-sm"
                     onClick={handleAddMembers}
                     disabled={addingMembers || selectedProfileIds.length === 0 || !selectedRoleId || !selectedShopForMembers}
                   >
@@ -940,23 +931,23 @@ export function AllShopsPanel() {
                         key={shop.id}
                         className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
                           selectedShopForMembers?.id === shop.id
-                            ? 'bg-orange-100 border border-orange-300'
-                            : 'hover:bg-slate-50'
+                            ? 'bg-brand/10 border border-brand/30'
+                            : 'hover:bg-muted'
                         }`}
                         onClick={() => handleOpenMembersDialog(shop)}
                       >
-                        <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        <div className="w-8 h-8 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
                           {shop.shop_logo ? (
                             <img src={shop.shop_logo} alt={shop.shop_name || ''} className="w-full h-full object-cover" />
                           ) : (
-                            <Store className="w-4 h-4 text-slate-400" />
+                            <Store className="w-4 h-4 text-muted-foreground" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">
                             {shop.shop_name || `Shop ${shop.shop_id}`}
                           </p>
-                          <p className="text-xs text-slate-400">
+                          <p className="text-xs text-muted-foreground">
                             {shop.region || 'VN'} - <span className="font-mono">{shop.shop_id}</span>
                           </p>
                         </div>
@@ -973,11 +964,11 @@ export function AllShopsPanel() {
                 </h4>
                 {!selectedShopForMembers ? (
                   <div className="flex-1 flex items-center justify-center">
-                    <p className="text-sm text-slate-500">Chọn shop để xem thành viên</p>
+                    <p className="text-sm text-muted-foreground">Chọn shop để xem thành viên</p>
                   </div>
                 ) : shopMembers.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
-                    <p className="text-sm text-slate-500">Chưa có thành viên</p>
+                    <p className="text-sm text-muted-foreground">Chưa có thành viên</p>
                   </div>
                 ) : (
                   <ScrollArea className="flex-1 -mx-1">
@@ -985,13 +976,13 @@ export function AllShopsPanel() {
                       {shopMembers.map((member) => (
                         <div
                           key={member.id}
-                          className="flex items-center justify-between p-2 bg-slate-50 rounded"
+                          className="flex items-center justify-between p-2 bg-muted rounded"
                         >
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">
                               {member.profile?.full_name || member.profile?.email}
                             </p>
-                            <p className="text-xs text-slate-500 truncate">{member.profile?.email}</p>
+                            <p className="text-xs text-muted-foreground truncate">{member.profile?.email}</p>
                           </div>
                           <div className="flex items-center gap-1 ml-2">
                             <CellBadge variant={member.role?.name === 'admin' ? 'success' : 'default'}>
@@ -1000,7 +991,7 @@ export function AllShopsPanel() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
+                              className="text-destructive hover:text-destructive h-6 w-6 p-0"
                               onClick={() => handleDeleteMember(member.id)}
                               disabled={deletingMemberId === member.id}
                             >
@@ -1048,7 +1039,7 @@ export function AllShopsPanel() {
               {loadingPartnerApps ? (
                 <div className="flex items-center gap-2 h-9 px-3 border rounded-md">
                   <Spinner size="sm" />
-                  <span className="text-sm text-slate-500">Đang tải...</span>
+                  <span className="text-sm text-muted-foreground">Đang tải...</span>
                 </div>
               ) : (
                 <Select value={selectedPartnerAppId} onValueChange={setSelectedPartnerAppId}>
@@ -1068,7 +1059,7 @@ export function AllShopsPanel() {
             <Button
               onClick={handleCheckShopeeShops}
               disabled={!selectedPartnerAppId || loadingSync}
-              className="bg-green-600 hover:bg-green-700 h-9"
+              className="bg-success hover:bg-success/90 h-9"
             >
               {loadingSync ? (
                 <>
@@ -1083,7 +1074,7 @@ export function AllShopsPanel() {
 
           {/* Error */}
           {syncError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 text-sm text-destructive">
               {syncError}
             </div>
           )}
@@ -1099,19 +1090,19 @@ export function AllShopsPanel() {
                 const expiredCount = shopeeShops.filter(s => s.expire_time && s.expire_time < now).length;
                 return (
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-medium text-slate-700">
-                      Shopee: <span className="text-blue-600">{shopeeShops.length}</span> shop
+                    <span className="text-sm font-medium text-foreground">
+                      Shopee: <span className="text-info">{shopeeShops.length}</span> shop
                     </span>
-                    <span className="text-slate-300">|</span>
+                    <span className="text-muted-foreground">|</span>
                     <span className="text-sm">
-                      Đã có: <span className="text-green-600 font-medium">{inDbCount}</span>
+                      Đã có: <span className="text-success font-medium">{inDbCount}</span>
                     </span>
                     <span className="text-sm">
-                      Chưa có: <span className="text-yellow-600 font-medium">{notInDbCount}</span>
+                      Chưa có: <span className="text-warning font-medium">{notInDbCount}</span>
                     </span>
                     {expiredCount > 0 && (
                       <span className="text-sm">
-                        Hết hạn: <span className="text-red-600 font-medium">{expiredCount}</span>
+                        Hết hạn: <span className="text-destructive font-medium">{expiredCount}</span>
                       </span>
                     )}
                   </div>
@@ -1121,13 +1112,13 @@ export function AllShopsPanel() {
               {/* Table */}
               <ScrollArea className="max-h-[400px]">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 sticky top-0">
+                  <thead className="bg-muted sticky top-0">
                     <tr>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Shop ID</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Region</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Auth Time</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Hết hạn UQ</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Trạng thái</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Shop ID</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Region</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Auth Time</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Hết hạn UQ</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -1141,23 +1132,23 @@ export function AllShopsPanel() {
                         ? new Date(shopeeShop.expire_time * 1000).toLocaleDateString('vi-VN')
                         : '-';
                       return (
-                        <tr key={shopeeShop.shop_id} className="hover:bg-slate-50/50">
+                        <tr key={shopeeShop.shop_id} className="hover:bg-muted/50">
                           <td className="px-3 py-2">
                             <div>
                               <span className="font-mono">{shopeeShop.shop_id}</span>
                               {dbShop?.shop_name && (
-                                <p className="text-xs text-slate-500 truncate max-w-[150px]">{dbShop.shop_name}</p>
+                                <p className="text-xs text-muted-foreground truncate max-w-[150px]">{dbShop.shop_name}</p>
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-slate-600">{shopeeShop.region}</td>
-                          <td className="px-3 py-2 text-slate-500">{authDate}</td>
-                          <td className="px-3 py-2 text-slate-500">{expireDate}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{shopeeShop.region}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{authDate}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{expireDate}</td>
                           <td className="px-3 py-2">
                             <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium ${
-                              status.variant === 'success' ? 'bg-green-100 text-green-700' :
-                              status.variant === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
+                              status.variant === 'success' ? 'bg-success/10 text-success' :
+                              status.variant === 'warning' ? 'bg-warning/10 text-warning' :
+                              'bg-destructive/10 text-destructive'
                             }`}>
                               {status.label}
                             </span>
@@ -1173,7 +1164,7 @@ export function AllShopsPanel() {
 
           {/* Empty state after check */}
           {!loadingSync && shopeeShops.length === 0 && !syncError && selectedPartnerAppId && (
-            <div className="text-center py-8 text-slate-500 text-sm">
+            <div className="text-center py-8 text-muted-foreground text-sm">
               Nhấn "Kiểm tra" để xem danh sách shop từ Shopee
             </div>
           )}

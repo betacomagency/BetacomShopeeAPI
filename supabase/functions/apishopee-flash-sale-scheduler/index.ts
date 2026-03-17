@@ -138,8 +138,11 @@ async function getPartnerCredentials(
 
 async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
   if (PROXY_URL) {
-    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
-    return await fetch(proxyUrl, options);
+    const proxyOptions = {
+      ...options,
+      headers: { ...(options.headers || {}), 'x-target-url': targetUrl },
+    };
+    return await fetch(PROXY_URL, proxyOptions);
   }
   return await fetch(targetUrl, options);
 }
@@ -664,9 +667,17 @@ async function processJob(
       return { success: false, message: errorMsg, flashSaleId: existingFsId };
     }
 
-    // 2. Lấy template items
-    const itemsToAdd = await getTemplateItems(supabase, credentials, job.shop_id, token, callerUserId, callerUserEmail, triggeredBy);
-    
+    // 2. Lấy template items - ưu tiên từ job.items_data nếu có
+    let itemsToAdd: Array<Record<string, unknown>> = [];
+
+    if (job.items_data && Array.isArray(job.items_data) && job.items_data.length > 0) {
+      console.log(`[SCHEDULER] Using ${job.items_data.length} items from job.items_data`);
+      itemsToAdd = job.items_data as Array<Record<string, unknown>>;
+    } else {
+      console.log('[SCHEDULER] No items_data in job, fetching from template sources...');
+      itemsToAdd = await getTemplateItems(supabase, credentials, job.shop_id, token, callerUserId, callerUserEmail, triggeredBy);
+    }
+
     if (itemsToAdd.length === 0) {
       const errorMsg = 'Không có sản phẩm mẫu để thêm vào Flash Sale';
       await supabase
@@ -753,7 +764,10 @@ async function processJob(
       callerUserId,
       callerUserEmail,
       triggeredBy
-    ) as { error?: string; message?: string; response?: { success_list?: unknown[]; fail_list?: unknown[] } };
+    ) as { error?: string; message?: string; response?: {
+      success_list?: unknown[]; fail_list?: unknown[];
+      failed_items?: Array<{ item_id: number; model_id?: number; err_code?: number; err_msg?: string }>;
+    } };
 
     console.log(`[SCHEDULER] Add items response:`, JSON.stringify(addResult));
 
@@ -761,53 +775,49 @@ async function processJob(
     let finalStatus: 'success' | 'partial' | 'error' = 'success';
     let addedItemsCount = itemsToAdd.length;
 
-    if (addResult.error) {
+    // Shopee API returns non-empty error string on failure
+    if (addResult.error && addResult.error !== '') {
       const addErrorMsg = addResult.message || addResult.error;
       message += ` (Lỗi thêm SP: ${addErrorMsg})`;
-      finalStatus = 'partial'; // FS created but items failed
+      finalStatus = 'partial';
       addedItemsCount = 0;
       console.error(`[SCHEDULER] Add items failed for FS #${newFlashSaleId}:`, addErrorMsg);
-
-      // Check if we should retry adding items (transient error)
-      const currentRetryCount = job.retry_count || 0;
-      if (isTransientError(addErrorMsg) && currentRetryCount < MAX_RETRY_COUNT) {
-        // Don't retry - FS already created, would create duplicate
-        // Just mark as partial success with error details
-        console.log(`[SCHEDULER] Add items transient error, but FS already created - marking as partial`);
-      }
     } else {
-      // Define proper type for fail_list items
-      interface FailedItem {
-        item_id: number;
-        fail_error?: string;
-        fail_message?: string;
-      }
-
+      // Shopee API uses "failed_items" (not "fail_list") for per-item/model errors
+      const failedItems = addResult.response?.failed_items || [];
+      // Also check legacy field names for backward compatibility
       const successList = addResult.response?.success_list || [];
-      const failList = (addResult.response?.fail_list || []) as FailedItem[];
+      const failList = addResult.response?.fail_list || [];
 
-      addedItemsCount = successList.length;
+      if (failedItems.length > 0) {
+        // failed_items contains per-model failures, not per-item
+        // Items can still be partially added even with some model failures
+        const failedItemIds = [...new Set(failedItems.map(f => f.item_id))];
+        console.error(`[SCHEDULER] ${failedItems.length} model(s) in ${failedItemIds.length} item(s) FAILED for FS #${newFlashSaleId}:`, JSON.stringify(failedItems.slice(0, 10)));
 
-      if (failList.length > 0) {
-        // Log detailed failure info
-        console.error(`[SCHEDULER] ${failList.length} items FAILED for FS #${newFlashSaleId}:`, JSON.stringify(failList));
-
-        finalStatus = successList.length === 0 ? 'error' : 'partial';
-        message = `FS #${newFlashSaleId}: ${successList.length}/${itemsToAdd.length} items added (${failList.length} failed)`;
-
-        // Store fail reasons for debugging (truncate if too long)
-        const failReasons = failList.slice(0, 5).map(f => `${f.item_id}: ${f.fail_error || 'unknown'}`).join('; ');
-        if (failList.length > 5) {
-          message += ` | Errors: ${failReasons}... (+${failList.length - 5} more)`;
+        // If all submitted items have failures, mark as partial; otherwise success with warning
+        if (failedItemIds.length >= itemsToAdd.length) {
+          finalStatus = 'partial';
+          addedItemsCount = 0;
         } else {
-          message += ` | Errors: ${failReasons}`;
+          finalStatus = 'success';
+          addedItemsCount = itemsToAdd.length - failedItemIds.length;
         }
-      } else if (successList.length === 0 && itemsToAdd.length > 0) {
-        // No success_list and no fail_list but we sent items - unexpected
-        console.warn(`[SCHEDULER] Unexpected: sent ${itemsToAdd.length} items but got empty response`);
-        finalStatus = 'partial';
-        message = `FS #${newFlashSaleId}: Response missing success/fail lists`;
+
+        const failReasons = failedItems.slice(0, 5).map(f => `item ${f.item_id} model ${f.model_id || 0}: ${f.err_msg || 'unknown'}`).join('; ');
+        message = `FS #${newFlashSaleId}: ${addedItemsCount}/${itemsToAdd.length} items OK (${failedItems.length} model failures: ${failReasons})`;
+      } else if (failList.length > 0) {
+        // Legacy fail_list handling
+        const failedCount = failList.length;
+        const successCount = successList.length;
+        addedItemsCount = successCount;
+        finalStatus = successCount === 0 ? 'error' : 'partial';
+        message = `FS #${newFlashSaleId}: ${successCount}/${itemsToAdd.length} items added (${failedCount} failed)`;
       } else {
+        // No failures - all items added successfully
+        // Shopee may return empty response object on full success
+        addedItemsCount = successList.length > 0 ? successList.length : itemsToAdd.length;
+        finalStatus = 'success';
         message = `Đã tạo Flash Sale #${newFlashSaleId} với ${addedItemsCount} sản phẩm`;
       }
     }

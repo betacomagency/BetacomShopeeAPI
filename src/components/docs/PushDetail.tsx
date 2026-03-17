@@ -58,10 +58,10 @@ function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen)
 
   const iconColors: Record<string, string> = {
-    blue: "text-blue-500",
-    indigo: "text-indigo-500",
-    emerald: "text-emerald-500",
-    cyan: "text-cyan-500",
+    blue: "text-info",
+    indigo: "text-indigo-600",
+    emerald: "text-success",
+    cyan: "text-cyan-600",
   }
 
   return (
@@ -135,7 +135,7 @@ function PushParamRow({
           {param.required === false && (
             <Badge
               variant="outline"
-              className="ml-2 text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20"
+              className="ml-2 text-[10px] bg-warning/10 text-warning border-warning/20"
             >
               Tuỳ chọn
             </Badge>
@@ -144,14 +144,14 @@ function PushParamRow({
         <td className="px-4 py-3">
           <Badge
             variant="outline"
-            className="font-mono text-xs bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+            className="font-mono text-xs bg-muted border-border"
           >
             {param.type}
           </Badge>
         </td>
         <td className="px-4 py-3">
           {param.sample ? (
-            <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">
+            <code className="font-mono text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">
               {param.sample}
             </code>
           ) : (
@@ -300,7 +300,7 @@ export function PushDetail({ push }: { push: PushMechanism }) {
                       <CopyButton text={content.json} />
                     </div>
                   </div>
-                  <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50">
+                  <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed text-muted-foreground bg-muted">
                     {formatJson(content.json)}
                   </pre>
                 </CardContent>

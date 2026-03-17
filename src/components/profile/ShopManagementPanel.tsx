@@ -43,7 +43,6 @@ interface Shop {
   shop_logo: string | null;
   region: string | null;
   partner_id: number | null;
-  partner_key: string | null;
   partner_name: string | null;
   created_at: string;
   token_updated_at: string | null;
@@ -113,7 +112,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
           shop_id, 
           role_id, 
           apishopee_roles(name),
-          apishopee_shops(id, shop_id, shop_name, shop_logo, region, partner_id, partner_key, partner_name, created_at, token_updated_at, expired_at, access_token_expired_at, expire_in, expire_time)
+          apishopee_shops(id, shop_id, shop_name, shop_logo, region, partner_id, partner_name, created_at, token_updated_at, expired_at, access_token_expired_at, expire_in, expire_time)
         `)
         .eq('profile_id', effectiveUserId)
         .eq('is_active', true);
@@ -781,7 +780,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         <CardHeader className="pb-4">
           <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Tìm theo tên hoặc ID shop..."
                 className="pl-9 h-9 text-sm"
@@ -803,13 +802,13 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         <CardContent>
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-4 p-4 border border-slate-200 rounded-lg animate-pulse">
-                <div className="w-12 h-12 bg-slate-200 rounded-lg" />
+              <div key={i} className="flex items-center gap-4 p-4 border border-border rounded-lg animate-pulse">
+                <div className="w-12 h-12 bg-muted rounded-lg" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-slate-200 rounded w-1/3" />
-                  <div className="h-3 bg-slate-200 rounded w-1/4" />
+                  <div className="h-4 bg-muted rounded w-1/3" />
+                  <div className="h-3 bg-muted rounded w-1/4" />
                 </div>
-                <div className="h-8 w-24 bg-slate-200 rounded" />
+                <div className="h-8 w-24 bg-muted rounded" />
               </div>
             ))}
           </div>
@@ -821,11 +820,11 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   return (
     <div className="h-full flex flex-col">
       <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="pb-4 flex-shrink-0 border-b bg-white sticky top-0 z-10">
+        <CardHeader className="pb-4 flex-shrink-0 border-b bg-card sticky top-0 z-10">
           <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2 w-full md:w-auto">
               <div className="relative flex-1 md:w-64 md:flex-none">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder={`Tìm theo tên hoặc ID (${shops.length} shop)...`}
                   value={shopSearchQuery}
@@ -854,7 +853,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-green-600 hover:text-green-800 hover:bg-green-50 h-8 md:h-9"
+                  className="text-success hover:text-success hover:bg-success/10 h-8 md:h-9"
                   onClick={handleRefreshAllTokens}
                   disabled={refreshingAllTokens || shops.length === 0}
                 >
@@ -870,7 +869,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                 </Button>
                 <Button
                   size="sm"
-                  className="bg-orange-500 hover:bg-orange-600 h-8 md:h-9"
+                  className="bg-brand hover:bg-brand/90 h-8 md:h-9"
                   onClick={handleConnectNewShop}
                 >
                   <svg className="w-4 h-4 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -896,10 +895,10 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
-                <div className="text-sm text-slate-500">
+              <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/50">
+                <div className="text-sm text-muted-foreground">
                   Trang {currentPage} / {totalPages}
-                  <span className="ml-2 text-slate-400">
+                  <span className="ml-2 text-muted-foreground">
                     ({filteredShops.length} shop)
                   </span>
                 </div>
@@ -921,12 +920,12 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                           variant={currentPage === page ? 'default' : 'outline'}
                           size="sm"
                           onClick={() => goToPage(page)}
-                          className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+                          className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-brand hover:bg-brand/90' : ''}`}
                         >
                           {page}
                         </Button>
                       ) : (
-                        <span key={index} className="px-2 text-slate-400">
+                        <span key={index} className="px-2 text-muted-foreground">
                           {page}
                         </span>
                       )
@@ -952,18 +951,18 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-red-600">Xác nhận xóa Shop</DialogTitle>
+            <DialogTitle className="text-destructive">Xác nhận xóa Shop</DialogTitle>
             <DialogDescription>
               Hành động này không thể hoàn tác. Tất cả dữ liệu liên quan đến shop sẽ bị xóa.
             </DialogDescription>
           </DialogHeader>
           {shopToDelete && (
             <div className="py-4">
-              <div className="bg-red-50 rounded-lg p-4">
-                <p className="font-medium text-slate-800">
+              <div className="bg-destructive/10 rounded-lg p-4">
+                <p className="font-medium text-foreground">
                   {shopToDelete.shop_name || `Shop ${shopToDelete.shop_id}`}
                 </p>
-                <p className="text-sm text-slate-500">ID: {shopToDelete.shop_id}</p>
+                <p className="text-sm text-muted-foreground">ID: {shopToDelete.shop_id}</p>
               </div>
             </div>
           )}
@@ -990,7 +989,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="partner_id">Partner ID <span className="text-red-500">*</span></Label>
+              <Label htmlFor="partner_id">Partner ID <span className="text-destructive">*</span></Label>
               <Input
                 id="partner_id"
                 type="number"
@@ -1000,7 +999,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="partner_key">Partner Key <span className="text-red-500">*</span></Label>
+              <Label htmlFor="partner_key">Partner Key <span className="text-destructive">*</span></Label>
               <Input
                 id="partner_key"
                 type="password"
@@ -1024,7 +1023,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
               Hủy
             </Button>
             <Button
-              className="bg-orange-500 hover:bg-orange-600"
+              className="bg-brand hover:bg-brand/90"
               onClick={handleSubmitConnect}
               disabled={connecting || !partnerIdInput || !partnerKeyInput}
             >

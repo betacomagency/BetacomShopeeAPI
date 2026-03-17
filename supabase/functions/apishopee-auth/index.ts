@@ -43,14 +43,16 @@ interface PartnerInfo {
 
 /**
  * Lấy partner credentials từ request hoặc shop hoặc fallback env
+ * @param allowRequestCredentials - Chỉ cho phép dùng partner_key từ request khi true (get-auth-url only)
  */
 async function getPartnerCredentials(
   supabase: ReturnType<typeof createClient>,
   partnerInfo?: PartnerInfo,
-  shopId?: number
+  shopId?: number,
+  allowRequestCredentials = false
 ): Promise<PartnerCredentials> {
-  // Nếu có partner_info từ request, dùng trực tiếp
-  if (partnerInfo?.partner_id && partnerInfo?.partner_key) {
+  // Nếu có partner_info từ request, dùng trực tiếp (CHỈ cho get-auth-url)
+  if (allowRequestCredentials && partnerInfo?.partner_id && partnerInfo?.partner_key) {
     console.log('[PARTNER] Using partner from request:', partnerInfo.partner_id);
     return {
       partnerId: partnerInfo.partner_id,
@@ -91,9 +93,12 @@ async function getPartnerCredentials(
  */
 async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
   if (PROXY_URL) {
-    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
     console.log('[PROXY] Calling via proxy:', PROXY_URL);
-    return await fetch(proxyUrl, options);
+    const proxyOptions = {
+      ...options,
+      headers: { ...(options.headers || {}), 'x-target-url': targetUrl },
+    };
+    return await fetch(PROXY_URL, proxyOptions);
   }
   return await fetch(targetUrl, options);
 }
@@ -364,12 +369,12 @@ async function saveTokenForMerchant(
 }
 
 /**
- * Lấy token từ Supabase (bảng shops)
+ * Lấy token từ Supabase (bảng shops) - chỉ select các fields an toàn cho frontend
  */
 async function getToken(supabase: ReturnType<typeof createClient>, shopId: number) {
   const { data, error } = await supabase
     .from('apishopee_shops')
-    .select('*')
+    .select('shop_id, access_token, refresh_token, expire_in, expired_at, access_token_expired_at, merchant_id, shop_name, region, expire_time, auth_time, token_updated_at')
     .eq('shop_id', shopId)
     .single();
 
@@ -488,8 +493,8 @@ serve(async (req) => {
         const redirectUri = body.redirect_uri || '';
         const partnerInfo = body.partner_info as PartnerInfo | undefined;
 
-        // Lấy partner credentials
-        const credentials = await getPartnerCredentials(supabase, partnerInfo);
+        // Lấy partner credentials (OK to use request credentials for URL generation only)
+        const credentials = await getPartnerCredentials(supabase, partnerInfo, undefined, true);
         const authUrl = getAuthUrl(credentials, redirectUri);
 
         return new Response(JSON.stringify({
@@ -501,6 +506,13 @@ serve(async (req) => {
       }
 
       case 'get-token': {
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'Authentication required', success: false }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         const code = body.code || '';
         const shopId = body.shop_id ? Number(body.shop_id) : undefined;
         const mainAccountId = body.main_account_id ? Number(body.main_account_id) : undefined;
@@ -508,8 +520,8 @@ serve(async (req) => {
 
         console.log('[AUTH] get-token request:', { code: code.substring(0, 10) + '...', shopId, hasPartnerInfo: !!partnerInfo });
 
-        // Lấy partner credentials
-        const credentials = await getPartnerCredentials(supabase, partnerInfo, shopId);
+        // Lấy partner credentials (không dùng partner_key từ request - phải lấy từ DB/env)
+        const credentials = await getPartnerCredentials(supabase, partnerInfo, shopId, false);
         console.log('[AUTH] Using partner credentials:', { partnerId: credentials.partnerId });
 
         const getTokenStart = Date.now();
@@ -582,11 +594,18 @@ serve(async (req) => {
       }
 
       case 'refresh-token': {
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'Authentication required', success: false }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         const { refresh_token, shop_id, merchant_id, supplier_id, user_id } = body;
         const partnerInfo = body.partner_info as PartnerInfo | undefined;
 
-        // Lấy partner credentials
-        const credentials = await getPartnerCredentials(supabase, partnerInfo, shop_id);
+        // Lấy partner credentials (không dùng partner_key từ request - phải lấy từ DB/env)
+        const credentials = await getPartnerCredentials(supabase, partnerInfo, shop_id, false);
         const refreshStart = Date.now();
         const token = await refreshAccessToken(credentials, refresh_token, shop_id, merchant_id, supplier_id, user_id);
 
@@ -624,6 +643,13 @@ serve(async (req) => {
       }
 
       case 'get-stored-token': {
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'Authentication required', success: false }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         const shopId = Number(body.shop_id);
 
         if (!shopId) {

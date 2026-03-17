@@ -20,28 +20,28 @@ import type { ApiEndpoint, ApiParam } from "@/lib/docs/api-data"
 
 const methodStyles: Record<string, { bg: string; text: string; border: string; glow: string }> = {
   GET: {
-    bg: "bg-emerald-500",
-    text: "text-emerald-600",
-    border: "border-emerald-500/30",
-    glow: "shadow-emerald-500/20",
+    bg: "bg-success",
+    text: "text-success",
+    border: "border-success/30",
+    glow: "shadow-success/20",
   },
   POST: {
-    bg: "bg-blue-500",
-    text: "text-blue-600",
-    border: "border-blue-500/30",
-    glow: "shadow-blue-500/20",
+    bg: "bg-info",
+    text: "text-info",
+    border: "border-info/30",
+    glow: "shadow-info/20",
   },
   PUT: {
-    bg: "bg-amber-500",
-    text: "text-amber-600",
-    border: "border-amber-500/30",
-    glow: "shadow-amber-500/20",
+    bg: "bg-warning",
+    text: "text-warning",
+    border: "border-warning/30",
+    glow: "shadow-warning/20",
   },
   DELETE: {
-    bg: "bg-red-500",
-    text: "text-red-600",
-    border: "border-red-500/30",
-    glow: "shadow-red-500/20",
+    bg: "bg-destructive",
+    text: "text-destructive",
+    border: "border-destructive/30",
+    glow: "shadow-destructive/20",
   },
 }
 
@@ -143,7 +143,7 @@ function ParamTable({
             <td className="px-4 py-3">
               <Badge
                 variant="outline"
-                className="font-mono text-xs bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                className="font-mono text-xs bg-muted border-border"
               >
                 {param.type}
               </Badge>
@@ -151,7 +151,7 @@ function ParamTable({
             {showRequired && (
               <td className="px-4 py-3">
                 {param.required ? (
-                  <Badge className="bg-red-500/10 text-red-600 border-red-500/20 hover:bg-red-500/15 text-[10px]">
+                  <Badge className="bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/15 text-[10px]">
                     Bắt buộc
                   </Badge>
                 ) : (
@@ -163,7 +163,7 @@ function ParamTable({
             )}
             <td className="px-4 py-3">
               {param.sample ? (
-                <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 break-all">
+                <code className="font-mono text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground break-all">
                   {param.sample}
                 </code>
               ) : (
@@ -234,7 +234,7 @@ export function ApiDetail({ api }: { api: ApiEndpoint }) {
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-          <span className="text-orange-500 font-medium">{apiModuleName(api.module)}</span>
+          <span className="text-brand font-medium">{apiModuleName(api.module)}</span>
           <span>/</span>
           <span>{api.name}</span>
         </div>
@@ -251,7 +251,7 @@ export function ApiDetail({ api }: { api: ApiEndpoint }) {
         </p>
       </div>
 
-      <div className="h-px bg-gradient-to-r from-orange-500/20 via-red-500/20 to-transparent" />
+      <div className="h-px bg-gradient-to-r from-brand/20 via-destructive/20 to-transparent" />
 
       {/* URL */}
       {api.environments.length > 0 && (
@@ -281,7 +281,7 @@ export function ApiDetail({ api }: { api: ApiEndpoint }) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center">
-                          <code className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded break-all">
+                          <code className="font-mono text-xs bg-muted px-2 py-1 rounded break-all">
                             {env.url}
                           </code>
                           <CopyButton text={env.url} />

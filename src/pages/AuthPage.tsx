@@ -28,9 +28,9 @@ const FacebookIcon = () => (
 );
 
 const PLATFORMS = [
-  { name: 'Shopee', icon: ShopeeIcon, color: 'text-orange-500', bgColor: 'bg-orange-100', available: true },
-  { name: 'TikTok Shop', icon: TikTokIcon, color: 'text-slate-800', bgColor: 'bg-slate-100', available: false },
-  { name: 'Facebook', icon: FacebookIcon, color: 'text-blue-500', bgColor: 'bg-blue-100', available: false },
+  { name: 'Shopee', icon: ShopeeIcon, color: 'text-brand', bgColor: 'bg-brand/10', available: true },
+  { name: 'TikTok Shop', icon: TikTokIcon, color: 'text-foreground', bgColor: 'bg-muted', available: false },
+  { name: 'Facebook', icon: FacebookIcon, color: 'text-info', bgColor: 'bg-info/10', available: false },
 ];
 
 const FEATURES = [
@@ -104,8 +104,8 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 flex">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-orange-200 rounded-full opacity-20 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-red-200 rounded-full opacity-20 blur-3xl" />
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-brand/20 rounded-full opacity-20 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-destructive/20 rounded-full opacity-20 blur-3xl" />
       </div>
 
       {/* Left Side - Features */}
@@ -114,14 +114,14 @@ export default function AuthPage() {
           <div className="flex items-center gap-3 mb-8">
             <img src="/logo_betacom.png" alt="BETACOM" className="w-12 h-12 rounded-xl object-contain" />
             <div>
-              <h1 className="text-2xl font-bold text-red-500">BETACOM</h1>
+              <h1 className="text-2xl font-bold text-destructive">BETACOM</h1>
             </div>
           </div>
 
-          <h2 className="text-4xl font-bold text-slate-800 mb-4">
-            Quản lý Shop <span className="text-orange-500">đa nền tảng</span>
+          <h2 className="text-4xl font-bold text-foreground mb-4">
+            Quản lý Shop <span className="text-brand">đa nền tảng</span>
           </h2>
-          <p className="text-lg text-slate-600 mb-6">
+          <p className="text-lg text-muted-foreground mb-6">
             Kết nối và quản lý tất cả shop thương mại điện tử của bạn trong một nền tảng duy nhất.
           </p>
 
@@ -135,7 +135,7 @@ export default function AuthPage() {
               >
                 <platform.icon />
                 {!platform.available && (
-                  <span className="absolute -top-1 -right-1 text-[10px] bg-slate-500 text-white px-1.5 py-0.5 rounded-full font-medium">
+                  <span className="absolute -top-1 -right-1 text-[10px] bg-muted-foreground text-white px-1.5 py-0.5 rounded-full font-medium">
                     Soon
                   </span>
                 )}
@@ -145,13 +145,13 @@ export default function AuthPage() {
 
           <div className="space-y-4">
             {FEATURES.map((feature, index) => (
-              <div key={index} className="flex items-start gap-4 p-4 bg-white/60 rounded-xl border border-slate-100">
-                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center text-orange-600 flex-shrink-0">
+              <div key={index} className="flex items-start gap-4 p-4 bg-card/60 rounded-xl border border-border">
+                <div className="w-10 h-10 bg-brand/10 rounded-lg flex items-center justify-center text-brand flex-shrink-0">
                   {feature.icon}
                 </div>
                 <div>
-                  <h3 className="font-semibold text-slate-800">{feature.title}</h3>
-                  <p className="text-sm text-slate-600">{feature.description}</p>
+                  <h3 className="font-semibold text-foreground">{feature.title}</h3>
+                  <p className="text-sm text-muted-foreground">{feature.description}</p>
                 </div>
               </div>
             ))}
@@ -164,14 +164,14 @@ export default function AuthPage() {
         <div className="relative w-full max-w-md">
           <div className="text-center mb-8 lg:hidden">
             <img src="/logo_betacom.png" alt="BETACOM" className="w-20 h-20 rounded-2xl shadow-xl shadow-orange-500/30 mb-4 object-contain mx-auto" />
-            <h1 className="text-3xl font-bold text-red-500">BETACOM</h1>
+            <h1 className="text-3xl font-bold text-destructive">BETACOM</h1>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 p-8 border border-slate-100">
-            <h2 className="text-xl font-semibold text-slate-800 mb-6 text-center">Đăng nhập</h2>
+          <div className="bg-card rounded-3xl shadow-xl shadow-slate-200/50 p-8 border border-border">
+            <h2 className="text-xl font-semibold text-foreground mb-6 text-center">Đăng nhập</h2>
 
             {(error || localError) && (
-              <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm flex items-center gap-2">
+              <div className="mb-4 p-3 rounded-xl bg-destructive/10 border border-destructive text-destructive text-sm flex items-center gap-2">
                 <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -181,25 +181,25 @@ export default function AuthPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="email@example.com"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
+                  className="w-full px-4 py-3 rounded-xl border border-border focus:border-brand focus:ring-2 focus:ring-brand/20 outline-none transition-all"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Mật khẩu</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Mật khẩu</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
+                  className="w-full px-4 py-3 rounded-xl border border-border focus:border-brand focus:ring-2 focus:ring-brand/20 outline-none transition-all"
                   required
                 />
               </div>
@@ -207,7 +207,7 @@ export default function AuthPage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold rounded-xl hover:from-orange-600 hover:to-red-600 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/30 hover:shadow-orange-500/40 flex items-center justify-center gap-2"
+                className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold rounded-xl hover:from-orange-600 hover:to-red-600 disabled:from-muted disabled:to-muted disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/30 hover:shadow-orange-500/40 flex items-center justify-center gap-2"
               >
                 {isSubmitting ? (
                   <>
@@ -225,8 +225,8 @@ export default function AuthPage() {
           </div>
 
           <div className="text-center mt-6">
-            <p className="text-xs text-slate-400">
-              Hỗ trợ <span className="font-medium text-orange-500">Shopee</span> · <span className="font-medium text-slate-600">TikTok</span> · <span className="font-medium text-blue-500">Facebook</span>
+            <p className="text-xs text-muted-foreground">
+              Hỗ trợ <span className="font-medium text-brand">Shopee</span> · <span className="font-medium text-muted-foreground">TikTok</span> · <span className="font-medium text-info">Facebook</span>
             </p>
           </div>
         </div>

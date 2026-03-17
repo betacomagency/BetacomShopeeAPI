@@ -1,13 +1,13 @@
 /**
- * Profile Settings Page - Thông tin cá nhân (chỉ xem)
+ * Profile Settings Page - Danh sách shop của user
  */
 
-import UserProfilePanel from '@/components/profile/UserProfilePanel';
+import { ShopManagementPanel } from '@/components/profile/ShopManagementPanel';
 
 export default function ProfileSettingsPage() {
   return (
-    <div className="p-6 space-y-6">
-      <UserProfilePanel />
+    <div className="p-6">
+      <ShopManagementPanel readOnly />
     </div>
   );
 }

@@ -29,9 +29,12 @@ const PARTNER_LEVEL_ALLOWED_PATHS = [
  */
 async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
   if (PROXY_URL) {
-    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
     console.log('[API Proxy] Calling via proxy:', PROXY_URL);
-    return await fetch(proxyUrl, options);
+    const proxyOptions = {
+      ...options,
+      headers: { ...(options.headers || {}), 'x-target-url': targetUrl },
+    };
+    return await fetch(PROXY_URL, proxyOptions);
   }
   return await fetch(targetUrl, options);
 }

@@ -71,7 +71,7 @@ export function ImageWithZoom({
       {showZoom &&
         createPortal(
           <div
-            className="fixed bg-white rounded-lg shadow-2xl border-2 border-slate-200 p-1 pointer-events-none"
+            className="fixed bg-card rounded-lg shadow-2xl border-2 border-border p-1 pointer-events-none"
             style={{
               top: position.top,
               left: position.left,

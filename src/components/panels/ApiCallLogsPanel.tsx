@@ -88,19 +88,19 @@ const DATE_OPTIONS = [
 ];
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  auth: 'bg-purple-50 text-purple-700',
-  product: 'bg-blue-50 text-blue-700',
-  flash_sale: 'bg-orange-50 text-orange-700',
-  shop: 'bg-green-50 text-green-700',
-  order: 'bg-cyan-50 text-cyan-700',
-  finance: 'bg-emerald-50 text-emerald-700',
-  review: 'bg-yellow-50 text-yellow-700',
+  auth: 'bg-info/10 text-info',
+  product: 'bg-info/10 text-info',
+  flash_sale: 'bg-brand/10 text-brand',
+  shop: 'bg-success/10 text-success',
+  order: 'bg-info/10 text-info',
+  finance: 'bg-success/10 text-success',
+  review: 'bg-warning/10 text-warning',
 };
 
 export const STATUS_COLORS: Record<string, string> = {
-  success: 'bg-green-50 text-green-700',
-  failed: 'bg-red-50 text-red-700',
-  timeout: 'bg-yellow-50 text-yellow-700',
+  success: 'bg-success/10 text-success',
+  failed: 'bg-destructive/10 text-destructive',
+  timeout: 'bg-warning/10 text-warning',
 };
 
 const TRIGGERED_BY_OPTIONS = [
@@ -113,11 +113,11 @@ const TRIGGERED_BY_OPTIONS = [
 ];
 
 const TRIGGERED_BY_COLORS: Record<string, string> = {
-  user: 'bg-blue-50 text-blue-700',
-  cron: 'bg-amber-50 text-amber-700',
-  scheduler: 'bg-purple-50 text-purple-700',
-  webhook: 'bg-teal-50 text-teal-700',
-  system: 'bg-slate-50 text-slate-500',
+  user: 'bg-info/10 text-info',
+  cron: 'bg-warning/10 text-warning',
+  scheduler: 'bg-info/10 text-info',
+  webhook: 'bg-info/10 text-info',
+  system: 'bg-muted text-muted-foreground',
 };
 
 export function formatDate(dateString: string | null): string {
@@ -153,7 +153,7 @@ export function formatEndpoint(endpoint: string): string {
 }
 
 export function CategoryBadge({ category }: { category: string }) {
-  const color = CATEGORY_COLORS[category] || 'bg-slate-50 text-slate-700';
+  const color = CATEGORY_COLORS[category] || 'bg-muted text-foreground';
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${color}`}>
       {category}
@@ -162,8 +162,8 @@ export function CategoryBadge({ category }: { category: string }) {
 }
 
 export function StatusBadge({ status }: { status: string | null }) {
-  if (!status) return <span className="text-xs text-slate-400">-</span>;
-  const color = STATUS_COLORS[status] || 'bg-slate-50 text-slate-700';
+  if (!status) return <span className="text-xs text-muted-foreground">-</span>;
+  const color = STATUS_COLORS[status] || 'bg-muted text-foreground';
   const Icon = status === 'success' ? CheckCircle : status === 'failed' ? XCircle : Clock;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
@@ -175,7 +175,7 @@ export function StatusBadge({ status }: { status: string | null }) {
 
 export function TriggeredByBadge({ triggeredBy }: { triggeredBy: string | null }) {
   const value = triggeredBy || 'system';
-  const color = TRIGGERED_BY_COLORS[value] || 'bg-slate-50 text-slate-500';
+  const color = TRIGGERED_BY_COLORS[value] || 'bg-muted text-muted-foreground';
   const label = TRIGGERED_BY_OPTIONS.find(o => o.value === value)?.label || value;
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${color}`}>
@@ -187,8 +187,8 @@ export function TriggeredByBadge({ triggeredBy }: { triggeredBy: string | null }
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-slate-400">{label}</p>
-      <p className="text-sm text-slate-700 font-medium break-all">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm text-foreground font-medium break-all">{value}</p>
     </div>
   );
 }
@@ -214,33 +214,33 @@ function CollapsibleJson({
   };
 
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between px-3 py-2 bg-muted hover:bg-accent transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2">
           {isOpen ? (
-            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
           ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
           )}
-          <span className="text-xs font-medium text-slate-600">{label}</span>
+          <span className="text-xs font-medium text-foreground">{label}</span>
         </div>
         <button
           onClick={handleCopy}
-          className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer"
+          className="p-1 rounded hover:bg-accent transition-colors cursor-pointer"
           title="Copy JSON"
         >
           {copied ? (
-            <Check className="w-3.5 h-3.5 text-green-600" />
+            <Check className="w-3.5 h-3.5 text-success" />
           ) : (
-            <Copy className="w-3.5 h-3.5 text-slate-400" />
+            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
           )}
         </button>
       </button>
       {isOpen && (
-        <pre className="text-xs p-3 overflow-auto max-h-[400px] bg-white font-mono leading-relaxed text-slate-700">
+        <pre className="text-xs p-3 overflow-auto max-h-[400px] bg-card font-mono leading-relaxed text-foreground">
           {jsonString}
         </pre>
       )}
@@ -341,35 +341,35 @@ export function ApiCallLogsPanel() {
   return (
     <div className="flex flex-col gap-4">
       {/* Stats Cards + Chart */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-4">
+      <div className="bg-card rounded-lg border border-border p-4 space-y-4">
         {/* Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+          <div className="p-3 rounded-lg bg-muted border border-border">
             <div className="flex items-center gap-2 mb-1">
-              <Activity className="w-4 h-4 text-blue-500" />
-              <span className="text-xs text-slate-500">Tổng Calls</span>
+              <Activity className="w-4 h-4 text-info" />
+              <span className="text-xs text-muted-foreground">Tổng Calls</span>
             </div>
             {statsLoading ? (
-              <div className="h-7 w-16 bg-slate-200 rounded animate-pulse" />
+              <div className="h-7 w-16 bg-muted rounded animate-pulse" />
             ) : (
-              <p className="text-xl font-bold text-slate-800 tabular-nums">
+              <p className="text-xl font-bold text-foreground tabular-nums">
                 {(summary?.total || 0).toLocaleString('vi-VN')}
               </p>
             )}
           </div>
 
-          <div className="p-3 rounded-lg bg-red-50/50 border border-red-100">
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive">
             <div className="flex items-center gap-2 mb-1">
-              <TrendingDown className="w-4 h-4 text-red-500" />
-              <span className="text-xs text-slate-500">Thất bại</span>
+              <TrendingDown className="w-4 h-4 text-destructive" />
+              <span className="text-xs text-muted-foreground">Thất bại</span>
             </div>
             {statsLoading ? (
-              <div className="h-7 w-16 bg-red-100 rounded animate-pulse" />
+              <div className="h-7 w-16 bg-destructive/10 rounded animate-pulse" />
             ) : (
-              <p className="text-xl font-bold text-red-600 tabular-nums">
+              <p className="text-xl font-bold text-destructive tabular-nums">
                 {(summary?.failed || 0).toLocaleString('vi-VN')}
                 {summary && summary.total > 0 && (
-                  <span className="text-xs font-normal text-red-400 ml-1">
+                  <span className="text-xs font-normal text-destructive/60 ml-1">
                     ({((summary.failed / summary.total) * 100).toFixed(1)}%)
                   </span>
                 )}
@@ -377,30 +377,30 @@ export function ApiCallLogsPanel() {
             )}
           </div>
 
-          <div className="p-3 rounded-lg bg-green-50/50 border border-green-100">
+          <div className="p-3 rounded-lg bg-success/10 border border-success">
             <div className="flex items-center gap-2 mb-1">
-              <Percent className="w-4 h-4 text-green-500" />
-              <span className="text-xs text-slate-500">Tỷ lệ thành công</span>
+              <Percent className="w-4 h-4 text-success" />
+              <span className="text-xs text-muted-foreground">Tỷ lệ thành công</span>
             </div>
             {statsLoading ? (
-              <div className="h-7 w-16 bg-green-100 rounded animate-pulse" />
+              <div className="h-7 w-16 bg-success/10 rounded animate-pulse" />
             ) : (
-              <p className="text-xl font-bold text-green-600 tabular-nums">
+              <p className="text-xl font-bold text-success tabular-nums">
                 {(summary?.successRate || 0).toFixed(1)}%
               </p>
             )}
           </div>
 
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+          <div className="p-3 rounded-lg bg-muted border border-border">
             <div className="flex items-center gap-2 mb-1">
-              <Timer className="w-4 h-4 text-amber-500" />
-              <span className="text-xs text-slate-500">TB Duration</span>
+              <Timer className="w-4 h-4 text-warning" />
+              <span className="text-xs text-muted-foreground">TB Duration</span>
             </div>
             {statsLoading ? (
-              <div className="h-7 w-16 bg-slate-200 rounded animate-pulse" />
+              <div className="h-7 w-16 bg-muted rounded animate-pulse" />
             ) : (
-              <p className="text-xl font-bold text-slate-800 tabular-nums">
-                {summary?.avgDuration || 0}<span className="text-sm font-normal text-slate-400 ml-0.5">ms</span>
+              <p className="text-xl font-bold text-foreground tabular-nums">
+                {summary?.avgDuration || 0}<span className="text-sm font-normal text-muted-foreground ml-0.5">ms</span>
               </p>
             )}
           </div>
@@ -409,13 +409,13 @@ export function ApiCallLogsPanel() {
       </div>
 
       {/* Logs Table */}
-      <div className="flex flex-col bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <div className="flex flex-col bg-card rounded-lg border border-border overflow-hidden">
       {/* Filters */}
-      <div className="flex-shrink-0 p-4 bg-white border-b space-y-3">
+      <div className="flex-shrink-0 p-4 bg-card border-b space-y-3">
         {/* Search + Refresh */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Tìm endpoint, lỗi..."
               value={searchInput}
@@ -436,7 +436,7 @@ export function ApiCallLogsPanel() {
         <div className="flex flex-wrap items-end gap-2">
           {/* Shop filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Shop</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Shop</label>
             <Select
               value={filters.shopId?.toString() || 'all'}
               onValueChange={(v) => updateFilter('shopId', v === 'all' ? undefined : Number(v))}
@@ -457,7 +457,7 @@ export function ApiCallLogsPanel() {
 
           {/* Partner filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Partner</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Partner</label>
             <Select
               value={filters.partnerId?.toString() || 'all'}
               onValueChange={(v) => updateFilter('partnerId', v === 'all' ? undefined : Number(v))}
@@ -478,7 +478,7 @@ export function ApiCallLogsPanel() {
 
           {/* Category filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Danh mục</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Danh mục</label>
             <Select
               value={filters.category || 'all'}
               onValueChange={(v) => updateFilter('category', v)}
@@ -498,7 +498,7 @@ export function ApiCallLogsPanel() {
 
           {/* Status filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Trạng thái</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Trạng thái</label>
             <Select
               value={filters.status || 'all'}
               onValueChange={(v) => updateFilter('status', v)}
@@ -518,7 +518,7 @@ export function ApiCallLogsPanel() {
 
           {/* Edge function filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Function</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Function</label>
             <Select
               value={filters.edgeFunction || 'all'}
               onValueChange={(v) => updateFilter('edgeFunction', v)}
@@ -539,7 +539,7 @@ export function ApiCallLogsPanel() {
           {/* User filter */}
           {userEmailOptions.length > 0 && (
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Người dùng</label>
+              <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Người dùng</label>
               <Select
                 value={filters.userEmail || 'all'}
                 onValueChange={(v) => updateFilter('userEmail', v)}
@@ -561,7 +561,7 @@ export function ApiCallLogsPanel() {
 
           {/* Triggered by filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Nguồn</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Nguồn</label>
             <Select
               value={filters.triggeredBy || 'all'}
               onValueChange={(v) => updateFilter('triggeredBy', v)}
@@ -581,7 +581,7 @@ export function ApiCallLogsPanel() {
 
           {/* Date range filter */}
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Thời gian</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Thời gian</label>
             <Select value={filters.dateRange || '7d'} onValueChange={(v) => updateFilter('dateRange', v)}>
               <SelectTrigger className="w-[110px] h-8 text-sm cursor-pointer">
                 <SelectValue placeholder="Thời gian" />
@@ -596,7 +596,7 @@ export function ApiCallLogsPanel() {
             </Select>
           </div>
 
-          <span className="text-xs text-slate-400 ml-auto self-end pb-1">
+          <span className="text-xs text-muted-foreground ml-auto self-end pb-1">
             {totalCount.toLocaleString('vi-VN')} kết quả
           </span>
         </div>
@@ -607,12 +607,12 @@ export function ApiCallLogsPanel() {
         {isLoading ? (
           <div className="p-6 space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-12 bg-slate-100 rounded animate-pulse" />
+              <div key={i} className="h-12 bg-muted rounded animate-pulse" />
             ))}
           </div>
         ) : logs.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">
-            <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+          <div className="p-12 text-center text-muted-foreground">
+            <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-muted" />
             <p className="font-medium">Không có API call logs</p>
             <p className="text-sm mt-1">Thử thay đổi bộ lọc để xem kết quả khác</p>
           </div>
@@ -623,7 +623,7 @@ export function ApiCallLogsPanel() {
               {logs.map((log) => (
                 <div
                   key={log.id}
-                  className="p-3 hover:bg-slate-50 cursor-pointer transition-colors"
+                  className="p-3 hover:bg-accent cursor-pointer transition-colors"
                   onClick={() => handleRowClick(log)}
                 >
                   <div className="flex items-center justify-between mb-1.5">
@@ -631,22 +631,22 @@ export function ApiCallLogsPanel() {
                       <CategoryBadge category={log.api_category} />
                       <StatusBadge status={log.status} />
                     </div>
-                    <span className="text-xs text-slate-400">{formatDate(log.created_at)}</span>
+                    <span className="text-xs text-muted-foreground">{formatDate(log.created_at)}</span>
                   </div>
-                  <p className="text-xs text-slate-700 font-medium truncate">
+                  <p className="text-xs text-foreground font-medium truncate">
                     {formatEndpoint(log.api_endpoint)}
                   </p>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-muted-foreground">
                       {getShopName(log.shop_id)}
                     </span>
                     {log.user_email ? (
-                      <span className="text-xs text-slate-400">{log.user_email.split('@')[0]}</span>
+                      <span className="text-xs text-muted-foreground">{log.user_email.split('@')[0]}</span>
                     ) : (
                       <TriggeredByBadge triggeredBy={log.triggered_by} />
                     )}
                     {log.duration_ms != null && (
-                      <span className="text-xs text-slate-400">{log.duration_ms}ms</span>
+                      <span className="text-xs text-muted-foreground">{log.duration_ms}ms</span>
                     )}
                   </div>
                 </div>
@@ -655,41 +655,41 @@ export function ApiCallLogsPanel() {
 
             {/* Desktop table */}
             <table className="hidden md:table w-full text-sm">
-              <thead className="bg-slate-50 border-b sticky top-0">
+              <thead className="bg-muted border-b sticky top-0">
                 <tr>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Thời gian</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Shop</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Partner</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">API Endpoint</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Category</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Status</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">User</th>
-                  <th className="text-right px-4 py-2 text-xs font-medium text-slate-500">Duration</th>
-                  <th className="text-center px-4 py-2 text-xs font-medium text-slate-500 w-10"></th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Thời gian</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Shop</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Partner</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">API Endpoint</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Category</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">User</th>
+                  <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground">Duration</th>
+                  <th className="text-center px-4 py-2 text-xs font-medium text-muted-foreground w-10"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {logs.map((log) => (
                   <tr
                     key={log.id}
-                    className="hover:bg-slate-50 transition-colors"
+                    className="hover:bg-accent transition-colors"
                   >
-                    <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">
+                    <td className="px-4 py-2 text-xs text-muted-foreground whitespace-nowrap">
                       {formatDate(log.created_at)}
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-600 whitespace-nowrap max-w-[120px] truncate">
+                    <td className="px-4 py-2 text-xs text-foreground whitespace-nowrap max-w-[120px] truncate">
                       {getShopName(log.shop_id)}
                     </td>
                     <td className="px-4 py-2 text-xs whitespace-nowrap">
                       {getPartnerName(log.partner_id) ? (
-                        <span className="inline-flex px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-xs font-medium">
+                        <span className="inline-flex px-2 py-0.5 rounded bg-info/10 text-info text-xs font-medium">
                           {getPartnerName(log.partner_id)}
                         </span>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-700 truncate max-w-[250px] font-mono" title={log.api_endpoint}>
+                    <td className="px-4 py-2 text-xs text-foreground truncate max-w-[250px] font-mono" title={log.api_endpoint}>
                       {formatEndpoint(log.api_endpoint)}
                     </td>
                     <td className="px-4 py-2">
@@ -698,15 +698,15 @@ export function ApiCallLogsPanel() {
                     <td className="px-4 py-2">
                       <StatusBadge status={log.status} />
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap max-w-[120px] truncate" title={log.user_email || ''}>
+                    <td className="px-4 py-2 text-xs text-muted-foreground whitespace-nowrap max-w-[120px] truncate" title={log.user_email || ''}>
                       {log.user_email ? log.user_email.split('@')[0] : <TriggeredByBadge triggeredBy={log.triggered_by} />}
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-500 text-right whitespace-nowrap tabular-nums">
+                    <td className="px-4 py-2 text-xs text-muted-foreground text-right whitespace-nowrap tabular-nums">
                       {log.duration_ms != null ? `${log.duration_ms}ms` : '-'}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0 cursor-pointer" onClick={() => handleRowClick(log)}>
-                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                        <Eye className="w-3.5 h-3.5 text-muted-foreground" />
                       </Button>
                     </td>
                   </tr>
@@ -719,8 +719,8 @@ export function ApiCallLogsPanel() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-t">
-          <span className="text-xs text-slate-400">
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-card border-t">
+          <span className="text-xs text-muted-foreground">
             Trang {filters.page + 1} / {totalPages.toLocaleString('vi-VN')}
           </span>
           <div className="flex items-center gap-1">
@@ -753,8 +753,8 @@ export function ApiCallLogsPanel() {
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           {loadingDetail && !selectedLog ? (
             <div className="flex items-center justify-center py-12">
-              <RefreshCw className="w-6 h-6 animate-spin text-slate-400" />
-              <span className="ml-3 text-sm text-slate-500">Đang tải chi tiết...</span>
+              <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+              <span className="ml-3 text-sm text-muted-foreground">Đang tải chi tiết...</span>
             </div>
           ) : selectedLog ? (
             <>
@@ -762,7 +762,7 @@ export function ApiCallLogsPanel() {
                 <DialogTitle className="flex items-center gap-2 text-base flex-wrap">
                   <StatusBadge status={selectedLog.status} />
                   <CategoryBadge category={selectedLog.api_category} />
-                  <span className="text-sm text-slate-600 font-mono">
+                  <span className="text-sm text-foreground font-mono">
                     {formatEndpoint(selectedLog.api_endpoint)}
                   </span>
                 </DialogTitle>
@@ -791,11 +791,11 @@ export function ApiCallLogsPanel() {
 
                 {/* Error info */}
                 {selectedLog.shopee_error && (
-                  <div className="p-3 rounded-lg bg-red-50 space-y-1">
-                    <p className="text-xs text-red-500 font-medium">Shopee Error</p>
-                    <p className="text-sm text-red-700 font-mono">{selectedLog.shopee_error}</p>
+                  <div className="p-3 rounded-lg bg-destructive/10 space-y-1">
+                    <p className="text-xs text-destructive font-medium">Shopee Error</p>
+                    <p className="text-sm text-destructive font-mono">{selectedLog.shopee_error}</p>
                     {selectedLog.shopee_message && (
-                      <p className="text-xs text-red-600">{selectedLog.shopee_message}</p>
+                      <p className="text-xs text-destructive">{selectedLog.shopee_message}</p>
                     )}
                   </div>
                 )}

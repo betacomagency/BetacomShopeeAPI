@@ -553,10 +553,10 @@ export default function FlashSaleCopyPage() {
             user_id: user.id,
             timeslot_id: slot.timeslot_id,
             status: 'scheduled',
-            lead_time_minutes: leadTimeMinutes,
             scheduled_at: new Date((slot.start_time - leadTimeMinutes * 60) * 1000).toISOString(),
             slot_start_time: slot.start_time,
             slot_end_time: slot.end_time,
+            items_data: itemsToAdd,
             items_count: itemsToAdd.length,
           });
 
@@ -649,6 +649,11 @@ export default function FlashSaleCopyPage() {
       description: `Thành công: ${successCount}, Lỗi: ${errorCount}`,
       variant: errorCount > 0 ? 'destructive' : 'default',
     });
+
+    // Navigate to Flash Sale list after completion
+    if (successCount > 0) {
+      setTimeout(() => navigate('/flash-sale'), 1500);
+    }
   };
 
   // ==================== GUARDS ====================
@@ -671,7 +676,7 @@ export default function FlashSaleCopyPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-73px)]">
       {/* Header */}
-      <div className="flex-shrink-0 border-b bg-white px-6 py-4">
+      <div className="flex-shrink-0 border-b bg-card px-6 py-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate('/flash-sale')} className="cursor-pointer">
             <ArrowLeft className="h-5 w-5" />
@@ -679,7 +684,7 @@ export default function FlashSaleCopyPage() {
           <div>
             <h1 className="text-lg font-semibold">Sao chép Flash Sale</h1>
             {sourceFlashSaleTime && (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 Từ khung {formatTime(sourceFlashSaleTime.start)} {formatDate(sourceFlashSaleTime.start)} - {formatTime(sourceFlashSaleTime.end)}
                 {' '}&middot; FS #{flashSaleId}
               </p>
@@ -695,20 +700,20 @@ export default function FlashSaleCopyPage() {
           {/* Basic Info */}
           <Card>
             <CardContent className="p-5 space-y-4">
-              <h2 className="font-semibold text-slate-800">Thông tin cơ bản</h2>
+              <h2 className="font-semibold text-foreground">Thông tin cơ bản</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
                 {/* Gian hàng */}
                 <div className="space-y-1">
-                  <Label className="text-slate-500 text-xs">Gian hàng <span className="text-red-500">*</span></Label>
-                  <div className="flex items-center gap-2 text-sm font-medium h-9 px-3 border rounded-md bg-slate-50">
-                    <Store className="h-4 w-4 text-slate-400" />
+                  <Label className="text-muted-foreground text-xs">Gian hàng <span className="text-destructive">*</span></Label>
+                  <div className="flex items-center gap-2 text-sm font-medium h-9 px-3 border rounded-md bg-background">
+                    <Store className="h-4 w-4 text-muted-foreground" />
                     {currentShop?.shop_name || `Shop #${selectedShopId}`}
                   </div>
                 </div>
 
                 {/* Thời gian tự động cài */}
                 <div className="space-y-1">
-                  <Label className="text-slate-500 text-xs">Thời gian tự động cài</Label>
+                  <Label className="text-muted-foreground text-xs">Thời gian tự động cài</Label>
                   <Select value={leadTimeMinutes.toString()} onValueChange={v => setLeadTimeMinutes(Number(v))}>
                     <SelectTrigger className="h-9">
                       <SelectValue />
@@ -722,24 +727,24 @@ export default function FlashSaleCopyPage() {
 
                 {/* Khung giờ */}
                 <div className="space-y-1 md:col-span-2">
-                  <Label className="text-slate-500 text-xs">Khung giờ <span className="text-red-500">*</span></Label>
+                  <Label className="text-muted-foreground text-xs">Khung giờ <span className="text-destructive">*</span></Label>
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Selected slots preview */}
                     {selectedSlots.size > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {timeSlots.filter(s => selectedSlots.has(s.timeslot_id)).slice(0, 5).map(slot => (
-                          <span key={slot.timeslot_id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md border border-blue-200">
+                          <span key={slot.timeslot_id} className="inline-flex items-center gap-1 px-2 py-1 bg-info/10 text-info text-xs rounded-md border border-info">
                             {formatTime(slot.start_time)} - {formatTime(slot.end_time)} {formatDate(slot.start_time)}
                             <button
                               onClick={() => toggleSlot(slot.timeslot_id)}
-                              className="ml-0.5 text-blue-400 hover:text-blue-600 cursor-pointer"
+                              className="ml-0.5 text-blue-400 hover:text-info cursor-pointer"
                             >
                               <XCircle className="h-3 w-3" />
                             </button>
                           </span>
                         ))}
                         {selectedSlots.size > 5 && (
-                          <span className="text-xs text-slate-500">+{selectedSlots.size - 5} khung giờ khác</span>
+                          <span className="text-xs text-muted-foreground">+{selectedSlots.size - 5} khung giờ khác</span>
                         )}
                       </div>
                     )}
@@ -787,7 +792,7 @@ export default function FlashSaleCopyPage() {
                             <Spinner className="h-5 w-5" />
                           </div>
                         ) : timeSlots.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                             <CalendarIcon className="h-8 w-8 mb-2" />
                             <p className="text-sm">Không có khung giờ khả dụng</p>
                           </div>
@@ -800,30 +805,30 @@ export default function FlashSaleCopyPage() {
                               return (
                                 <div key={date}>
                                   <div
-                                    className="px-4 py-2 bg-slate-50 text-xs font-medium text-slate-600 sticky top-0 flex items-center gap-2 cursor-pointer hover:bg-slate-100 transition-colors"
+                                    className="px-4 py-2 bg-background text-xs font-medium text-muted-foreground sticky top-0 flex items-center gap-2 cursor-pointer hover:bg-muted transition-colors"
                                     onClick={() => toggleDateSlots(date)}
                                   >
                                     <Checkbox
                                       checked={allSelected}
-                                      className={cn("border-slate-400", someSelected && !allSelected && "data-[state=unchecked]:bg-slate-200")}
+                                      className={cn("border-border", someSelected && !allSelected && "data-[state=unchecked]:bg-muted")}
                                       onClick={e => e.stopPropagation()}
                                       onCheckedChange={() => toggleDateSlots(date)}
                                     />
                                     <span>{date}</span>
-                                    <span className="text-slate-400 ml-auto">({slots.length} khung giờ)</span>
+                                    <span className="text-muted-foreground ml-auto">({slots.length} khung giờ)</span>
                                   </div>
                                   <div className="divide-y">
                                     {slots.map(slot => (
-                                      <div key={slot.timeslot_id} className="px-4 py-2 flex items-center gap-2 hover:bg-slate-50 cursor-pointer" onClick={() => toggleSlot(slot.timeslot_id)}>
+                                      <div key={slot.timeslot_id} className="px-4 py-2 flex items-center gap-2 hover:bg-background cursor-pointer" onClick={() => toggleSlot(slot.timeslot_id)}>
                                         <Checkbox
                                           checked={selectedSlots.has(slot.timeslot_id)}
                                           onCheckedChange={() => toggleSlot(slot.timeslot_id)}
                                           onClick={e => e.stopPropagation()}
-                                          className="border-slate-400"
+                                          className="border-border"
                                         />
-                                        <Clock className="h-3 w-3 text-slate-400" />
+                                        <Clock className="h-3 w-3 text-muted-foreground" />
                                         <span className="text-sm">{formatTime(slot.start_time)} - {formatTime(slot.end_time)}</span>
-                                        <span className="text-xs text-slate-400 ml-auto">{formatDate(slot.start_time)}</span>
+                                        <span className="text-xs text-muted-foreground ml-auto">{formatDate(slot.start_time)}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -834,7 +839,7 @@ export default function FlashSaleCopyPage() {
                         )}
                       </div>
                       <DialogFooter>
-                        <span className="text-xs text-slate-500 mr-auto">
+                        <span className="text-xs text-muted-foreground mr-auto">
                           Đã chọn {selectedSlots.size}/{timeSlots.length} khung giờ
                         </span>
                         <Button onClick={() => setShowSlotPicker(false)} className="cursor-pointer">
@@ -881,14 +886,14 @@ export default function FlashSaleCopyPage() {
           {progressResults.length > 0 && (
             <Card>
               <CardContent className="p-5 space-y-3">
-                <h2 className="font-semibold text-slate-800">Kết quả</h2>
+                <h2 className="font-semibold text-foreground">Kết quả</h2>
                 {isRunning && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600">{progressStep}</span>
-                      <span className="text-slate-400">{progressCurrent}/{timeSlots.filter(s => selectedSlots.has(s.timeslot_id)).length}</span>
+                      <span className="text-muted-foreground">{progressStep}</span>
+                      <span className="text-muted-foreground">{progressCurrent}/{timeSlots.filter(s => selectedSlots.has(s.timeslot_id)).length}</span>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-300"
                         style={{ width: `${(progressCurrent / Math.max(1, timeSlots.filter(s => selectedSlots.has(s.timeslot_id)).length)) * 100}%` }}
@@ -902,17 +907,17 @@ export default function FlashSaleCopyPage() {
                     return (
                       <div key={idx} className="px-3 py-2 flex items-center gap-2 text-sm">
                         {result.status === 'success' ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                          <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
                         ) : (
-                          <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                          <XCircle className="h-4 w-4 text-destructive flex-shrink-0" />
                         )}
-                        <span className="text-slate-700">
+                        <span className="text-foreground">
                           {slot ? `${formatTime(slot.start_time)} - ${formatTime(slot.end_time)} ${formatDate(slot.start_time)}` : `Slot #${result.slotId}`}
                         </span>
                         {result.status === 'success' ? (
-                          <span className="text-green-600 text-xs ml-auto">Thành công</span>
+                          <span className="text-success text-xs ml-auto">Thành công</span>
                         ) : (
-                          <span className="text-red-500 text-xs ml-auto truncate max-w-[200px]" title={result.message}>
+                          <span className="text-destructive text-xs ml-auto truncate max-w-[200px]" title={result.message}>
                             {result.message || 'Lỗi'}
                           </span>
                         )}
@@ -927,7 +932,7 @@ export default function FlashSaleCopyPage() {
       </div>
 
       {/* Sticky Footer */}
-      <div className="flex-shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between">
+      <div className="flex-shrink-0 border-t bg-card px-6 py-3 flex items-center justify-between">
         <Button variant="outline" onClick={() => navigate('/flash-sale')} disabled={isRunning} className="cursor-pointer">
           Hủy
         </Button>
@@ -1010,80 +1015,80 @@ function ProductTable({ items, excludedItems, excludedModels, onToggleItem, onTo
       <CardContent className="p-0">
         {/* Criteria details */}
         {loadingCriteria && (
-          <div className="px-4 py-3 bg-slate-50 border-b flex items-center gap-2 text-xs text-slate-500">
+          <div className="px-4 py-3 bg-background border-b flex items-center gap-2 text-xs text-muted-foreground">
             <Spinner className="h-3 w-3" /> Đang kiểm tra tiêu chí Flash Sale...
           </div>
         )}
         {criteria && (
-          <div className="px-4 py-3 bg-blue-50/70 border-b space-y-2">
-            <div className="flex items-center gap-2 text-xs font-medium text-blue-800">
+          <div className="px-4 py-3 bg-info/10/70 border-b space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-info">
               <AlertCircle className="h-3.5 w-3.5" />
               Tiêu chí tham gia Flash Sale
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-1.5 text-xs">
               {criteria.min_discount != null && criteria.min_discount > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Giảm giá tối thiểu:</span>
-                  <span className="font-medium text-blue-700">{criteria.min_discount}%</span>
+                  <span className="text-muted-foreground">Giảm giá tối thiểu:</span>
+                  <span className="font-medium text-info">{criteria.min_discount}%</span>
                 </div>
               )}
               {criteria.max_discount != null && criteria.max_discount > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Giảm giá tối đa:</span>
-                  <span className="font-medium text-blue-700">{criteria.max_discount}%</span>
+                  <span className="text-muted-foreground">Giảm giá tối đa:</span>
+                  <span className="font-medium text-info">{criteria.max_discount}%</span>
                 </div>
               )}
               {criteria.min_promo_stock != null && criteria.min_promo_stock > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Tồn kho CT tối thiểu:</span>
-                  <span className="font-medium text-blue-700">{criteria.min_promo_stock}</span>
+                  <span className="text-muted-foreground">Tồn kho CT tối thiểu:</span>
+                  <span className="font-medium text-info">{criteria.min_promo_stock}</span>
                 </div>
               )}
               {criteria.max_promo_stock != null && criteria.max_promo_stock > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Tồn kho CT tối đa:</span>
-                  <span className="font-medium text-blue-700">{criteria.max_promo_stock}</span>
+                  <span className="text-muted-foreground">Tồn kho CT tối đa:</span>
+                  <span className="font-medium text-info">{criteria.max_promo_stock}</span>
                 </div>
               )}
               {criteria.min_product_rating != null && criteria.min_product_rating > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Rating tối thiểu:</span>
-                  <span className="font-medium text-blue-700">{criteria.min_product_rating}</span>
+                  <span className="text-muted-foreground">Rating tối thiểu:</span>
+                  <span className="font-medium text-info">{criteria.min_product_rating}</span>
                 </div>
               )}
               {criteria.min_order_total != null && criteria.min_order_total > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Đơn hàng 30 ngày:</span>
-                  <span className="font-medium text-blue-700">≥{criteria.min_order_total}</span>
+                  <span className="text-muted-foreground">Đơn hàng 30 ngày:</span>
+                  <span className="font-medium text-info">≥{criteria.min_order_total}</span>
                 </div>
               )}
               {criteria.min_repetition_day != null && criteria.min_repetition_day > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Không lặp trong:</span>
-                  <span className="font-medium text-blue-700">{criteria.min_repetition_day} ngày</span>
+                  <span className="text-muted-foreground">Không lặp trong:</span>
+                  <span className="font-medium text-info">{criteria.min_repetition_day} ngày</span>
                 </div>
               )}
               {criteria.max_days_to_ship != null && criteria.max_days_to_ship > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Giao tối đa:</span>
-                  <span className="font-medium text-blue-700">{criteria.max_days_to_ship} ngày</span>
+                  <span className="text-muted-foreground">Giao tối đa:</span>
+                  <span className="font-medium text-info">{criteria.max_days_to_ship} ngày</span>
                 </div>
               )}
               {criteria.need_lowest_price && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Giá thấp nhất 7 ngày:</span>
-                  <span className="font-medium text-amber-600">Bắt buộc</span>
+                  <span className="text-muted-foreground">Giá thấp nhất 7 ngày:</span>
+                  <span className="font-medium text-warning">Bắt buộc</span>
                 </div>
               )}
               {criteria.must_not_pre_order && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Hàng Pre-Order:</span>
-                  <span className="font-medium text-amber-600">Không được</span>
+                  <span className="text-muted-foreground">Hàng Pre-Order:</span>
+                  <span className="font-medium text-warning">Không được</span>
                 </div>
               )}
             </div>
             {failedModels.size > 0 && (
-              <div className="text-xs text-amber-700 flex items-center gap-1.5 pt-1">
+              <div className="text-xs text-warning flex items-center gap-1.5 pt-1">
                 <XCircle className="h-3.5 w-3.5" />
                 {failedModels.size} phân loại chưa đạt tiêu chí — đã tự động tắt
               </div>
@@ -1091,8 +1096,8 @@ function ProductTable({ items, excludedItems, excludedModels, onToggleItem, onTo
           </div>
         )}
 
-        <div className="px-4 py-2 bg-slate-50/80 border-b flex items-center justify-between">
-          <span className="text-xs text-slate-500">{activeCount}/{items.length} sản phẩm được chọn</span>
+        <div className="px-4 py-2 bg-background/80 border-b flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">{activeCount}/{items.length} sản phẩm được chọn</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -1106,15 +1111,15 @@ function ProductTable({ items, excludedItems, excludedModels, onToggleItem, onTo
               <col style={{ width: '13%' }} />
               <col style={{ width: '12%' }} />
             </colgroup>
-            <thead className="bg-slate-50 border-b sticky top-0 z-10">
+            <thead className="bg-background border-b sticky top-0 z-10">
               <tr>
-                <th className="h-11 px-4 text-left font-medium text-slate-600 text-xs">Thông tin sản phẩm</th>
-                <th className="h-11 px-3 text-right font-medium text-slate-600 text-xs">Giá gốc</th>
-                <th className="h-11 px-3 text-right font-medium text-slate-600 text-xs">Giá khuyến mãi</th>
-                <th className="h-11 px-3 text-center font-medium text-slate-600 text-xs">Chiết khấu</th>
-                <th className="h-11 px-3 text-center font-medium text-slate-600 text-xs">Tồn kho CT</th>
-                <th className="h-11 px-3 text-center font-medium text-slate-600 text-xs">Tồn kho KD/Tổng</th>
-                <th className="h-11 px-3 text-center font-medium text-slate-600 text-xs">Giới hạn ĐH</th>
+                <th className="h-11 px-4 text-left font-medium text-muted-foreground text-xs">Thông tin sản phẩm</th>
+                <th className="h-11 px-3 text-right font-medium text-muted-foreground text-xs">Giá gốc</th>
+                <th className="h-11 px-3 text-right font-medium text-muted-foreground text-xs">Giá khuyến mãi</th>
+                <th className="h-11 px-3 text-center font-medium text-muted-foreground text-xs">Chiết khấu</th>
+                <th className="h-11 px-3 text-center font-medium text-muted-foreground text-xs">Tồn kho CT</th>
+                <th className="h-11 px-3 text-center font-medium text-muted-foreground text-xs">Tồn kho KD/Tổng</th>
+                <th className="h-11 px-3 text-center font-medium text-muted-foreground text-xs">Giới hạn ĐH</th>
               </tr>
             </thead>
             <tbody>
@@ -1162,7 +1167,7 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
   return (
     <>
       {/* Item Header */}
-      <tr className={cn("border-b bg-slate-50/50", isItemExcluded && "opacity-40")}>
+      <tr className={cn("border-b bg-background/50", isItemExcluded && "opacity-40")}>
         <td colSpan={7} className="px-4 py-3">
           <div className="flex items-center gap-3">
             <Checkbox
@@ -1170,7 +1175,7 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
               onCheckedChange={onToggleItem}
               className="flex-shrink-0"
             />
-            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+            <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
               {itemImage ? (
                 <ImageWithZoom
                   src={itemImage}
@@ -1179,14 +1184,14 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                   zoomSize={280}
                 />
               ) : (
-                <div className="w-8 h-8 bg-slate-200 rounded" />
+                <div className="w-8 h-8 bg-muted rounded" />
               )}
             </div>
             <div className="min-w-0">
-              <span className="text-sm font-medium text-slate-700 truncate block">
+              <span className="text-sm font-medium text-foreground truncate block">
                 {item.item_name || `Item #${item.item_id}`}
               </span>
-              <span className="text-xs text-slate-400">Item ID: {item.item_id}</span>
+              <span className="text-xs text-muted-foreground">Item ID: {item.item_id}</span>
             </div>
           </div>
         </td>
@@ -1209,7 +1214,7 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
             const noStock = (model.stock ?? 0) === 0;
 
             return (
-              <tr key={model.model_id} className={cn("border-b hover:bg-slate-50/50", (excluded || noStock || isFailed) && "opacity-40")}>
+              <tr key={model.model_id} className={cn("border-b hover:bg-background/50", (excluded || noStock || isFailed) && "opacity-40")}>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2 pl-2">
                     <TooltipProvider>
@@ -1239,18 +1244,18 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                       </Tooltip>
                     </TooltipProvider>
                     <div className="min-w-0">
-                      <span className="text-sm text-slate-600 truncate block">
+                      <span className="text-sm text-muted-foreground truncate block">
                         {model.model_name || `SKU #${model.model_id}`}
                       </span>
                       {isFailed && (
-                        <span className="text-[10px] text-amber-600 truncate block">
+                        <span className="text-[10px] text-warning truncate block">
                           {criteriaCheck.reasons[0]}
                         </span>
                       )}
                     </div>
                   </div>
                 </td>
-                <td className="px-3 py-2.5 text-sm text-slate-500 text-right">{formatPrice(model.original_price)}</td>
+                <td className="px-3 py-2.5 text-sm text-muted-foreground text-right">{formatPrice(model.original_price)}</td>
                 <td className="px-3 py-1">
                   <Input
                     type="number"
@@ -1259,9 +1264,9 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                     disabled={noStock}
                     className={cn(
                       "h-8 text-sm text-right w-full font-medium",
-                      noStock && "bg-slate-100 cursor-not-allowed",
-                      isEdited && effPromo !== origPromo ? "border-blue-300 bg-blue-50/50" : "",
-                      !criteriaCheck.pass ? "border-amber-300" : ""
+                      noStock && "bg-muted cursor-not-allowed",
+                      isEdited && effPromo !== origPromo ? "border-info bg-info/10/50" : "",
+                      !criteriaCheck.pass ? "border-warning" : ""
                     )}
                     min={0}
                   />
@@ -1271,8 +1276,8 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                     <span className={cn(
                       "px-1.5 py-0.5 text-xs font-medium rounded border",
                       !criteriaCheck.pass && !excluded
-                        ? "text-amber-600 border-amber-300 bg-amber-50"
-                        : "text-orange-600 border-orange-300"
+                        ? "text-warning border-warning bg-warning/10"
+                        : "text-brand border-brand"
                     )}>-{discount}%</span>
                   )}
                 </td>
@@ -1283,23 +1288,23 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                     onChange={e => onEditModel(item.item_id, model.model_id, 'campaignStock', Number(e.target.value))}
                     disabled={noStock}
                     className={cn(
-                      "h-8 text-sm text-center w-full font-medium text-orange-600",
-                      noStock && "bg-slate-100 cursor-not-allowed text-slate-400",
-                      isEdited && effStock !== origStock ? "border-blue-300 bg-blue-50/50" : "",
-                      !criteriaCheck.pass ? "border-amber-300" : ""
+                      "h-8 text-sm text-center w-full font-medium text-brand",
+                      noStock && "bg-muted cursor-not-allowed text-muted-foreground",
+                      isEdited && effStock !== origStock ? "border-info bg-info/10/50" : "",
+                      !criteriaCheck.pass ? "border-warning" : ""
                     )}
                     min={0}
                   />
                 </td>
-                <td className="px-3 py-2.5 text-sm text-slate-600 text-center">{model.stock ?? 0}</td>
-                <td className="px-3 py-2.5 text-sm text-slate-600 text-center">{modelPurchaseLimit > 0 ? modelPurchaseLimit : '-'}</td>
+                <td className="px-3 py-2.5 text-sm text-muted-foreground text-center">{model.stock ?? 0}</td>
+                <td className="px-3 py-2.5 text-sm text-muted-foreground text-center">{modelPurchaseLimit > 0 ? modelPurchaseLimit : '-'}</td>
               </tr>
             );
           })}
           {item.models && item.models.length > 5 && (
             <tr className="border-b">
               <td colSpan={7} className="px-4 py-2">
-                <button onClick={onToggleExpand} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer pl-12">
+                <button onClick={onToggleExpand} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer pl-12">
                   {expanded ? (
                     <>Thu gọn <ChevronUp className="h-4 w-4" /></>
                   ) : (
@@ -1316,9 +1321,9 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
         const { promoPrice: effPromo, campaignStock: effStock } = getEffectiveValues(item.item_id, 0, origPromo, origStock);
         const discount = calcDiscount(item.original_price, effPromo);
         return (
-          <tr className={cn("border-b hover:bg-slate-50/50", isItemExcluded && "opacity-40")}>
-            <td className="px-4 py-2.5"><span className="text-sm text-slate-600 pl-12">-</span></td>
-            <td className="px-3 py-2.5 text-sm text-slate-500 text-right">{formatPrice(item.original_price)}</td>
+          <tr className={cn("border-b hover:bg-background/50", isItemExcluded && "opacity-40")}>
+            <td className="px-4 py-2.5"><span className="text-sm text-muted-foreground pl-12">-</span></td>
+            <td className="px-3 py-2.5 text-sm text-muted-foreground text-right">{formatPrice(item.original_price)}</td>
             <td className="px-3 py-1">
               <Input
                 type="number"
@@ -1326,14 +1331,14 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                 onChange={e => onEditModel(item.item_id, 0, 'promoPrice', Number(e.target.value))}
                 className={cn(
                   "h-8 text-sm text-right w-full font-medium",
-                  effPromo !== origPromo ? "border-blue-300 bg-blue-50/50" : ""
+                  effPromo !== origPromo ? "border-info bg-info/10/50" : ""
                 )}
                 min={0}
               />
             </td>
             <td className="px-3 py-2.5 text-center">
               {discount > 0 && (
-                <span className="px-1.5 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
+                <span className="px-1.5 py-0.5 text-xs font-medium text-brand border border-brand rounded">
                   -{discount}%
                 </span>
               )}
@@ -1344,14 +1349,14 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                 value={effStock}
                 onChange={e => onEditModel(item.item_id, 0, 'campaignStock', Number(e.target.value))}
                 className={cn(
-                  "h-8 text-sm text-center w-full font-medium text-orange-600",
-                  effStock !== origStock ? "border-blue-300 bg-blue-50/50" : ""
+                  "h-8 text-sm text-center w-full font-medium text-brand",
+                  effStock !== origStock ? "border-info bg-info/10/50" : ""
                 )}
                 min={0}
               />
             </td>
-            <td className="px-3 py-2.5 text-sm text-slate-600 text-center">{item.stock ?? 0}</td>
-            <td className="px-3 py-2.5 text-sm text-slate-600 text-center">{item.purchase_limit > 0 ? item.purchase_limit : '-'}</td>
+            <td className="px-3 py-2.5 text-sm text-muted-foreground text-center">{item.stock ?? 0}</td>
+            <td className="px-3 py-2.5 text-sm text-muted-foreground text-center">{item.purchase_limit > 0 ? item.purchase_limit : '-'}</td>
           </tr>
         );
       })()}

@@ -516,7 +516,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
               await refetch();
             }}
             disabled={isSyncing || loading}
-            className="bg-orange-50 border-orange-200 hover:bg-orange-100 text-orange-600">
+            className="bg-brand/10 border-brand/20 hover:bg-brand/15 text-brand">
             <RefreshCw
               className={cn(
                 "h-4 w-4 mr-2",
@@ -532,11 +532,11 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
           {/* Mobile List */}
           <div className="md:hidden">
             {loading ? (
-              <div className="p-8 text-center text-slate-500">
+              <div className="p-8 text-center text-muted-foreground">
                 Đang tải dữ liệu...
               </div>
             ) : filteredData.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">
+              <div className="p-8 text-center text-muted-foreground">
                 {counts.all === 0
                   ? 'Chưa có Flash Sale nào. Nhấn "Lấy dữ liệu" để đồng bộ.'
                   : "Không có Flash Sale nào phù hợp."}
@@ -561,15 +561,15 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                   });
 
                   return (
-                    <div key={sale.flash_sale_id} className="p-4 bg-white">
+                    <div key={sale.flash_sale_id} className="p-4 bg-card">
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3 text-sm text-slate-600">
+                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
+                            <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
                             {dateStr}
                           </span>
                           <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                             {startTimeStr} - {endTimeStr}
                           </span>
                         </div>
@@ -589,27 +589,27 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                           className={cn(
                             "px-2 py-0.5 rounded-full text-xs font-medium",
                             sale.type === 2
-                              ? "bg-green-100 text-green-700"
+                              ? "bg-success/10 text-success"
                               : sale.type === 1
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-slate-100 text-slate-600",
+                                ? "bg-info/10 text-info"
+                                : "bg-muted text-muted-foreground",
                           )}>
                           {TYPE_LABELS[sale.type]}
                         </span>
-                        <span className="text-xs text-slate-400 font-mono">
+                        <span className="text-xs text-muted-foreground font-mono">
                           #{sale.flash_sale_id}
                         </span>
-                        <span className="text-xs text-slate-500 ml-auto">
+                        <span className="text-xs text-muted-foreground ml-auto">
                           <span
                             className={cn(
                               "font-medium",
                               sale.enabled_item_count > 0
-                                ? "text-orange-600"
-                                : "text-slate-400",
+                                ? "text-brand"
+                                : "text-muted-foreground",
                             )}>
                             {sale.enabled_item_count}
                           </span>
-                          <span className="text-slate-400">
+                          <span className="text-muted-foreground">
                             /{sale.item_count} SP
                           </span>
                         </span>
@@ -626,14 +626,14 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 text-xs text-green-600 border-green-200"
+                          className="h-7 text-xs text-success border-success/20"
                           onClick={() => handleCopy(sale)}>
                           <Copy className="w-3 h-3 mr-1" /> Sao chép
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 text-xs text-red-600"
+                          className="h-7 text-xs text-destructive"
                           onClick={() => handleDeleteClick(sale)}
                           disabled={!canDelete(sale)}>
                           <Trash2 className="w-3 h-3 mr-1" /> Xóa
@@ -700,11 +700,11 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
           {/* Desktop Table */}
           <div className="hidden md:block">
             {loading ? (
-              <div className="p-8 text-center text-slate-500">
+              <div className="p-8 text-center text-muted-foreground">
                 Đang tải dữ liệu...
               </div>
             ) : filteredData.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">
+              <div className="p-8 text-center text-muted-foreground">
                 {counts.all === 0
                   ? 'Chưa có Flash Sale nào. Nhấn "Lấy dữ liệu" để đồng bộ.'
                   : "Không có Flash Sale nào phù hợp với bộ lọc."}
@@ -733,26 +733,26 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                         2: {
                           label: "Đang chạy",
                           color:
-                            "bg-emerald-50 text-emerald-700 border-emerald-200",
-                          dot: "bg-emerald-500",
+                            "bg-success/10 text-success border-success/20",
+                          dot: "bg-success",
                           pulse: true,
                         },
                         1: {
                           label: "Sắp tới",
-                          color: "bg-blue-50 text-blue-700 border-blue-200",
-                          dot: "bg-blue-500",
+                          color: "bg-info/10 text-info border-info/20",
+                          dot: "bg-info",
                           pulse: false,
                         },
                         3: {
                           label: "Kết thúc",
-                          color: "bg-slate-100 text-slate-500 border-slate-200",
-                          dot: "bg-slate-400",
+                          color: "bg-muted text-muted-foreground border-border",
+                          dot: "bg-muted-foreground",
                           pulse: false,
                         },
                       }[sale.type] || {
                         label: "Không rõ",
-                        color: "bg-slate-100 text-slate-500 border-slate-200",
-                        dot: "bg-slate-400",
+                        color: "bg-muted text-muted-foreground border-border",
+                        dot: "bg-muted-foreground",
                         pulse: false,
                       };
 
@@ -793,7 +793,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                             <span
                               className={cn(
                                 sale.enabled_item_count > 0
-                                  ? "text-orange-500"
+                                  ? "text-brand"
                                   : "",
                               )}>
                               {sale.enabled_item_count}
@@ -812,7 +812,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 text-slate-400 hover:text-blue-600 cursor-pointer"
+                                      className="h-8 w-8 text-muted-foreground hover:text-info cursor-pointer"
                                       onClick={() => handleViewDetail(sale)}>
                                       <Eye className="h-4 w-4" />
                                     </Button>
@@ -827,7 +827,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 text-slate-400 hover:text-blue-600 cursor-pointer"
+                                      className="h-8 w-8 text-muted-foreground hover:text-info cursor-pointer"
                                       onClick={() => handleCopy(sale)}>
                                       <Copy className="h-4 w-4" />
                                     </Button>
@@ -847,8 +847,8 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                                       className={cn(
                                         "h-8 w-8 cursor-pointer",
                                         canDelete(sale)
-                                          ? "text-slate-400 hover:text-red-500"
-                                          : "text-slate-200 cursor-not-allowed",
+                                          ? "text-muted-foreground hover:text-destructive"
+                                          : "text-muted-foreground/30 cursor-not-allowed",
                                       )}
                                       onClick={() => handleDeleteClick(sale)}
                                       disabled={!canDelete(sale)}>
@@ -927,7 +927,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
 
           {/* Last sync info */}
           {(lastSyncedAt || dataUpdatedAt) && (
-            <div className="px-4 py-2 border-t bg-slate-50/50 text-xs text-slate-400 flex items-center justify-between">
+            <div className="px-4 py-2 border-t bg-muted/50 text-xs text-muted-foreground flex items-center justify-between">
               <span>
                 {lastSyncedAt &&
                   `Đồng bộ Shopee: ${formatDateTime(new Date(lastSyncedAt).getTime() / 1000)}`}
@@ -935,7 +935,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                 {dataUpdatedAt &&
                   `Cập nhật UI: ${formatDateTime(dataUpdatedAt / 1000)}`}
               </span>
-              <span className="text-slate-300">
+              <span className="text-muted-foreground/50">
                 Tự động làm mới mỗi 30 phút
               </span>
             </div>
@@ -951,7 +951,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
             <AlertDialogDescription>
               Bạn có chắc muốn xóa Flash Sale này?
               <br />
-              <span className="font-mono text-slate-600">
+              <span className="font-mono text-muted-foreground">
                 ID: {selectedSale?.flash_sale_id}
               </span>
               <br />

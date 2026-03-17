@@ -1,11 +1,12 @@
-import { Toaster as Sonner } from "sonner";
-
-type ToasterProps = React.ComponentProps<typeof Sonner>;
+import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { resolvedTheme } = useTheme();
+
   return (
     <Sonner
-      theme="light"
+      theme={resolvedTheme}
       className="toaster group"
       toastOptions={{
         classNames: {
@@ -16,6 +17,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton:
             "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          success: "group-[.toaster]:border-success/50",
+          error: "group-[.toaster]:border-destructive/50",
+          warning: "group-[.toaster]:border-warning/50",
+          info: "group-[.toaster]:border-info/50",
         },
       }}
       {...props}

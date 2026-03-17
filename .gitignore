@@ -35,3 +35,10 @@ dist-ssr
 tsconfig.tsbuildinfo
 
 .vercel
+
+# AI/Tool configs
+.claude/
+.opencode/
+
+# Plans & reports
+plans/

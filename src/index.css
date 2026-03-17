@@ -1,134 +1,326 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   BETACOM SHOPEE - UNIFIED DESIGN SYSTEM
+
+   Design Tokens:
+   - Brand: Orange (Shopee-inspired) + Red (BETACOM logo)
+   - Style: Data-Dense Dashboard - Clean, Professional, Modern
+   - Typography: Inter (sans) + JetBrains Mono (code)
+   - Scale: 4px base unit (0.25rem)
+   - Border Radius: 0.5rem (8px) base
+
+   Color Semantic Structure:
+   - background/foreground: Page-level colors
+   - card: Card/container colors
+   - primary: Main brand action color (dark navy for buttons)
+   - secondary: Secondary UI elements
+   - muted: Subdued backgrounds and text
+   - accent: Hover states and highlights
+   - destructive: Error/delete actions
+   - brand: Brand identity colors (orange, red)
+   - success/warning/info: Status colors
+   - sidebar: Sidebar-specific colors
+   ============================================================================ */
+
 /* Tailwind v4 theme configuration */
 @theme inline {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  
-  /* Colors using CSS color-mix for HSL support */
+  /* Typography */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Semantic Color Mappings (referencing CSS variables) */
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  
+
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
-  
+
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
-  
+
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
-  
+
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
-  
+
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
-  
+
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
-  
+
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
-  
+
+  /* Brand Colors */
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-muted: hsl(var(--brand-muted));
+
+  /* Status Colors */
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+
+  /* Sidebar Colors */
   --color-sidebar: hsl(var(--sidebar-background));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-muted: hsl(var(--sidebar-muted));
   --color-sidebar-primary: hsl(var(--sidebar-primary));
   --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
   --color-sidebar-accent: hsl(var(--sidebar-accent));
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
   --color-sidebar-border: hsl(var(--sidebar-border));
   --color-sidebar-ring: hsl(var(--sidebar-ring));
+  --color-sidebar-hover: hsl(var(--sidebar-hover));
 
-  /* Border radius */
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
+  /* Brand hover */
+  --color-brand-hover: hsl(var(--brand-hover));
+
+  /* Border Radius Scale */
   --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-full: 9999px;
 
   /* Container */
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
   --container-2xl: 1400px;
 
   /* Animations */
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-spin-slow: spin 2s linear infinite;
+  --animate-pulse-subtle: pulse-subtle 2s ease-in-out infinite;
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-slide-in: slide-in 0.2s ease-out;
 }
 
+/* Keyframe Animations */
 @keyframes accordion-down {
-  from {
-    height: 0;
-  }
-  to {
-    height: var(--radix-accordion-content-height);
-  }
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
 }
 
 @keyframes accordion-up {
-  from {
-    height: var(--radix-accordion-content-height);
-  }
-  to {
-    height: 0;
-  }
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
 }
 
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================================
+   LIGHT MODE (Default) - E-Commerce Style
+   Inspired by Shopee's vibrant orange with modern dashboard aesthetics
+   ============================================================================ */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  /* Base Colors - Clean white background with warm undertone */
+  --background: 30 20% 98%;         /* Warm off-white */
+  --foreground: 222.2 47.4% 11.2%;  /* #0F172A - Slate 900 */
 
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  /* Card/Surface Colors - Elevated surfaces */
+  --card: 0 0% 100%;                /* Pure white for cards */
+  --card-foreground: 222.2 47.4% 11.2%;
 
+  /* Popover Colors */
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
+  --popover-foreground: 222.2 47.4% 11.2%;
 
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
+  /* Primary - Shopee Orange (main action color) */
+  --primary: 18 96% 51%;            /* #EE4D2D - Shopee Orange */
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 40% 96.1%;
+  /* Secondary - Warm gray for secondary UI */
+  --secondary: 30 15% 95%;          /* Warm light gray */
   --secondary-foreground: 222.2 47.4% 11.2%;
 
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  /* Muted - Subdued elements */
+  --muted: 30 15% 95%;
+  --muted-foreground: 215.4 16.3% 46.9%; /* #64748B - Slate 500 */
 
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
+  /* Accent - Light orange tint for hover/focus */
+  --accent: 24 100% 96%;            /* Very light orange */
+  --accent-foreground: 18 96% 40%;  /* Darker orange text */
 
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
+  /* Destructive - Error/Delete (keep red) */
+  --destructive: 0 84.2% 60.2%;     /* #EF4444 */
+  --destructive-foreground: 0 0% 100%;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
+  /* Brand Orange (Shopee primary) */
+  --brand: 18 96% 51%;              /* #EE4D2D - Shopee Orange */
+  --brand-foreground: 0 0% 100%;
+  --brand-muted: 24 95% 60%;        /* Lighter orange */
+  --brand-hover: 18 96% 45%;        /* Darker on hover */
 
-  --radius: 0.5rem;
+  /* Brand Red (BETACOM logo - matches Shopee accent) */
+  --brand-red: 0 84.2% 60.2%;       /* #EF4444 */
+  --brand-red-foreground: 0 0% 100%;
 
-  --sidebar-background: 0 0% 98%;
-  --sidebar-foreground: 240 5.3% 26.1%;
-  --sidebar-primary: 240 5.9% 10%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 240 4.8% 95.9%;
-  --sidebar-accent-foreground: 240 5.9% 10%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-ring: 217.2 91.2% 59.8%;
+  /* Status Colors - Vibrant for e-commerce */
+  --success: 158 64% 42%;           /* #22C55E Teal-green */
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 50%;            /* #F59E0B Amber */
+  --warning-foreground: 0 0% 0%;
+  --info: 199 89% 48%;              /* #0EA5E9 Sky blue */
+  --info-foreground: 0 0% 100%;
+
+  /* Border/Input/Ring */
+  --border: 30 20% 90%;             /* Warm border */
+  --input: 30 20% 90%;
+  --ring: 18 96% 51%;               /* Brand orange for focus rings */
+
+  /* Border Radius - Slightly more rounded for friendly feel */
+  --radius: 0.625rem;
+
+  /* Sidebar Colors - Clean white sidebar */
+  --sidebar-background: 0 0% 100%;   /* Pure white */
+  --sidebar-foreground: 215 16% 47%; /* Slate 500 for text */
+  --sidebar-muted: 215 16% 60%;      /* Lighter muted */
+  --sidebar-primary: 18 96% 51%;     /* Shopee orange */
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 30 20% 96%;      /* Warm light gray */
+  --sidebar-accent-foreground: 222 47% 11%;
+  --sidebar-border: 30 20% 90%;      /* Warm border */
+  --sidebar-ring: 18 96% 51%;
+  --sidebar-hover: 30 20% 96%;       /* Warm hover */
+
+  /* Chart Colors - E-commerce palette */
+  --chart-1: 18 96% 51%;            /* Shopee orange */
+  --chart-2: 199 89% 48%;           /* Sky blue */
+  --chart-3: 158 64% 42%;           /* Teal green */
+  --chart-4: 271 91% 65%;           /* Purple */
+  --chart-5: 340 82% 52%;           /* Pink */
 }
 
+/* ============================================================================
+   DARK MODE - E-Commerce Style
+   ============================================================================ */
+.dark {
+  /* Base Colors - Deep dark with warmth */
+  --background: 224 71% 4%;         /* Rich dark blue-black */
+  --foreground: 210 40% 98%;        /* #F8FAFC */
+
+  /* Card/Surface Colors - Elevated surfaces */
+  --card: 224 50% 8%;               /* Slightly lighter than bg */
+  --card-foreground: 210 40% 98%;
+
+  /* Popover Colors */
+  --popover: 224 50% 10%;
+  --popover-foreground: 210 40% 98%;
+
+  /* Primary - Bright orange for dark mode */
+  --primary: 20 96% 55%;            /* Brighter orange */
+  --primary-foreground: 0 0% 100%;
+
+  /* Secondary */
+  --secondary: 224 50% 12%;
+  --secondary-foreground: 210 40% 98%;
+
+  /* Muted */
+  --muted: 224 50% 12%;
+  --muted-foreground: 215 20.2% 65.1%; /* #94A3B8 */
+
+  /* Accent - Orange tinted highlight */
+  --accent: 20 50% 15%;
+  --accent-foreground: 20 96% 65%;
+
+  /* Destructive */
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  /* Brand Orange - Brighter for visibility */
+  --brand: 20 96% 55%;
+  --brand-foreground: 0 0% 100%;
+  --brand-muted: 24 95% 65%;
+  --brand-hover: 18 96% 60%;
+
+  /* Brand Red */
+  --brand-red: 0 72.2% 55%;
+  --brand-red-foreground: 0 0% 100%;
+
+  /* Status Colors - Vibrant for dark mode */
+  --success: 158 64% 50%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 0 0% 0%;
+  --info: 199 89% 55%;
+  --info-foreground: 0 0% 100%;
+
+  /* Border/Input/Ring */
+  --border: 224 50% 15%;
+  --input: 224 50% 15%;
+  --ring: 20 96% 55%;
+
+  /* Sidebar Colors - Same premium dark */
+  --sidebar-background: 224 71% 4%;
+  --sidebar-foreground: 213 31% 70%;
+  --sidebar-muted: 213 31% 50%;
+  --sidebar-primary: 20 96% 55%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 224 50% 12%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 224 50% 15%;
+  --sidebar-ring: 20 96% 55%;
+  --sidebar-hover: 224 50% 8%;
+
+  /* Chart Colors - Bright for dark mode */
+  --chart-1: 20 96% 55%;
+  --chart-2: 199 89% 55%;
+  --chart-3: 158 64% 50%;
+  --chart-4: 271 91% 70%;
+  --chart-5: 340 82% 60%;
+}
+
+/* ============================================================================
+   BASE STYLES
+   ============================================================================ */
+
+/* Global border color */
 * {
   border-color: hsl(var(--border));
 }
 
-/* Đồng nhất font cho toàn bộ hệ thống */
+/* Root element */
 html {
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: inherit;
+  line-height: 1.5;
 }
 
-/* Đảm bảo font được áp dụng cho tất cả elements */
+/* Inherit font for form elements */
 input,
 textarea,
 select,
@@ -136,13 +328,17 @@ button {
   font-family: inherit;
 }
 
-/* Pre và code dùng font monospace */
+/* Monospace elements */
 pre,
-code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+code,
+kbd,
+samp {
+  font-family: var(--font-mono);
 }
 
-/* Custom scrollbar */
+/* ============================================================================
+   CUSTOM SCROLLBAR
+   ============================================================================ */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -153,22 +349,152 @@ code {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: hsl(var(--muted-foreground) / 0.3);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
 
 /* Hide scrollbar utility */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;  /* Chrome, Safari and Opera */
+  display: none;
 }
 
+/* Focus ring utility */
+.focus-ring {
+  outline: none;
+}
 
+.focus-ring:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Brand gradient backgrounds */
+.bg-brand-gradient {
+  background: linear-gradient(135deg, hsl(var(--brand)) 0%, hsl(var(--brand-muted)) 100%);
+}
+
+.bg-brand-gradient-subtle {
+  background: linear-gradient(135deg, hsl(var(--brand) / 0.1) 0%, hsl(var(--brand) / 0.05) 100%);
+}
+
+/* Glass effect (for modals/overlays) */
+.glass {
+  background: hsl(var(--background) / 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dark .glass {
+  background: hsl(var(--background) / 0.9);
+}
+
+/* ============================================================================
+   TYPOGRAPHY SCALE
+   ============================================================================ */
+.text-display {
+  font-size: 3rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.text-headline {
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.text-title {
+  font-size: 1.5rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.text-body {
+  font-size: 1rem;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.text-caption {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.text-overline {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   ACCESSIBILITY
+   ============================================================================ */
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --border: 222.2 47.4% 30%;
+    --muted-foreground: 222.2 47.4% 30%;
+  }
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Skip link for accessibility */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  padding: 8px 16px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  z-index: 100;
+  transition: top 0.2s;
+}
+
+.skip-link:focus {
+  top: 0;
+}

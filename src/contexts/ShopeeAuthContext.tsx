@@ -302,6 +302,7 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
 
       const partnerInfoStr = sessionStorage.getItem('shopee_partner_info');
       const partnerInfo = partnerInfoStr ? JSON.parse(partnerInfoStr) : null;
+      sessionStorage.removeItem('shopee_partner_info');
 
       try {
         const newToken = await authenticateWithCode(code, shopId, partnerAccountId, partnerInfo, mainAccountId);
@@ -395,7 +396,6 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        sessionStorage.removeItem('shopee_partner_info');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Authentication failed');
         throw err;

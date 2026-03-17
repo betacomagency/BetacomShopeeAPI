@@ -54,8 +54,11 @@ async function hmacSha256(key: string, message: string): Promise<string> {
  */
 async function fetchWithProxy(targetUrl: string, options: RequestInit): Promise<Response> {
   if (PROXY_URL) {
-    const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
-    return await fetch(proxyUrl, options);
+    const proxyOptions = {
+      ...options,
+      headers: { ...(options.headers || {}), 'x-target-url': targetUrl },
+    };
+    return await fetch(PROXY_URL, proxyOptions);
   }
   return await fetch(targetUrl, options);
 }

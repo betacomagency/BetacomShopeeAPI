@@ -40,14 +40,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -127,11 +119,11 @@ interface AutoHistoryRecord {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  pending: { label: 'Đang chờ', color: 'bg-slate-100 text-slate-500 border-slate-200', icon: <Clock className="h-3 w-3" /> },
-  scheduled: { label: 'Đã lên lịch', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: <CalendarIcon className="h-3 w-3" /> },
-  processing: { label: 'Đang xử lý', color: 'bg-yellow-50 text-yellow-700 border-yellow-200', icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
-  success: { label: 'Thành công', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <CheckCircle className="h-3 w-3" /> },
-  error: { label: 'Lỗi', color: 'bg-red-50 text-red-700 border-red-200', icon: <XCircle className="h-3 w-3" /> },
+  pending: { label: 'Đang chờ', color: 'bg-muted text-muted-foreground border-border', icon: <Clock className="h-3 w-3" /> },
+  scheduled: { label: 'Đã lên lịch', color: 'bg-info/10 text-info border-info', icon: <CalendarIcon className="h-3 w-3" /> },
+  processing: { label: 'Đang xử lý', color: 'bg-warning/10 text-warning border-warning', icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
+  success: { label: 'Thành công', color: 'bg-success/10 text-success border-success', icon: <CheckCircle className="h-3 w-3" /> },
+  error: { label: 'Lỗi', color: 'bg-destructive/10 text-destructive border-destructive', icon: <XCircle className="h-3 w-3" /> },
 };
 
 const HISTORY_PAGE_SIZE = 20;
@@ -892,7 +884,7 @@ export default function FlashSaleAutoSetupPage() {
         <Alert>
           <AlertDescription>
             Bạn chưa kết nối shop nào. Vui lòng vào{' '}
-            <a href="/settings/shops" className="text-orange-500 hover:underline font-medium">Cài đặt → Quản lý Shop</a>{' '}
+            <a href="/settings/shops" className="text-brand hover:underline font-medium">Cài đặt → Quản lý Shop</a>{' '}
             để kết nối shop Shopee.
           </AlertDescription>
         </Alert>
@@ -964,13 +956,13 @@ export default function FlashSaleAutoSetupPage() {
 
             {/* Progress */}
             {isRunning && (
-              <div className="px-4 py-3 border-b bg-green-50">
+              <div className="px-4 py-3 border-b bg-success/10">
                 <div className="flex items-center gap-4">
-                  <RefreshCw className="h-5 w-5 animate-spin text-green-500" />
+                  <RefreshCw className="h-5 w-5 animate-spin text-success" />
                   <div className="flex-1">
                     <Progress value={progress} className="h-2" />
                   </div>
-                  <span className="text-sm font-medium text-slate-600">{progress}%</span>
+                  <span className="text-sm font-medium text-muted-foreground">{progress}%</span>
                 </div>
               </div>
             )}
@@ -978,24 +970,24 @@ export default function FlashSaleAutoSetupPage() {
             {/* Process Logs - only show for immediate setup */}
             {processLogs.length > 0 && isImmediateSetup && (
               <div className="border-b">
-                <div className="px-4 py-2 bg-slate-50 text-sm font-medium text-slate-600">Kết quả xử lý</div>
+                <div className="px-4 py-2 bg-background text-sm font-medium text-muted-foreground">Kết quả xử lý</div>
                 <div className="max-h-[200px] overflow-y-auto divide-y">
                   {processLogs.map((log) => {
                     const slot = timeSlots.find(s => s.timeslot_id === log.timeslot_id);
                     return (
                       <div key={log.timeslot_id} className="px-4 py-3 flex items-center gap-3">
-                        {log.status === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
-                        {log.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
-                        {log.status === 'processing' && <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />}
+                        {log.status === 'success' && <CheckCircle className="h-4 w-4 text-success" />}
+                        {log.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
+                        {log.status === 'processing' && <RefreshCw className="h-4 w-4 animate-spin text-info" />}
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-700">
+                          <p className="text-sm font-medium text-foreground">
                             {slot ? `${formatDate(slot.start_time)} ${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}` : `Slot #${log.timeslot_id}`}
                           </p>
                           <p className={cn(
                             "text-xs mt-0.5",
-                            log.status === 'success' && "text-green-600",
-                            log.status === 'error' && "text-red-600",
-                            log.status === 'processing' && "text-blue-600"
+                            log.status === 'success' && "text-success",
+                            log.status === 'error' && "text-destructive",
+                            log.status === 'processing' && "text-info"
                           )}>
                             {log.message}
                           </p>
@@ -1013,10 +1005,10 @@ export default function FlashSaleAutoSetupPage() {
             {/* Mobile List View */}
             <div className="md:hidden">
             {loadingHistory ? (
-              <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+              <div className="p-8 text-center text-muted-foreground">Đang tải dữ liệu...</div>
             ) : history.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">
-                <AlertCircle className="h-12 w-12 mb-3 mx-auto text-slate-300" />
+              <div className="p-8 text-center text-muted-foreground">
+                <AlertCircle className="h-12 w-12 mb-3 mx-auto text-muted-foreground" />
                 <p>Chưa có lịch sử nào</p>
               </div>
             ) : (
@@ -1029,11 +1021,11 @@ export default function FlashSaleAutoSetupPage() {
                   const endTimeStr = formatTime(record.slot_end_time);
 
                   return (
-                    <div key={record.id} className="p-4 bg-white">
+                    <div key={record.id} className="p-4 bg-card">
                       {/* Row 1: Date + Time + Status Badge */}
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-1 text-sm text-slate-700 font-medium">
-                          <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <div className="flex items-center gap-1 text-sm text-foreground font-medium">
+                          <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                           <span>{startTimeStr} {dateStr} – {dateStr === endDateStr ? endTimeStr : `${endTimeStr} ${endDateStr}`}</span>
                         </div>
                         <Badge variant="outline" className={cn("flex items-center gap-1", statusConfig.color)}>
@@ -1045,17 +1037,17 @@ export default function FlashSaleAutoSetupPage() {
                       {/* Row 2: Items count + Flash Sale ID + Delete */}
                       <div className="mt-2 flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <span className="text-sm text-slate-600">
-                            <span className="text-slate-500">Số SP: </span>
+                          <span className="text-sm text-muted-foreground">
+                            <span className="text-muted-foreground">Số SP: </span>
                             <span className="font-medium">{record.items_count}</span>
                           </span>
                           {record.status === 'success' && record.flash_sale_id && (
-                            <span className="text-xs text-green-600 font-mono">
+                            <span className="text-xs text-success font-mono">
                               FS #{record.flash_sale_id}
                             </span>
                           )}
                           {record.lead_time_minutes > 0 && (
-                            <span className="text-xs text-blue-600">
+                            <span className="text-xs text-info">
                               {record.lead_time_minutes} phút trước
                             </span>
                           )}
@@ -1064,7 +1056,7 @@ export default function FlashSaleAutoSetupPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-slate-400 hover:text-red-500 cursor-pointer"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
                             onClick={() => setDeleteConfirmId(record.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -1074,14 +1066,14 @@ export default function FlashSaleAutoSetupPage() {
 
                       {/* Error message if any */}
                       {record.status === 'error' && record.error_message && (
-                        <div className="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded">
+                        <div className="mt-2 text-xs text-destructive bg-destructive/10 p-2 rounded">
                           {record.error_message}
                         </div>
                       )}
 
                       {/* Scheduled info */}
                       {record.status === 'scheduled' && record.scheduled_at && (
-                        <div className="mt-2 text-xs text-blue-500 bg-blue-50 p-2 rounded">
+                        <div className="mt-2 text-xs text-info bg-info/10 p-2 rounded">
                           Chờ đến: {formatDateTime(record.scheduled_at)}
                         </div>
                       )}
@@ -1111,92 +1103,101 @@ export default function FlashSaleAutoSetupPage() {
             )}
           </div>
 
-            {/* Desktop Table */}
-            <div className="hidden md:block">
+            {/* Desktop Card Rows */}
+            <div className="hidden md:block p-4">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
+                  <RefreshCw className="h-6 w-6 animate-spin text-info" />
                 </div>
               ) : history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <AlertCircle className="h-12 w-12 mb-3" />
                   <p>Chưa có lịch sử nào</p>
                 </div>
               ) : (
                 <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[200px]">Khung giờ</TableHead>
-                      <TableHead className="w-[140px]">Trạng thái</TableHead>
-                      <TableHead>Ghi chú</TableHead>
-                      <TableHead className="w-[110px]">Cài trước</TableHead>
-                      <TableHead className="w-[160px]">Đặt lịch lúc</TableHead>
-                      <TableHead className="w-[160px]">Đã chạy lúc</TableHead>
-                      <TableHead className="w-[60px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pagedHistory.map((record) => {
-                      const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
-                      return (
-                        <TableRow key={record.id}>
-                          <TableCell className="font-medium">
-                            {formatTime(record.slot_start_time)}{" "}
-                            {formatDate(record.slot_start_time)} –{" "}
-                            {formatDate(record.slot_start_time) === formatDate(record.slot_end_time)
-                              ? formatTime(record.slot_end_time)
-                              : `${formatTime(record.slot_end_time)} ${formatDate(record.slot_end_time)}`}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("flex items-center gap-1 w-fit", statusConfig.color)}>
-                              {statusConfig.icon}
-                              {statusConfig.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {record.status === 'success' && record.flash_sale_id ? (
-                              <span className="text-emerald-600 text-xs font-mono">FS #{record.flash_sale_id}</span>
-                            ) : record.status === 'error' && record.error_message ? (
-                              <p className="text-xs text-red-500 max-w-[250px]" title={record.error_message}>
-                                {record.error_message}
-                              </p>
-                            ) : record.status === 'scheduled' && record.scheduled_at ? (
-                              <span className="text-xs text-blue-500">Chờ đến {formatDateTime(record.scheduled_at)}</span>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {record.lead_time_minutes > 0 ? (
-                              <span className="text-blue-600 whitespace-nowrap">{record.lead_time_minutes} phút trước</span>
-                            ) : (
-                              <span className="text-muted-foreground whitespace-nowrap">Ngay lập tức</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-xs">{formatDateTime(record.created_at)}</TableCell>
-                          <TableCell className="text-muted-foreground text-xs">
-                            {record.executed_at ? formatDateTime(record.executed_at) : '—'}
-                          </TableCell>
-                          <TableCell>
-                            {(record.status === 'scheduled' || record.status === 'pending') && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-slate-400 hover:text-red-500 cursor-pointer"
+                <div className="space-y-3">
+                  {pagedHistory.map((record) => {
+                    const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
+                    return (
+                      <div
+                        key={record.id}
+                        className="bg-card rounded-xl border border-border p-4 hover:shadow-md hover:border-primary/30 transition-all group"
+                      >
+                        <div className="grid grid-cols-[1fr_auto_100px_140px_140px_40px] items-center gap-4">
+                          {/* Main Info */}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <Clock className="w-4 h-4 text-primary" />
+                              </div>
+                              <span className="font-semibold text-foreground">
+                                {formatTime(record.slot_start_time)}{" "}
+                                {formatDate(record.slot_start_time)} –{" "}
+                                {formatDate(record.slot_start_time) === formatDate(record.slot_end_time)
+                                  ? formatTime(record.slot_end_time)
+                                  : `${formatTime(record.slot_end_time)} ${formatDate(record.slot_end_time)}`}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground ml-10 truncate">
+                              {record.status === 'success' && record.flash_sale_id ? (
+                                <span className="text-success font-mono">Flash Sale #{record.flash_sale_id}</span>
+                              ) : record.status === 'error' && record.error_message ? (
+                                <span className="text-destructive">{record.error_message}</span>
+                              ) : record.status === 'scheduled' && record.scheduled_at ? (
+                                <span className="text-info">Chờ đến {formatDateTime(record.scheduled_at)}</span>
+                              ) : (
+                                <span>—</span>
+                              )}
+                            </p>
+                          </div>
+
+                          {/* Status Badge */}
+                          <Badge variant="outline" className={cn("flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap", statusConfig.color)}>
+                            {statusConfig.icon}
+                            {statusConfig.label}
+                          </Badge>
+
+                          {/* Cài trước */}
+                          <div className="text-sm">
+                            <p className="text-muted-foreground text-xs">Cài trước</p>
+                            <p className="font-medium text-foreground">
+                              {record.lead_time_minutes > 0 ? `${record.lead_time_minutes} phút` : 'Ngay lập tức'}
+                            </p>
+                          </div>
+
+                          {/* Đặt lịch lúc */}
+                          <div className="text-sm">
+                            <p className="text-muted-foreground text-xs">Đặt lịch lúc</p>
+                            <p className="font-medium text-foreground">{formatDateTime(record.created_at)}</p>
+                          </div>
+
+                          {/* Đã chạy lúc */}
+                          <div className="text-sm">
+                            <p className="text-muted-foreground text-xs">Đã chạy lúc</p>
+                            <p className="font-medium text-foreground">{record.executed_at ? formatDateTime(record.executed_at) : '—'}</p>
+                          </div>
+
+                          {/* Delete Action */}
+                          <div className="flex justify-center">
+                            {(record.status === 'scheduled' || record.status === 'pending') ? (
+                              <button
+                                className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
                                 onClick={() => setDeleteConfirmId(record.id)}
                               >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            ) : (
+                              <div className="w-8" />
                             )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
                 {historyTotalPages > 1 && (
-                  <div className="border-t px-4 py-3">
+                  <div className="mt-4 flex justify-center">
                     <Pagination>
                       <PaginationContent>
                         <PaginationItem>
@@ -1226,7 +1227,7 @@ export default function FlashSaleAutoSetupPage() {
         <DialogContent className="sm:max-w-[672px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-green-600" />
+              <Zap className="h-5 w-5 text-success" />
               Cài đặt tự động tạo Flash Sale
             </DialogTitle>
           </DialogHeader>
@@ -1235,7 +1236,7 @@ export default function FlashSaleAutoSetupPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-blue-600" />
+                  <Clock className="h-4 w-4 text-info" />
                   Chọn khung giờ ({selectedSlots.size}/{timeSlots.length})
                 </Label>
                 <div className="flex items-center gap-2">
@@ -1250,10 +1251,10 @@ export default function FlashSaleAutoSetupPage() {
               <div className="border rounded-lg max-h-[300px] overflow-y-auto">
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
-                    <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                    <RefreshCw className="h-5 w-5 animate-spin text-info" />
                   </div>
                 ) : timeSlots.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <CalendarIcon className="h-8 w-8 mb-2" />
                     <p className="text-sm">Không có khung giờ</p>
                   </div>
@@ -1267,30 +1268,30 @@ export default function FlashSaleAutoSetupPage() {
                       return (
                         <div key={date}>
                           <div 
-                            className="px-3 py-2 bg-slate-50 text-xs font-medium text-slate-600 sticky top-0 flex items-center gap-2 cursor-pointer hover:bg-slate-100 transition-colors"
+                            className="px-3 py-2 bg-background text-xs font-medium text-muted-foreground sticky top-0 flex items-center gap-2 cursor-pointer hover:bg-muted transition-colors"
                             onClick={() => toggleDateSlots(date)}
                           >
                             <Checkbox
                               checked={allSelected}
                               className={cn(
-                                "border-slate-400",
-                                someSelected && !allSelected && "data-[state=unchecked]:bg-slate-200"
+                                "border-border",
+                                someSelected && !allSelected && "data-[state=unchecked]:bg-muted"
                               )}
                               onClick={(e) => e.stopPropagation()}
                               onCheckedChange={() => toggleDateSlots(date)}
                             />
                             <span>{date}</span>
-                            <span className="text-slate-400 ml-auto">({slots.length} khung giờ)</span>
+                            <span className="text-muted-foreground ml-auto">({slots.length} khung giờ)</span>
                           </div>
                           <div className="divide-y">
                             {slots.map((slot: TimeSlot) => (
-                              <div key={slot.timeslot_id} className="px-3 py-2 flex items-center gap-2 hover:bg-slate-50">
+                              <div key={slot.timeslot_id} className="px-3 py-2 flex items-center gap-2 hover:bg-background">
                                 <Checkbox
                                   checked={selectedSlots.has(slot.timeslot_id)}
                                   onCheckedChange={() => toggleSlot(slot.timeslot_id)}
-                                  className="border-slate-400"
+                                  className="border-border"
                                 />
-                                <Clock className="h-3 w-3 text-slate-400" />
+                                <Clock className="h-3 w-3 text-muted-foreground" />
                                 <span className="text-sm">
                                   {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
                                 </span>
@@ -1308,7 +1309,7 @@ export default function FlashSaleAutoSetupPage() {
             {/* Right: Lead Time */}
             <div className="space-y-3">
               <Label className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-green-600" />
+                <Clock className="h-4 w-4 text-success" />
                 Thời gian tự động cài
               </Label>
               <Select
@@ -1331,7 +1332,7 @@ export default function FlashSaleAutoSetupPage() {
                   <SelectItem value="10">10 phút trước khung giờ</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 {leadTimeMinutes === 0
                   ? 'Tất cả Flash Sale sẽ được tạo ngay lập tức'
                   : `Mỗi Flash Sale sẽ được tạo ${leadTimeMinutes} phút trước giờ bắt đầu của khung đó`
@@ -1341,26 +1342,26 @@ export default function FlashSaleAutoSetupPage() {
               {/* Template Info */}
               <div className="mt-4 space-y-2">
                 <Label className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-orange-600" />
+                  <Package className="h-4 w-4 text-brand" />
                   Sản phẩm mẫu
                   <Button variant="ghost" size="sm" onClick={() => fetchLatestTemplate()} disabled={loadingTemplate} className="ml-auto h-6 px-2">
                     <RefreshCw className={cn("h-3 w-3", loadingTemplate && "animate-spin")} />
                   </Button>
                 </Label>
                 {loadingTemplate ? (
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <RefreshCw className="h-4 w-4 animate-spin" />
                     Đang tải...
                   </div>
                 ) : templateItems.length === 0 ? (
-                  <div className="text-sm text-red-500 bg-red-50 p-2 rounded">
+                  <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
                     Không có sản phẩm mẫu. Cần có Flash Sale với sản phẩm đang bật.
                   </div>
                 ) : (
-                  <div className="text-sm text-slate-600 bg-green-50 p-2 rounded">
-                    <p className="font-medium text-green-700">{templateItems.length} sản phẩm</p>
+                  <div className="text-sm text-muted-foreground bg-success/10 p-2 rounded">
+                    <p className="font-medium text-success">{templateItems.length} sản phẩm</p>
                     {latestFlashSaleId && (
-                      <p className="text-xs text-green-600 mt-1">Từ Flash Sale #{latestFlashSaleId}</p>
+                      <p className="text-xs text-success mt-1">Từ Flash Sale #{latestFlashSaleId}</p>
                     )}
                   </div>
                 )}
@@ -1403,7 +1404,7 @@ export default function FlashSaleAutoSetupPage() {
             <AlertDialogCancel>Hủy</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => { if (deleteConfirmId) deleteRecord(deleteConfirmId); setDeleteConfirmId(null); }}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive hover:bg-destructive/90"
             >
               Xóa
             </AlertDialogAction>
@@ -1430,7 +1431,7 @@ export default function FlashSaleAutoSetupPage() {
             <AlertDialogCancel>Hủy</AlertDialogCancel>
             <AlertDialogAction
               onClick={clearAllHistory}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive hover:bg-destructive/90"
             >
               Xóa tất cả
             </AlertDialogAction>

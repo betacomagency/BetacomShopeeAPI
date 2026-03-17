@@ -50,12 +50,12 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
         className="h-8 px-3 text-sm font-normal gap-2 cursor-pointer"
         onClick={() => setOpen(o => !o)}
       >
-        <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
-        <span className="text-slate-700">{formatRange(value)}</span>
+        <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+        <span className="text-foreground">{formatRange(value)}</span>
       </Button>
 
       {open && (
-        <div className="absolute top-full mt-1 right-0 z-50 bg-white rounded-lg border border-slate-200 shadow-lg">
+        <div className="absolute top-full mt-1 right-0 z-50 bg-card rounded-lg border border-border shadow-lg">
           <Calendar
             mode="range"
             selected={value}

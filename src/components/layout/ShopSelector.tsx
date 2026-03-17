@@ -78,10 +78,10 @@ export default function ShopSelector() {
         className={cn(
           'w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors',
           hasMultipleShops
-            ? 'hover:bg-orange-50 hover:border-orange-200 cursor-pointer'
+            ? 'hover:bg-brand/10 hover:border-brand/20 cursor-pointer'
             : 'cursor-default',
-          isOpen && 'bg-orange-50 border-orange-200',
-          !isOpen && 'border-slate-200 bg-white'
+          isOpen && 'bg-brand/10 border-brand/20',
+          !isOpen && 'border-border bg-card'
         )}
       >
         {/* Shop Logo hoặc Icon */}
@@ -92,23 +92,23 @@ export default function ShopSelector() {
             className="w-6 h-6 rounded-full object-cover"
           />
         ) : (
-          <Store className="w-5 h-5 text-orange-500" />
+          <Store className="w-5 h-5 text-brand" />
         )}
 
         {/* Shop Name */}
         <div className="text-left flex-1 min-w-0 overflow-hidden">
-          <p className="text-sm font-medium text-slate-700 truncate">
+          <p className="text-sm font-medium text-foreground truncate">
             {currentShop?.shop_name || `Shop ${selectedShopId}`}
           </p>
         </div>
 
         {/* Loading hoặc Dropdown Arrow */}
         {isSwitching ? (
-          <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
+          <Loader2 className="w-4 h-4 text-brand animate-spin" />
         ) : hasMultipleShops ? (
           <ChevronDown
             className={cn(
-              'w-4 h-4 text-slate-400 transition-transform',
+              'w-4 h-4 text-muted-foreground transition-transform',
               isOpen && 'rotate-180'
             )}
           />
@@ -125,30 +125,30 @@ export default function ShopSelector() {
           />
 
           {/* Menu */}
-          <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-50">
-            <div className="px-3 py-2 border-b border-slate-100">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+          <div className="absolute right-0 top-full mt-2 w-72 bg-card rounded-xl shadow-lg border border-border py-2 z-50">
+            <div className="px-3 py-2 border-b border-border">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Chọn Shop
               </p>
             </div>
 
             {/* Search Input */}
-            <div className="px-3 py-2 border-b border-slate-100">
+            <div className="px-3 py-2 border-b border-border">
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Tìm shop..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-base border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full pl-8 pr-3 py-1.5 text-base border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
                 />
               </div>
             </div>
 
             <div className="max-h-64 overflow-y-auto py-1">
               {filteredShops.length === 0 ? (
-                <div className="px-3 py-4 text-center text-sm text-slate-500">
+                <div className="px-3 py-4 text-center text-sm text-muted-foreground">
                   Không tìm thấy shop
                 </div>
               ) : (
@@ -161,8 +161,8 @@ export default function ShopSelector() {
                       onClick={() => handleSwitchShop(shop.shop_id)}
                       disabled={isSwitching}
                       className={cn(
-                        'w-full px-3 py-2.5 flex items-center gap-3 hover:bg-slate-50 transition-colors',
-                        isSelected && 'bg-orange-50'
+                        'w-full px-3 py-2.5 flex items-center gap-3 hover:bg-muted transition-colors cursor-pointer',
+                        isSelected && 'bg-brand/10'
                       )}
                     >
                       {/* Shop Logo */}
@@ -173,8 +173,8 @@ export default function ShopSelector() {
                           className="w-8 h-8 rounded-full object-cover flex-shrink-0"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                          <Store className="w-4 h-4 text-orange-500" />
+                        <div className="w-8 h-8 rounded-full bg-brand/10 flex items-center justify-center flex-shrink-0">
+                          <Store className="w-4 h-4 text-brand" />
                         </div>
                       )}
 
@@ -183,19 +183,19 @@ export default function ShopSelector() {
                         <p
                           className={cn(
                             'text-sm font-medium truncate',
-                            isSelected ? 'text-orange-600' : 'text-slate-700'
+                            isSelected ? 'text-brand' : 'text-foreground'
                           )}
                         >
                           {shop.shop_name || `Shop ${shop.shop_id}`}
                         </p>
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-muted-foreground">
                           ID: {shop.shop_id}
                         </p>
                       </div>
 
                       {/* Check Icon */}
                       {isSelected && (
-                        <Check className="w-5 h-5 text-orange-500 flex-shrink-0" />
+                        <Check className="w-5 h-5 text-brand flex-shrink-0" />
                       )}
                     </button>
                   );

@@ -80,9 +80,9 @@ const ROLE_LABELS: Record<AppRole, string> = {
 
 const ROLE_COLORS: Record<AppRole, string> = {
   super_admin: 'bg-purple-100 text-purple-700 border-purple-200',
-  admin: 'bg-amber-100 text-amber-700 border-amber-200',
-  leader: 'bg-blue-100 text-blue-700 border-blue-200',
-  member: 'bg-slate-100 text-slate-600 border-slate-200',
+  admin: 'bg-warning/10 text-warning border-warning',
+  leader: 'bg-info/10 text-info border-info',
+  member: 'bg-muted text-muted-foreground border-border',
 };
 
 export default function UsersSettingsPage() {
@@ -756,25 +756,6 @@ export default function UsersSettingsPage() {
 
   // --- Columns ---
   const columns = [
-    // Checkbox column for bulk
-    {
-      key: 'select',
-      header: '',
-      width: '40px',
-      hideOnMobile: true,
-      render: (user: UserProfile) => {
-        const isAdminRole = user.appRole === 'admin' || user.appRole === 'super_admin';
-        if (user.id === currentUser?.id || isAdminRole) return null;
-        return (
-          <Checkbox
-            checked={selectedUserIds.includes(user.id)}
-            onCheckedChange={() => toggleUserSelection(user.id)}
-            className="w-4 h-4"
-            aria-label={`Chọn ${user.full_name || user.email}`}
-          />
-        );
-      },
-    },
     {
       key: 'user',
       header: 'Người dùng',
@@ -786,29 +767,13 @@ export default function UsersSettingsPage() {
             {user.full_name?.[0]?.toUpperCase() || user.email[0]?.toUpperCase() || 'U'}
           </div>
           <div className="min-w-0">
-            <p className="font-medium text-slate-800 truncate text-sm">
+            <p className="font-medium text-foreground truncate text-sm">
               {user.full_name || 'Chưa cập nhật'}
             </p>
-            <p className="text-xs text-slate-500 truncate">{user.email}</p>
+            <p className="text-xs text-muted-foreground truncate">{user.email}</p>
           </div>
         </div>
       ),
-    },
-    {
-      key: 'app_role',
-      header: 'Vai trò',
-      width: '130px',
-      mobileBadge: true,
-      render: (user: UserProfile) => {
-        const role = user.appRole;
-        if (!role) return <CellBadge variant="default">Chưa phân quyền</CellBadge>;
-        return (
-          <span className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full border ${ROLE_COLORS[role]}`}>
-            {(role === 'super_admin' || role === 'admin') && <Shield className="w-3 h-3" />}
-            {ROLE_LABELS[role]}
-          </span>
-        );
-      },
     },
     {
       key: 'leader',
@@ -835,13 +800,13 @@ export default function UsersSettingsPage() {
           <div className="flex items-center gap-1.5">
             <div className="flex flex-wrap gap-1 flex-1 min-w-0">
               {shops.length === 0 ? (
-                <span className="text-xs text-slate-400">Chưa gán shop</span>
+                <span className="text-xs text-muted-foreground">Chưa gán shop</span>
               ) : (
                 <>
                   {shops.slice(0, 2).map((shop) => (
                     <span
                       key={shop.id}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full max-w-[100px]"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-info/10 text-info text-xs rounded-full max-w-[100px]"
                       title={shop.shop_name || `Shop ${shop.shop_id}`}
                     >
                       <Store className="w-3 h-3 flex-shrink-0" />
@@ -849,88 +814,13 @@ export default function UsersSettingsPage() {
                     </span>
                   ))}
                   {shops.length > 2 && (
-                    <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full">
+                    <span className="inline-flex items-center px-2 py-0.5 bg-muted text-muted-foreground text-xs rounded-full">
                       +{shops.length - 2}
                     </span>
                   )}
                 </>
               )}
             </div>
-            {canEdit && (
-              <Popover
-                open={inlinePopoverUserId === user.id}
-                onOpenChange={(open) => {
-                  setInlinePopoverUserId(open ? user.id : null);
-                  if (!open) setInlineShopSearch('');
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex items-center justify-center w-6 h-6 rounded-md text-slate-400 hover:text-orange-600 hover:bg-orange-50 transition-colors cursor-pointer flex-shrink-0"
-                    title="Gán shop nhanh"
-                  >
-                    <ChevronDown className="w-4 h-4" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="w-72 p-0"
-                  onInteractOutside={() => {
-                    setInlinePopoverUserId(null);
-                    setInlineShopSearch('');
-                  }}
-                >
-                  <div className="p-3 border-b">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                      <Input
-                        placeholder="Tìm shop..."
-                        value={inlineShopSearch}
-                        onChange={(e) => setInlineShopSearch(e.target.value)}
-                        className="pl-8 h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <ScrollArea className="max-h-[240px]">
-                    <div className="p-1">
-                      {inlineFilteredShops.map(shop => {
-                        const isAssigned = (user.shops || []).some(s => s.id === shop.id);
-                        return (
-                          <button
-                            key={shop.id}
-                            type="button"
-                            className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-md text-left transition-colors cursor-pointer ${
-                              isAssigned
-                                ? 'bg-orange-50 text-orange-700'
-                                : 'hover:bg-slate-50 text-slate-700'
-                            }`}
-                            onClick={() => handleInlineToggleShop(user.id, shop.id, isAssigned)}
-                            disabled={savingInline}
-                          >
-                            {shop.shop_logo ? (
-                              <img src={shop.shop_logo} alt="" className="w-7 h-7 rounded-md object-cover flex-shrink-0" />
-                            ) : (
-                              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                {shop.shop_name?.[0]?.toUpperCase() || 'S'}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{shop.shop_name || `Shop ${shop.shop_id}`}</p>
-                              <p className="text-xs text-slate-400">ID: {shop.shop_id}</p>
-                            </div>
-                            {isAssigned && <Check className="w-4 h-4 text-orange-600 flex-shrink-0" />}
-                          </button>
-                        );
-                      })}
-                      {inlineFilteredShops.length === 0 && (
-                        <p className="text-xs text-slate-400 text-center py-4">Không tìm thấy shop</p>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </PopoverContent>
-              </Popover>
-            )}
           </div>
         );
       },
@@ -944,7 +834,7 @@ export default function UsersSettingsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-7 w-7 p-0"
+            className="text-info hover:text-info hover:bg-accent h-7 w-7 p-0"
             onClick={() => openPermissionDialog(user)}
             title="Phân quyền"
             disabled={user.id === currentUser?.id}
@@ -954,7 +844,7 @@ export default function UsersSettingsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 w-7 p-0"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0"
             onClick={() => {
               toast.info('Chức năng đang phát triển');
             }}
@@ -969,11 +859,11 @@ export default function UsersSettingsPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6 bg-white min-h-full">
+    <div className="space-y-4 sm:space-y-6 bg-card min-h-full">
       {/* Header */}
       <div className="p-4 sm:p-6 border-b">
-        <h1 className="text-lg sm:text-xl font-semibold text-slate-800">Quản lý người dùng</h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+        <h1 className="text-lg sm:text-xl font-semibold text-foreground">Quản lý người dùng</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">
           Phân chia shop và quản lý quyền truy cập cho nhân sự
         </p>
       </div>
@@ -995,19 +885,19 @@ export default function UsersSettingsPage() {
 
             {/* Bulk actions bar */}
             {activeTab === 'users' && selectedUserIds.length > 0 && (
-              <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5">
+              <div className="flex items-center gap-2 bg-brand/10 border border-brand rounded-lg px-3 py-1.5">
                 <Checkbox
                   checked={selectedUserIds.length === selectableUsers.length && selectableUsers.length > 0}
                   onCheckedChange={toggleAllUserSelection}
                   className="w-4 h-4"
                   aria-label="Chọn tất cả"
                 />
-                <span className="text-sm font-medium text-orange-700">
+                <span className="text-sm font-medium text-brand">
                   Đã chọn {selectedUserIds.length}/{selectableUsers.length}
                 </span>
                 <Button
                   size="sm"
-                  className="h-7 bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                  className="h-7 bg-brand hover:bg-brand/90 text-white cursor-pointer"
                   onClick={() => {
                     setBulkShopIds([]);
                     setBulkSearchQuery('');
@@ -1020,7 +910,7 @@ export default function UsersSettingsPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedUserIds([])}
-                  className="text-orange-500 hover:text-orange-700 cursor-pointer"
+                  className="text-brand hover:text-brand cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1033,7 +923,7 @@ export default function UsersSettingsPage() {
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center mt-4">
               <div className="relative flex-1 w-full sm:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Tìm theo tên hoặc email..."
                   value={searchQuery}
@@ -1044,7 +934,7 @@ export default function UsersSettingsPage() {
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1054,7 +944,7 @@ export default function UsersSettingsPage() {
               <Select value={filterRole} onValueChange={setFilterRole}>
                 <SelectTrigger className="w-full sm:w-[160px] h-9 cursor-pointer">
                   <div className="flex items-center gap-2">
-                    <Shield className="w-3.5 h-3.5 text-slate-400" />
+                    <Shield className="w-3.5 h-3.5 text-muted-foreground" />
                     <SelectValue placeholder="Vai trò" />
                   </div>
                 </SelectTrigger>
@@ -1069,7 +959,7 @@ export default function UsersSettingsPage() {
               <Select value={filterLeader} onValueChange={setFilterLeader}>
                 <SelectTrigger className="w-full sm:w-[180px] h-9 cursor-pointer">
                   <div className="flex items-center gap-2">
-                    <User className="w-3.5 h-3.5 text-slate-400" />
+                    <User className="w-3.5 h-3.5 text-muted-foreground" />
                     <SelectValue placeholder="Leader" />
                   </div>
                 </SelectTrigger>
@@ -1084,7 +974,7 @@ export default function UsersSettingsPage() {
               <Select value={filterShop} onValueChange={setFilterShop}>
                 <SelectTrigger className="w-full sm:w-[180px] h-9 cursor-pointer">
                   <div className="flex items-center gap-2">
-                    <Store className="w-3.5 h-3.5 text-slate-400" />
+                    <Store className="w-3.5 h-3.5 text-muted-foreground" />
                     <SelectValue placeholder="Shop" />
                   </div>
                 </SelectTrigger>
@@ -1101,7 +991,7 @@ export default function UsersSettingsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={clearAllFilters}
-                  className="text-slate-500 hover:text-slate-700 h-9 px-3 flex-shrink-0 cursor-pointer"
+                  className="text-muted-foreground hover:text-foreground h-9 px-3 flex-shrink-0 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5 mr-1.5" />
                   Xóa bộ lọc ({activeFilterCount})
@@ -1123,7 +1013,7 @@ export default function UsersSettingsPage() {
                 />
               </div>
               {!loading && users.length > 0 && (
-                <p className="text-xs sm:text-sm text-slate-500 mt-2 sm:mt-3">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2 sm:mt-3">
                   {filteredUsers.length < users.length
                     ? `Hiển thị ${filteredUsers.length} / ${users.length} người dùng`
                     : `Tổng cộng: ${users.length} người dùng`
@@ -1138,7 +1028,7 @@ export default function UsersSettingsPage() {
             <div className="mt-4 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="relative flex-1 max-w-xs">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     placeholder="Tìm shop..."
                     value={overviewSearch}
@@ -1146,33 +1036,33 @@ export default function UsersSettingsPage() {
                     className="pl-9 h-9"
                   />
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {overviewUsers.length} nhân sự | {overviewFilteredShops.length} shop
                 </p>
               </div>
 
               {loading ? (
                 <div className="flex items-center justify-center py-16">
-                  <RefreshCw className="w-6 h-6 animate-spin text-slate-400" />
-                  <span className="ml-2 text-slate-500">Đang tải...</span>
+                  <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Đang tải...</span>
                 </div>
               ) : overviewUsers.length === 0 ? (
-                <div className="text-center py-16 text-slate-400">
+                <div className="text-center py-16 text-muted-foreground">
                   <Users className="w-10 h-10 mx-auto mb-2" />
                   <p>Chưa có nhân sự (member/leader)</p>
                 </div>
               ) : (
                 <div className="border rounded-lg overflow-auto max-h-[70vh]">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 z-10 bg-slate-50 border-b">
+                    <thead className="sticky top-0 z-10 bg-background border-b">
                       <tr>
-                        <th className="text-left px-3 py-2.5 font-medium text-slate-600 sticky left-0 bg-slate-50 min-w-[200px] border-r">
+                        <th className="text-left px-3 py-2.5 font-medium text-muted-foreground sticky left-0 bg-background min-w-[200px] border-r">
                           Shop
                         </th>
                         {overviewUsers.map(user => (
                           <th
                             key={user.id}
-                            className="text-center px-2 py-2.5 font-medium text-slate-600 min-w-[80px]"
+                            className="text-center px-2 py-2.5 font-medium text-muted-foreground min-w-[80px]"
                             title={user.email}
                           >
                             <div className="flex flex-col items-center gap-1">
@@ -1189,8 +1079,8 @@ export default function UsersSettingsPage() {
                     </thead>
                     <tbody>
                       {overviewFilteredShops.map((shop, idx) => (
-                        <tr key={shop.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                          <td className={`px-3 py-2 sticky left-0 border-r ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                        <tr key={shop.id} className={idx % 2 === 0 ? 'bg-card' : 'bg-background/50'}>
+                          <td className={`px-3 py-2 sticky left-0 border-r ${idx % 2 === 0 ? 'bg-card' : 'bg-background/50'}`}>
                             <div className="flex items-center gap-2">
                               {shop.shop_logo ? (
                                 <img src={shop.shop_logo} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
@@ -1200,7 +1090,7 @@ export default function UsersSettingsPage() {
                                 </div>
                               )}
                               <div className="min-w-0">
-                                <p className="font-medium text-slate-700 truncate text-xs">
+                                <p className="font-medium text-foreground truncate text-xs">
                                   {shop.shop_name || `Shop ${shop.shop_id}`}
                                 </p>
                               </div>
@@ -1214,8 +1104,8 @@ export default function UsersSettingsPage() {
                                   type="button"
                                   className={`w-7 h-7 rounded-md flex items-center justify-center mx-auto transition-colors cursor-pointer ${
                                     isAssigned
-                                      ? 'bg-green-100 text-green-600 hover:bg-red-100 hover:text-red-500'
-                                      : 'bg-slate-100 text-slate-300 hover:bg-orange-100 hover:text-orange-500'
+                                      ? 'bg-success/10 text-success hover:bg-destructive/10 hover:text-destructive'
+                                      : 'bg-muted text-muted-foreground hover:bg-brand/10 hover:text-brand'
                                   }`}
                                   title={isAssigned ? `Bỏ gán ${user.full_name || user.email} khỏi ${shop.shop_name || shop.shop_id}` : `Gán ${user.full_name || user.email} vào ${shop.shop_name || shop.shop_id}`}
                                   onClick={() => handleInlineToggleShop(user.id, shop.id, isAssigned)}
@@ -1245,7 +1135,7 @@ export default function UsersSettingsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-orange-500" />
+              <UserPlus className="w-5 h-5 text-brand" />
               Tạo tài khoản mới
             </DialogTitle>
             <DialogDescription>
@@ -1256,8 +1146,8 @@ export default function UsersSettingsPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="email" className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-slate-500" />
-                Email <span className="text-red-500">*</span>
+                <Mail className="w-4 h-4 text-muted-foreground" />
+                Email <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="email"
@@ -1270,10 +1160,10 @@ export default function UsersSettingsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="password" className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
-                Mật khẩu <span className="text-red-500">*</span>
+                Mật khẩu <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="password"
@@ -1286,7 +1176,7 @@ export default function UsersSettingsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="fullName" className="flex items-center gap-2">
-                <User className="w-4 h-4 text-slate-500" />
+                <User className="w-4 h-4 text-muted-foreground" />
                 Họ và tên
               </Label>
               <Input
@@ -1299,7 +1189,7 @@ export default function UsersSettingsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="phone" className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-slate-500" />
+                <Phone className="w-4 h-4 text-muted-foreground" />
                 Số điện thoại
               </Label>
               <Input
@@ -1312,8 +1202,8 @@ export default function UsersSettingsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="systemRole" className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-slate-500" />
-                Vai trò <span className="text-red-500">*</span>
+                <Shield className="w-4 h-4 text-muted-foreground" />
+                Vai trò <span className="text-destructive">*</span>
               </Label>
               <Select
                 value={formData.systemRole}
@@ -1329,7 +1219,7 @@ export default function UsersSettingsPage() {
                     <SelectItem key={role.value} value={role.value}>
                       <div className="flex flex-col">
                         <span>{role.label}</span>
-                        <span className="text-xs text-slate-500">{role.description}</span>
+                        <span className="text-xs text-muted-foreground">{role.description}</span>
                       </div>
                     </SelectItem>
                   ))}
@@ -1384,7 +1274,7 @@ export default function UsersSettingsPage() {
                 <DialogDescription className="text-sm">
                   {selectedUser?.email}
                   {selectedUser?.leaderName && (
-                    <span className="ml-2 text-slate-400">| Leader: {selectedUser.leaderName}</span>
+                    <span className="ml-2 text-muted-foreground">| Leader: {selectedUser.leaderName}</span>
                   )}
                 </DialogDescription>
               </div>
@@ -1398,17 +1288,17 @@ export default function UsersSettingsPage() {
 
           {loadingPermissionData ? (
             <div className="flex items-center justify-center py-16">
-              <RefreshCw className="w-7 h-7 animate-spin text-slate-400" />
-              <span className="ml-3 text-base text-slate-500">Đang tải dữ liệu...</span>
+              <RefreshCw className="w-7 h-7 animate-spin text-muted-foreground" />
+              <span className="ml-3 text-base text-muted-foreground">Đang tải dữ liệu...</span>
             </div>
           ) : (
             <ScrollArea className="max-h-[60vh] pr-4">
               <div className="space-y-6 py-5">
                 {/* Warning for no role */}
                 {!userAppRole && (
-                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
-                    <Shield className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                    <p className="text-sm text-amber-700">
+                  <div className="flex items-center gap-3 p-4 bg-warning/10 rounded-xl border border-warning">
+                    <Shield className="w-5 h-5 text-warning flex-shrink-0" />
+                    <p className="text-sm text-warning">
                       Người dùng chưa được gán vào phòng ban Shopee. Không có vai trò trong ứng dụng.
                     </p>
                   </div>
@@ -1417,8 +1307,8 @@ export default function UsersSettingsPage() {
                 {/* Section: Per-user feature overrides */}
                 {userAppRole && userAppRole !== 'super_admin' && (
                   <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-slate-400" />
+                    <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-muted-foreground" />
                       Quản lý chức năng
                     </h3>
 
@@ -1431,8 +1321,8 @@ export default function UsersSettingsPage() {
                             key={feature.key}
                             className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
                               isAdded
-                                ? 'border-green-300 bg-green-50 shadow-sm'
-                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                ? 'border-green-300 bg-success/10 shadow-sm'
+                                : 'border-border bg-card hover:border-border hover:bg-background'
                             }`}
                           >
                             <Checkbox
@@ -1441,18 +1331,18 @@ export default function UsersSettingsPage() {
                               className="w-4 h-4"
                             />
                             <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
-                              isAdded ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'
+                              isAdded ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
                             }`}>
                               <Icon className="w-3.5 h-3.5" />
                             </div>
-                            <span className={`text-sm font-medium ${isAdded ? 'text-green-700' : 'text-slate-600'}`}>
+                            <span className={`text-sm font-medium ${isAdded ? 'text-green-700' : 'text-muted-foreground'}`}>
                               {feature.label}
                             </span>
                           </label>
                         );
                       })}
                       {addableFeatures.length === 0 && (
-                        <p className="text-sm text-slate-400 py-3 col-span-2 text-center">Đã có đầy đủ chức năng</p>
+                        <p className="text-sm text-muted-foreground py-3 col-span-2 text-center">Đã có đầy đủ chức năng</p>
                       )}
                     </div>
                   </div>
@@ -1461,11 +1351,11 @@ export default function UsersSettingsPage() {
                 {/* Section: Shop Assignment */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                      <Store className="w-4 h-4 text-slate-400" />
+                    <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide flex items-center gap-2">
+                      <Store className="w-4 h-4 text-muted-foreground" />
                       Quyền truy cập Shop
                     </h3>
-                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
                       <span>Chọn tất cả</span>
                       <Checkbox
                         checked={selectedShopIds.length === allShops.length && allShops.length > 0}
@@ -1477,7 +1367,7 @@ export default function UsersSettingsPage() {
                   </div>
 
                   <div className="relative">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       placeholder="Tìm shop theo tên hoặc ID..."
                       value={shopSearchQuery}
@@ -1488,12 +1378,12 @@ export default function UsersSettingsPage() {
 
                   <div className="max-h-[240px] overflow-y-auto pr-1">
                     {allShops.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
                         <Store className="w-10 h-10 mb-2" />
                         <p className="text-sm">Chưa có shop nào</p>
                       </div>
                     ) : filteredShops.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
                         <Search className="w-10 h-10 mb-2" />
                         <p className="text-sm">Không tìm thấy shop</p>
                       </div>
@@ -1504,8 +1394,8 @@ export default function UsersSettingsPage() {
                             key={shop.id}
                             className={`flex items-center gap-3 px-3 py-3 rounded-xl border cursor-pointer transition-colors ${
                               selectedShopIds.includes(shop.id)
-                                ? 'border-orange-300 bg-orange-50 shadow-sm'
-                                : 'border-slate-200 hover:bg-slate-50'
+                                ? 'border-brand bg-brand/10 shadow-sm'
+                                : 'border-border hover:bg-background'
                             }`}
                           >
                             <Checkbox
@@ -1525,10 +1415,10 @@ export default function UsersSettingsPage() {
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-700 truncate">
+                              <p className="text-sm font-medium text-foreground truncate">
                                 {shop.shop_name || `Shop ${shop.shop_id}`}
                               </p>
-                              <p className="text-xs text-slate-500">ID: {shop.shop_id}</p>
+                              <p className="text-xs text-muted-foreground">ID: {shop.shop_id}</p>
                             </div>
                           </label>
                         ))}
@@ -1536,14 +1426,14 @@ export default function UsersSettingsPage() {
                     )}
                   </div>
 
-                  <div className="p-3 bg-orange-50 rounded-xl flex items-center justify-between">
-                    <p className="text-sm text-orange-700">
+                  <div className="p-3 bg-brand/10 rounded-xl flex items-center justify-between">
+                    <p className="text-sm text-brand">
                       Đã chọn <strong>{selectedShopIds.length}</strong> / {allShops.length} shop
                     </p>
                     {selectedShopIds.length > 0 && (
                       <button
                         type="button"
-                        className="text-sm text-orange-600 hover:text-orange-800 cursor-pointer font-medium"
+                        className="text-sm text-brand hover:text-orange-800 cursor-pointer font-medium"
                         onClick={() => setSelectedShopIds([])}
                       >
                         Bỏ chọn tất cả
@@ -1592,7 +1482,7 @@ export default function UsersSettingsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Store className="w-5 h-5 text-orange-500" />
+              <Store className="w-5 h-5 text-brand" />
               Gán shop hàng loạt
             </DialogTitle>
             <DialogDescription>
@@ -1606,7 +1496,7 @@ export default function UsersSettingsPage() {
               {selectedUserIds.map(uid => {
                 const u = users.find(u => u.id === uid);
                 return (
-                  <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-full">
+                  <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 bg-muted text-foreground text-xs rounded-full">
                     <div className="w-4 h-4 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold">
                       {u?.full_name?.[0]?.toUpperCase() || u?.email[0]?.toUpperCase() || 'U'}
                     </div>
@@ -1618,7 +1508,7 @@ export default function UsersSettingsPage() {
 
             {/* Shop search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Tìm shop..."
                 value={bulkSearchQuery}
@@ -1637,8 +1527,8 @@ export default function UsersSettingsPage() {
                       key={shop.id}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
                         isSelected
-                          ? 'border-orange-300 bg-orange-50'
-                          : 'border-slate-200 hover:bg-slate-50'
+                          ? 'border-brand bg-brand/10'
+                          : 'border-border hover:bg-background'
                       }`}
                     >
                       <Checkbox
@@ -1660,20 +1550,20 @@ export default function UsersSettingsPage() {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{shop.shop_name || `Shop ${shop.shop_id}`}</p>
-                        <p className="text-xs text-slate-400">ID: {shop.shop_id}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{shop.shop_name || `Shop ${shop.shop_id}`}</p>
+                        <p className="text-xs text-muted-foreground">ID: {shop.shop_id}</p>
                       </div>
                     </label>
                   );
                 })}
                 {bulkFilteredShops.length === 0 && (
-                  <p className="text-xs text-slate-400 text-center py-6">Không tìm thấy shop</p>
+                  <p className="text-xs text-muted-foreground text-center py-6">Không tìm thấy shop</p>
                 )}
               </div>
             </ScrollArea>
 
             {bulkShopIds.length > 0 && (
-              <p className="text-sm text-orange-700 bg-orange-50 rounded-lg p-2.5 text-center">
+              <p className="text-sm text-brand bg-brand/10 rounded-lg p-2.5 text-center">
                 Sẽ gán <strong>{bulkShopIds.length}</strong> shop cho <strong>{selectedUserIds.length}</strong> nhân sự
               </p>
             )}

@@ -40,7 +40,7 @@ export default function ProductsPage() {
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           Bạn chưa kết nối shop nào. Vui lòng vào{' '}
-          <a href="/settings/shops" className="text-orange-500 hover:underline font-medium">
+          <a href="/settings/shops" className="text-brand hover:underline font-medium">
             Cài đặt → Quản lý Shop
           </a>{' '}
           để kết nối shop Shopee.
@@ -52,7 +52,7 @@ export default function ProductsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Tab Navigation */}
-      <div className="flex-shrink-0 bg-white border-b px-4">
+      <div className="flex-shrink-0 bg-card border-b px-4">
         <div className="flex items-center gap-1">
           {PRODUCT_TABS.map(tab => {
             const TabIcon = tab.icon;
@@ -63,8 +63,8 @@ export default function ProductsPage() {
                 className={cn(
                   'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer',
                   activeTab === tab.key
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300'
+                    ? 'border-brand text-brand'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
                 )}
               >
                 <TabIcon className="w-4 h-4" />

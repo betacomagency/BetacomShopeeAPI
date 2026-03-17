@@ -12,7 +12,6 @@ import {
   Zap,
   Package,
   Clock,
-  Bell,
   TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
@@ -72,14 +71,6 @@ export const menuItems: MenuItem[] = [
     path: '/shop-performance',
     permissionKey: 'shop-performance',
     description: 'Xem chỉ số hiệu quả bán hàng từ Shopee Account Health',
-  },
-  {
-    title: 'Thông báo',
-    icon: Bell,
-    permissionKey: 'notifications',
-    description: 'Thông báo từ Shopee',
-    children: [
-    ],
   },
   {
     title: 'Cài đặt',

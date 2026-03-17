@@ -58,8 +58,11 @@ async function fetchWithProxy(targetUrl: string, options: RequestInit, timeoutMs
     };
 
     if (PROXY_URL) {
-      const proxyUrl = `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
-      return await fetch(proxyUrl, fetchOptions);
+      const proxyOptions = {
+        ...fetchOptions,
+        headers: { ...(fetchOptions.headers || {}), 'x-target-url': targetUrl },
+      };
+      return await fetch(PROXY_URL, proxyOptions);
     }
     return await fetch(targetUrl, fetchOptions);
   } finally {

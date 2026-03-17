@@ -51,7 +51,8 @@ const PaginationLink = ({
         variant: isActive ? "outline" : "ghost",
         size,
       }),
-      isActive && "border-orange-500 text-orange-600 bg-orange-50 hover:bg-orange-100",
+      isActive && "border-brand text-brand bg-brand/10 hover:bg-brand/20",
+      "cursor-pointer",
       className
     )}
     {...props}

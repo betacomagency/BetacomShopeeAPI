@@ -74,7 +74,7 @@ export default function FlashSaleDetailPage() {
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           Bạn chưa kết nối shop nào. Vui lòng vào{' '}
-          <a href="/settings/shops" className="text-orange-500 hover:underline font-medium">
+          <a href="/settings/shops" className="text-brand hover:underline font-medium">
             Cài đặt → Quản lý Shop
           </a>{' '}
           để kết nối shop Shopee.

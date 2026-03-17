@@ -189,27 +189,27 @@ export function FlashSaleDetailPanel({
             <col style={{ width: "13%" }} />
             <col style={{ width: "16%" }} />
           </colgroup>
-          <thead className="bg-slate-50 border-b sticky top-0 z-10">
+          <thead className="bg-muted border-b sticky top-0 z-10">
             <tr>
-              <th className="h-11 px-3 text-left align-middle font-medium text-slate-600 text-xs">
+              <th className="h-11 px-3 text-left align-middle font-medium text-muted-foreground text-xs">
                 Phân loại hàng
               </th>
-              <th className="h-11 px-3 text-right align-middle font-medium text-slate-600 text-xs">
+              <th className="h-11 px-3 text-right align-middle font-medium text-muted-foreground text-xs">
                 Giá gốc
               </th>
-              <th className="h-11 px-3 text-right align-middle font-medium text-slate-600 text-xs">
+              <th className="h-11 px-3 text-right align-middle font-medium text-muted-foreground text-xs">
                 Giá đã giảm
               </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-xs">
+              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs">
                 KM
               </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-xs leading-tight">
+              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs leading-tight">
                 SL SP
               </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-xs">
+              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs">
                 Kho hàng
               </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-slate-600 text-xs leading-tight">
+              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs leading-tight">
                 Giới hạn
                 <br />
                 đặt hàng
@@ -221,7 +221,7 @@ export function FlashSaleDetailPanel({
               <tr>
                 <td colSpan={COL_COUNT} className="h-48">
                   <div className="flex items-center justify-center">
-                    <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
                   </div>
                 </td>
               </tr>
@@ -229,7 +229,7 @@ export function FlashSaleDetailPanel({
               <tr>
                 <td
                   colSpan={COL_COUNT}
-                  className="h-32 text-center text-slate-500">
+                  className="h-32 text-center text-muted-foreground">
                   Chưa có sản phẩm nào trong Flash Sale này
                 </td>
               </tr>
@@ -248,8 +248,8 @@ export function FlashSaleDetailPanel({
       </div>
 
       {/* Sticky footer: pagination */}
-      <div className="flex-shrink-0 border-t px-4 py-3 flex items-center justify-between gap-4 bg-white">
-        <span className="text-xs text-slate-400 shrink-0">
+      <div className="flex-shrink-0 border-t px-4 py-3 flex items-center justify-between gap-4 bg-card">
+        <span className="text-xs text-muted-foreground shrink-0">
           {totalCount > 0
             ? `${totalCount} sản phẩm · Trang ${page}/${totalPages}`
             : ""}
@@ -314,10 +314,10 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
   return (
     <>
       {/* Item Header Row */}
-      <tr className="border-b bg-slate-50/50">
+      <tr className="border-b bg-muted/50">
         <td colSpan={COL_COUNT} className="px-3 py-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+            <div className="w-10 h-10 rounded bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
               {itemImage ? (
                 <ImageWithZoom
                   src={itemImage}
@@ -326,10 +326,10 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
                   zoomSize={240}
                 />
               ) : (
-                <div className="w-6 h-6 bg-slate-200 rounded" />
+                <div className="w-6 h-6 bg-muted rounded" />
               )}
             </div>
-            <span className="text-sm font-medium text-slate-700 truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {item.item_name || `Item #${item.item_id}`}
             </span>
           </div>
@@ -348,32 +348,32 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
             return (
               <tr
                 key={model.model_id}
-                className="border-b hover:bg-slate-50/50">
+                className="border-b hover:bg-accent">
                 <td className="px-3 py-2">
-                  <span className="text-sm text-slate-600 truncate block">
+                  <span className="text-sm text-muted-foreground truncate block">
                     {model.model_name || `Model #${model.model_id}`}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-sm text-slate-500 text-right">
+                <td className="px-3 py-2 text-sm text-muted-foreground text-right">
                   {formatPrice(model.original_price)}
                 </td>
-                <td className="px-3 py-2 text-sm text-slate-700 text-right font-medium">
+                <td className="px-3 py-2 text-sm text-foreground text-right font-medium">
                   {formatPrice(promoPrice)}
                 </td>
                 <td className="px-3 py-2 text-center">
                   {discount > 0 && (
-                    <span className="px-1.5 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
+                    <span className="px-1.5 py-0.5 text-xs font-medium text-brand border border-brand/30 rounded">
                       -{discount}%
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-sm text-orange-600 font-medium text-center">
+                <td className="px-3 py-2 text-sm text-brand font-medium text-center">
                   {model.campaign_stock ?? 0}
                 </td>
-                <td className="px-3 py-2 text-sm text-slate-600 text-center">
+                <td className="px-3 py-2 text-sm text-muted-foreground text-center">
                   {model.stock ?? 0}
                 </td>
-                <td className="px-3 py-2 text-sm text-slate-600 text-center">
+                <td className="px-3 py-2 text-sm text-muted-foreground text-center">
                   {modelPurchaseLimit > 0 ? modelPurchaseLimit : "-"}
                 </td>
               </tr>
@@ -385,7 +385,7 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
               <td colSpan={COL_COUNT} className="px-3 py-2">
                 <button
                   onClick={onToggleExpand}
-                  className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer">
+                  className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer">
                   {expanded ? (
                     <>
                       Thu gọn <ChevronUp className="h-4 w-4" />
@@ -402,14 +402,14 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
           )}
         </>
       ) : (
-        <tr className="border-b hover:bg-slate-50/50">
+        <tr className="border-b hover:bg-accent">
           <td className="px-3 py-2">
-            <span className="text-sm text-slate-600">-</span>
+            <span className="text-sm text-muted-foreground">-</span>
           </td>
-          <td className="px-3 py-2 text-sm text-slate-500 text-right">
+          <td className="px-3 py-2 text-sm text-muted-foreground text-right">
             {formatPrice(item.original_price)}
           </td>
-          <td className="px-3 py-2 text-sm text-slate-700 text-right font-medium">
+          <td className="px-3 py-2 text-sm text-foreground text-right font-medium">
             {formatPrice(
               item.input_promotion_price || item.promotion_price_with_tax,
             )}
@@ -419,7 +419,7 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
               item.original_price,
               item.input_promotion_price || item.promotion_price_with_tax,
             ) > 0 && (
-              <span className="px-1.5 py-0.5 text-xs font-medium text-orange-600 border border-orange-300 rounded">
+              <span className="px-1.5 py-0.5 text-xs font-medium text-brand border border-brand/30 rounded">
                 -
                 {calcDiscount(
                   item.original_price,
@@ -429,13 +429,13 @@ function ItemRow({ item, expanded, onToggleExpand }: ItemRowProps) {
               </span>
             )}
           </td>
-          <td className="px-3 py-2 text-sm text-orange-600 font-medium text-center">
+          <td className="px-3 py-2 text-sm text-brand font-medium text-center">
             {item.campaign_stock ?? 0}
           </td>
-          <td className="px-3 py-2 text-sm text-slate-600 text-center">
+          <td className="px-3 py-2 text-sm text-muted-foreground text-center">
             {item.stock ?? 0}
           </td>
-          <td className="px-3 py-2 text-sm text-slate-600 text-center">
+          <td className="px-3 py-2 text-sm text-muted-foreground text-center">
             {item.purchase_limit > 0 ? item.purchase_limit : "-"}
           </td>
         </tr>

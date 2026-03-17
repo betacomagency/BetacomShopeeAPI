@@ -16,7 +16,7 @@ export default function ShopInfoPage() {
   if (!numericShopId || isNaN(numericShopId)) {
     return (
       <div className="p-6 text-center">
-        <p className="text-sm text-red-500">Shop ID không hợp lệ</p>
+        <p className="text-sm text-destructive">Shop ID không hợp lệ</p>
         <Button
           variant="outline"
           size="sm"
@@ -31,13 +31,13 @@ export default function ShopInfoPage() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-slate-950">
+    <div className="h-full flex flex-col bg-card dark:bg-background">
       <div className="p-4 sm:p-6 max-w-4xl mx-auto w-full">
         {/* Back button */}
         <Button
           variant="ghost"
           size="sm"
-          className="mb-4 cursor-pointer text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+          className="mb-4 cursor-pointer text-muted-foreground hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground"
           onClick={() => navigate(-1)}
         >
           <ArrowLeft className="w-4 h-4 mr-1.5" />

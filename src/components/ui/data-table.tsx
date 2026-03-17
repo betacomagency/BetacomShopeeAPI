@@ -40,23 +40,23 @@ interface CellShopInfoProps {
 export function CellShopInfo({ logo, name, shopId, region, onRefresh, refreshing }: CellShopInfoProps) {
   return (
     <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
         {logo ? (
           <img src={logo} alt={name} className="w-full h-full object-cover" />
         ) : (
-          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
           </svg>
         )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="font-medium text-slate-800 truncate">{name}</p>
+          <p className="font-medium text-foreground truncate">{name}</p>
           {onRefresh && (
             <button
               onClick={(e) => { e.stopPropagation(); onRefresh(); }}
               disabled={refreshing}
-              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600"
+              className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
             >
               <svg className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -64,8 +64,8 @@ export function CellShopInfo({ logo, name, shopId, region, onRefresh, refreshing
             </button>
           )}
         </div>
-        <p className="text-xs text-slate-400">
-          {region}{region && shopId && ' - '}{shopId && <span className="font-mono text-slate-500">{shopId}</span>}
+        <p className="text-xs text-muted-foreground">
+          {region}{region && shopId && ' - '}{shopId && <span className="font-mono text-muted-foreground">{shopId}</span>}
         </p>
       </div>
     </div>
@@ -79,10 +79,10 @@ interface CellBadgeProps {
 
 export function CellBadge({ children, variant = 'default' }: CellBadgeProps) {
   const variantClasses = {
-    default: 'bg-slate-100 text-slate-600',
-    success: 'bg-green-100 text-green-700',
-    warning: 'bg-yellow-100 text-yellow-700',
-    destructive: 'bg-red-100 text-red-700',
+    default: 'bg-muted text-muted-foreground',
+    success: 'bg-success/10 text-success',
+    warning: 'bg-warning/10 text-warning',
+    destructive: 'bg-destructive/10 text-destructive',
   };
   return (
     <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", variantClasses[variant])}>
@@ -103,7 +103,7 @@ export function CellText({ children, mono, muted, className }: CellTextProps) {
     <span className={cn(
       "text-sm",
       mono && "font-mono",
-      muted ? "text-slate-500" : "text-slate-700",
+      muted ? "text-muted-foreground" : "text-foreground",
       className
     )}>
       {children}
@@ -166,8 +166,8 @@ export function SimpleDataTable<TData>({
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-500">{loadingMessage}</p>
+          <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">{loadingMessage}</p>
         </div>
       </div>
     );
@@ -183,9 +183,9 @@ export function SimpleDataTable<TData>({
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-2">
-          <p className="text-slate-500">{emptyMessage}</p>
+          <p className="text-muted-foreground">{emptyMessage}</p>
           {emptyDescription && (
-            <p className="text-sm text-slate-400">{emptyDescription}</p>
+            <p className="text-sm text-muted-foreground">{emptyDescription}</p>
           )}
         </div>
       </div>
@@ -197,12 +197,12 @@ export function SimpleDataTable<TData>({
       {/* Desktop Table View */}
       <div className={cn("overflow-x-auto", mobileCardView && "hidden md:block")}>
         <table className="w-full">
-          <thead className="bg-slate-50 border-b">
+          <thead className="bg-muted border-b border-border">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap"
+                  className="h-11 px-4 text-left align-middle font-medium text-muted-foreground text-sm whitespace-nowrap"
                   style={{ width: col.width }}
                 >
                   {col.header}
@@ -214,7 +214,7 @@ export function SimpleDataTable<TData>({
             {data.map((item) => (
               <tr
                 key={keyExtractor(item)}
-                className="border-b transition-colors hover:bg-slate-50/50"
+                className="border-b border-border transition-colors hover:bg-accent"
               >
                 {columns.map((col) => (
                   <td key={col.key} className="px-4 py-3 align-middle text-sm">
@@ -244,7 +244,7 @@ export function SimpleDataTable<TData>({
 
               {/* Card Actions */}
               {actionColumn && (
-                <div className="flex justify-end pt-2 border-t border-slate-100">
+                <div className="flex justify-end pt-2 border-t border-border">
                   {actionColumn.render(item)}
                 </div>
               )}
@@ -361,7 +361,7 @@ export function DataTable<TData, TValue>({
     <div className="w-full">
       {/* Toolbar */}
       {(showSearch || showColumnToggle) && (
-        <div className="flex items-center justify-between py-3 px-4 border-b bg-slate-50/50">
+        <div className="flex items-center justify-between py-3 px-4 border-b border-border bg-muted/50">
           {showSearch && searchKey && (
             <Input
               placeholder={searchPlaceholder}
@@ -369,7 +369,7 @@ export function DataTable<TData, TValue>({
               onChange={(event) =>
                 table.getColumn(searchKey)?.setFilterValue(event.target.value)
               }
-              className="max-w-sm h-9 bg-white"
+              className="max-w-sm h-9 bg-card"
             />
           )}
           {showColumnToggle && (
@@ -407,21 +407,21 @@ export function DataTable<TData, TValue>({
       <div className="relative w-full overflow-x-auto">
         <table className="w-full">
           {/* Fixed Header */}
-          <thead className="bg-slate-50 border-b sticky top-0 z-10">
+          <thead className="bg-muted border-b border-border sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
                     <th
                       key={header.id}
-                      className="h-11 px-4 text-left align-middle font-medium text-slate-600 text-sm whitespace-nowrap"
+                      className="h-11 px-4 text-left align-middle font-medium text-muted-foreground text-sm whitespace-nowrap"
                       style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                     >
                       {header.isPlaceholder ? null : (
                         <div
                           className={cn(
                             "flex items-center gap-1",
-                            header.column.getCanSort() && "cursor-pointer select-none hover:text-slate-900"
+                            header.column.getCanSort() && "cursor-pointer select-none hover:text-foreground"
                           )}
                           onClick={header.column.getToggleSortingHandler()}
                         >
@@ -435,7 +435,7 @@ export function DataTable<TData, TValue>({
                                 asc: <ChevronUp className="h-4 w-4" />,
                                 desc: <ChevronDown className="h-4 w-4" />,
                               }[header.column.getIsSorted() as string] ?? (
-                                  <ChevronsUpDown className="h-4 w-4 text-slate-400" />
+                                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
                                 )}
                             </span>
                           )}
@@ -454,8 +454,8 @@ export function DataTable<TData, TValue>({
                 <td colSpan={columns.length} className="h-48">
                   <div className="flex items-center justify-center py-16">
                     <div className="flex flex-col items-center gap-3">
-                      <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                      <p className="text-sm text-slate-500">{loadingMessage}</p>
+                      <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm text-muted-foreground">{loadingMessage}</p>
                     </div>
                   </div>
                 </td>
@@ -465,7 +465,7 @@ export function DataTable<TData, TValue>({
                 <tr
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className="border-b transition-colors hover:bg-slate-50/50 data-[state=selected]:bg-slate-100"
+                  className="border-b border-border transition-colors hover:bg-accent data-[state=selected]:bg-muted"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 align-middle text-sm">
@@ -481,7 +481,7 @@ export function DataTable<TData, TValue>({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="h-32 text-center text-slate-500"
+                  className="h-32 text-center text-muted-foreground"
                 >
                   {emptyMessage}
                 </td>
@@ -493,10 +493,10 @@ export function DataTable<TData, TValue>({
 
       {/* Pagination */}
       {showPagination && !loading && table.getPageCount() > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50">
-          <div className="text-sm text-slate-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-muted/50">
+          <div className="text-sm text-muted-foreground">
             Trang {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
-            <span className="ml-2 text-slate-400">
+            <span className="ml-2 text-muted-foreground">
               ({table.getFilteredRowModel().rows.length} kết quả)
             </span>
           </div>
@@ -534,7 +534,7 @@ export function DataTable<TData, TValue>({
                     onClick={() => table.setPageIndex(pageNum)}
                     className={cn(
                       "h-8 w-8 p-0",
-                      pageIndex === pageNum && "bg-orange-500 hover:bg-orange-600"
+                      pageIndex === pageNum && "bg-brand hover:bg-brand/90"
                     )}
                   >
                     {pageNum + 1}

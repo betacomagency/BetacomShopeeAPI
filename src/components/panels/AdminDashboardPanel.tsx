@@ -46,30 +46,30 @@ function getTokenStatus(expiredAt: number | null): {
   color: string;
   icon: typeof CheckCircle2;
 } {
-  if (!expiredAt) return { label: "Chưa có token", color: "text-slate-400", icon: XCircle };
+  if (!expiredAt) return { label: "Chưa có token", color: "text-muted-foreground", icon: XCircle };
 
   const now = Date.now() / 1000;
   const hoursLeft = (expiredAt - now) / 3600;
 
-  if (hoursLeft <= 0) return { label: "Hết hạn", color: "text-red-600", icon: XCircle };
-  if (hoursLeft < 1) return { label: `${Math.round(hoursLeft * 60)}p`, color: "text-red-500", icon: AlertTriangle };
-  if (hoursLeft < 24) return { label: `${Math.round(hoursLeft)}h`, color: "text-amber-500", icon: AlertTriangle };
-  return { label: "OK", color: "text-emerald-600", icon: CheckCircle2 };
+  if (hoursLeft <= 0) return { label: "Hết hạn", color: "text-destructive", icon: XCircle };
+  if (hoursLeft < 1) return { label: `${Math.round(hoursLeft * 60)}p`, color: "text-destructive", icon: AlertTriangle };
+  if (hoursLeft < 24) return { label: `${Math.round(hoursLeft)}h`, color: "text-warning", icon: AlertTriangle };
+  return { label: "OK", color: "text-success", icon: CheckCircle2 };
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  flash_sale: "bg-orange-50 text-orange-700 border-orange-200",
-  auth: "bg-purple-50 text-purple-700 border-purple-200",
-  products: "bg-blue-50 text-blue-700 border-blue-200",
-  reviews: "bg-cyan-50 text-cyan-700 border-cyan-200",
-  system: "bg-slate-100 text-slate-600 border-slate-200",
+  flash_sale: "bg-brand/10 text-brand border-brand",
+  auth: "bg-info/10 text-info border-info",
+  products: "bg-info/10 text-info border-info",
+  reviews: "bg-info/10 text-info border-info",
+  system: "bg-muted text-muted-foreground border-border",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  success: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  failed: "bg-red-50 text-red-700 border-red-200",
-  pending: "bg-amber-50 text-amber-700 border-amber-200",
-  cancelled: "bg-slate-100 text-slate-500 border-slate-200",
+  success: "bg-success/10 text-success border-success",
+  failed: "bg-destructive/10 text-destructive border-destructive",
+  pending: "bg-warning/10 text-warning border-warning",
+  cancelled: "bg-muted text-muted-foreground border-border",
 };
 
 const PUSH_TYPE_LABELS: Record<number, string> = {
@@ -178,13 +178,13 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
       {/* Section 1: API Stats Cards */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
             <Activity className="h-4 w-4" />
             API Overview (24h)
           </h2>
           <Link
             to="/admin/api-logs"
-            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+            className="text-xs text-info hover:text-info flex items-center gap-1 cursor-pointer"
           >
             Xem chi tiết <ArrowRight className="h-3 w-3" />
           </Link>
@@ -194,7 +194,7 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Tổng API calls</div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
+              <div className="text-2xl font-bold text-foreground mt-1">
                 {statsLoading ? "..." : (statsData?.summary.total ?? 0).toLocaleString()}
               </div>
             </CardContent>
@@ -202,7 +202,7 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Lỗi</div>
-              <div className={cn("text-2xl font-bold mt-1", (statsData?.summary.failed || 0) > 0 ? "text-red-600" : "text-slate-900")}>
+              <div className={cn("text-2xl font-bold mt-1", (statsData?.summary.failed || 0) > 0 ? "text-destructive" : "text-foreground")}>
                 {statsLoading ? "..." : statsData?.summary.failed ?? 0}
               </div>
             </CardContent>
@@ -210,7 +210,7 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Tỷ lệ thành công</div>
-              <div className={cn("text-2xl font-bold mt-1", (statsData?.summary.successRate || 0) >= 95 ? "text-emerald-600" : (statsData?.summary.successRate || 0) >= 80 ? "text-amber-600" : "text-red-600")}>
+              <div className={cn("text-2xl font-bold mt-1", (statsData?.summary.successRate || 0) >= 95 ? "text-success" : (statsData?.summary.successRate || 0) >= 80 ? "text-warning" : "text-destructive")}>
                 {statsLoading ? "..." : `${(statsData?.summary.successRate ?? 0).toFixed(1)}%`}
               </div>
             </CardContent>
@@ -218,7 +218,7 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
           <Card>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Thời gian TB</div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">
+              <div className="text-2xl font-bold text-foreground mt-1">
                 {statsLoading ? "..." : `${statsData?.summary.avgDuration ?? 0}ms`}
               </div>
             </CardContent>
@@ -229,14 +229,14 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
       {/* Section 2: Shop Health */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
             <Store className="h-4 w-4" />
             Sức khỏe Shop ({shopHealth.total})
           </h2>
           <div className="flex items-center gap-3 text-xs">
-            <span className="text-emerald-600">{shopHealth.healthy} OK</span>
-            {shopHealth.expiring > 0 && <span className="text-amber-500">{shopHealth.expiring} sắp hết hạn</span>}
-            {shopHealth.expired > 0 && <span className="text-red-600">{shopHealth.expired} hết hạn</span>}
+            <span className="text-success">{shopHealth.healthy} OK</span>
+            {shopHealth.expiring > 0 && <span className="text-warning">{shopHealth.expiring} sắp hết hạn</span>}
+            {shopHealth.expired > 0 && <span className="text-destructive">{shopHealth.expired} hết hạn</span>}
           </div>
         </div>
 
@@ -249,8 +249,8 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
             return (
               <Card key={shop.shop_id} className={cn(
                 "hover:shadow-sm transition-shadow",
-                isExpired && "border-red-300 bg-red-50/50",
-                isExpiring && "border-amber-300 bg-amber-50/50",
+                isExpired && "border-destructive bg-destructive/10",
+                isExpiring && "border-warning bg-warning/10",
               )}>
                 <CardContent className="p-3 flex items-center gap-3">
                   {shop.shop_logo ? (
@@ -260,12 +260,12 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
                       className="w-8 h-8 rounded-full object-cover flex-shrink-0"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                      <Store className="h-4 w-4 text-slate-400" />
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                      <Store className="h-4 w-4 text-muted-foreground" />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-slate-700 truncate">
+                    <div className="text-sm font-medium text-foreground truncate">
                       {shop.shop_name || `Shop #${shop.shop_id}`}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -288,31 +288,25 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
         {/* Section 3: Recent Activity */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
               <Zap className="h-4 w-4" />
               Hoạt động gần đây
             </h2>
-            <Link
-              to="/admin/activity"
-              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-            >
-              Xem tất cả <ArrowRight className="h-3 w-3" />
-            </Link>
           </div>
 
           <Card>
             <CardContent className="p-0">
               {activityLoading ? (
-                <div className="p-6 text-center text-sm text-slate-400">Đang tải...</div>
+                <div className="p-6 text-center text-sm text-muted-foreground">Đang tải...</div>
               ) : !recentActivity || recentActivity.length === 0 ? (
-                <div className="p-6 text-center text-sm text-slate-400">Chưa có hoạt động nào</div>
+                <div className="p-6 text-center text-sm text-muted-foreground">Chưa có hoạt động nào</div>
               ) : (
                 <div className="divide-y max-h-[400px] overflow-y-auto">
                   {recentActivity.map((log) => (
                     <div key={log.id} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm text-slate-700 line-clamp-1">
+                          <div className="text-sm text-foreground line-clamp-1">
                             {log.action_description}
                           </div>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -323,18 +317,18 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
                               {log.status}
                             </Badge>
                             {log.shop_name && (
-                              <span className="text-[10px] text-slate-400">{log.shop_name}</span>
+                              <span className="text-[10px] text-muted-foreground">{log.shop_name}</span>
                             )}
                             {log.duration_ms != null && (
-                              <span className="text-[10px] text-slate-400">{log.duration_ms}ms</span>
+                              <span className="text-[10px] text-muted-foreground">{log.duration_ms}ms</span>
                             )}
                           </div>
                         </div>
-                        <span className="text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0">
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
                           {formatTime(log.created_at)}
                         </span>
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-1">
+                      <div className="text-[10px] text-muted-foreground mt-1">
                         {log.user_name || log.user_email || "System"}
                         {log.source && log.source !== "manual" ? ` · ${log.source}` : ""}
                       </div>
@@ -349,39 +343,33 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
         {/* Section 4: Recent Push Events */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
               <Bell className="h-4 w-4" />
               Push Events gần đây
             </h2>
-            <Link
-              to="/admin/push-logs"
-              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-            >
-              Xem chi tiết <ArrowRight className="h-3 w-3" />
-            </Link>
           </div>
 
           <Card>
             <CardContent className="p-0">
               {pushLoading ? (
-                <div className="p-6 text-center text-sm text-slate-400">Đang tải...</div>
+                <div className="p-6 text-center text-sm text-muted-foreground">Đang tải...</div>
               ) : !recentPush || recentPush.length === 0 ? (
-                <div className="p-6 text-center text-sm text-slate-400">Chưa có push event nào</div>
+                <div className="p-6 text-center text-sm text-muted-foreground">Chưa có push event nào</div>
               ) : (
                 <div className="divide-y max-h-[400px] overflow-y-auto">
                   {recentPush.map((push) => (
                     <div key={push.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-50 text-violet-700 border-violet-200">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-info/10 text-info border-info">
                             {PUSH_TYPE_LABELS[push.push_code] || `Code ${push.push_code}`}
                           </Badge>
-                          <span className="text-sm text-slate-600 truncate">
+                          <span className="text-sm text-muted-foreground truncate">
                             {push.shop_id ? shopNameMap.get(push.shop_id) || `Shop #${push.shop_id}` : "System"}
                           </span>
                         </div>
                         {push.process_result && (
-                          <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{push.process_result}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{push.process_result}</div>
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -390,7 +378,7 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
                         ) : (
                           <Clock className="h-3.5 w-3.5 text-amber-500" />
                         )}
-                        <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
                           {formatTime(push.created_at)}
                         </span>
                       </div>

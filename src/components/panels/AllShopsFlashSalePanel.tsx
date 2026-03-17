@@ -146,9 +146,9 @@ function getPageNumbers(current: number, total: number): (number | "ellipsis")[]
 }
 
 const AUTO_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: { label: "Đang chờ", color: "bg-slate-100 text-slate-500 border-slate-200" },
-  scheduled: { label: "Đã lên lịch", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  processing: { label: "Đang xử lý", color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+  pending: { label: "Đang chờ", color: "bg-muted text-muted-foreground border-border" },
+  scheduled: { label: "Đã lên lịch", color: "bg-info/10 text-info border-info" },
+  processing: { label: "Đang xử lý", color: "bg-warning/10 text-warning border-warning" },
 };
 
 // ==================== COMPONENT ====================
@@ -436,7 +436,7 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
               size="sm"
               onClick={() => refetch()}
               disabled={isFetchingAny}
-              className="bg-orange-50 border-orange-200 hover:bg-orange-100 text-orange-600"
+              className="bg-brand/10 border-brand/20 hover:bg-brand/20 text-brand"
             >
               <RefreshCw className={cn("h-4 w-4 mr-2", isFetchingAny && "animate-spin")} />
               {isFetchingAny ? "Đang tải..." : "Làm mới"}
@@ -452,33 +452,33 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
               {/* Mobile - Scheduled */}
               <div className="md:hidden">
                 {autoLoading ? (
-                  <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+                  <div className="p-8 text-center text-muted-foreground">Đang tải dữ liệu...</div>
                 ) : filteredAutoHistory.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">Chưa có Flash Sale nào được lên lịch.</div>
+                  <div className="p-8 text-center text-muted-foreground">Chưa có Flash Sale nào được lên lịch.</div>
                 ) : (
                   <div className="divide-y">
                     {mobileAutoData.map((record) => {
                       const cfg = AUTO_STATUS_CONFIG[record.status] || AUTO_STATUS_CONFIG.pending;
                       return (
-                        <div key={record.id} className="p-4 bg-white">
-                          <div className="text-xs font-medium text-orange-600 mb-1.5">
+                        <div key={record.id} className="p-4 bg-card">
+                          <div className="text-xs font-medium text-brand mb-1.5">
                             {shopNameMap.get(record.shop_id) || `Shop #${record.shop_id}`}
                           </div>
-                          <div className="flex items-center gap-3 text-sm text-slate-600">
+                          <div className="flex items-center gap-3 text-sm text-foreground">
                             <span className="flex items-center gap-1">
-                              <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
+                              <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
                               {formatDate(record.slot_start_time)}
                             </span>
                             <span className="flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                               {formatTime(record.slot_start_time)} – {formatTime(record.slot_end_time)}
                             </span>
                           </div>
                           <div className="mt-2 flex items-center gap-2">
                             <Badge variant="outline" className={cfg.color}>{cfg.label}</Badge>
-                            <span className="text-xs text-slate-400">{formatLeadTime(record.lead_time_minutes)}</span>
+                            <span className="text-xs text-muted-foreground">{formatLeadTime(record.lead_time_minutes)}</span>
                             {record.scheduled_at && (
-                              <span className="text-xs text-blue-500 ml-auto">
+                              <span className="text-xs text-info ml-auto">
                                 Chờ đến {formatISODateTime(record.scheduled_at)}
                               </span>
                             )}
@@ -493,9 +493,9 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
               {/* Desktop - Scheduled */}
               <div className="hidden md:block">
                 {autoLoading ? (
-                  <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+                  <div className="p-8 text-center text-muted-foreground">Đang tải dữ liệu...</div>
                 ) : filteredAutoHistory.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">Chưa có Flash Sale nào được lên lịch.</div>
+                  <div className="p-8 text-center text-muted-foreground">Chưa có Flash Sale nào được lên lịch.</div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -514,7 +514,7 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                         return (
                           <TableRow key={record.id}>
                             <TableCell>
-                              <span className="text-sm font-medium text-slate-700 truncate block max-w-[160px]">
+                              <span className="text-sm font-medium text-foreground truncate block max-w-[160px]">
                                 {shopNameMap.get(record.shop_id) || `Shop #${record.shop_id}`}
                               </span>
                             </TableCell>
@@ -533,18 +533,18 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                             </TableCell>
                             <TableCell>
                               {record.scheduled_at && (
-                                <span className="text-xs text-blue-600">
+                                <span className="text-xs text-info">
                                   Chờ đến {formatISODateTime(record.scheduled_at)}
                                 </span>
                               )}
                             </TableCell>
                             <TableCell>
-                              <span className="text-xs text-slate-500">
+                              <span className="text-xs text-muted-foreground">
                                 {formatLeadTime(record.lead_time_minutes)}
                               </span>
                             </TableCell>
                             <TableCell>
-                              <span className="text-xs text-slate-400">
+                              <span className="text-xs text-muted-foreground">
                                 {formatISODateTime(record.created_at)}
                               </span>
                             </TableCell>
@@ -599,9 +599,9 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
               {/* Mobile List */}
               <div className="md:hidden">
                 {loading ? (
-                  <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+                  <div className="p-8 text-center text-muted-foreground">Đang tải dữ liệu...</div>
                 ) : filteredData.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">
+                  <div className="p-8 text-center text-muted-foreground">
                     {counts.all === 0
                       ? "Chưa có Flash Sale nào."
                       : "Không có Flash Sale nào phù hợp."}
@@ -618,20 +618,20 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                       return (
                         <div
                           key={`${sale.shop_id}-${sale.flash_sale_id}`}
-                          className="p-4 bg-white cursor-pointer hover:bg-slate-50 transition-colors"
+                          className="p-4 bg-card cursor-pointer hover:bg-accent transition-colors"
                           onClick={() => setDetailFlashSale(sale)}
                         >
-                          <div className="text-xs font-medium text-orange-600 mb-1.5">
+                          <div className="text-xs font-medium text-brand mb-1.5">
                             {shopNameMap.get(sale.shop_id) || `Shop #${sale.shop_id}`}
                           </div>
                           <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-3 text-sm text-slate-600">
+                            <div className="flex items-center gap-3 text-sm text-foreground">
                               <span className="flex items-center gap-1">
-                                <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
+                                <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
                                 {dateStr}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                                 {startTimeStr} - {endTimeStr}
                               </span>
                             </div>
@@ -641,20 +641,20 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                               className={cn(
                                 "px-2 py-0.5 rounded-full text-xs font-medium",
                                 sale.type === 2
-                                  ? "bg-green-100 text-green-700"
+                                  ? "bg-success/10 text-success"
                                   : sale.type === 1
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-slate-100 text-slate-600",
+                                    ? "bg-info/10 text-info"
+                                    : "bg-muted text-muted-foreground",
                               )}
                             >
                               {sale.type === 2 ? "Đang chạy" : sale.type === 1 ? "Sắp tới" : "Kết thúc"}
                             </span>
-                            <span className="text-xs text-slate-400 font-mono">#{sale.flash_sale_id}</span>
-                            <span className="text-xs text-slate-500 ml-auto">
-                              <span className={cn("font-medium", sale.enabled_item_count > 0 ? "text-orange-600" : "text-slate-400")}>
+                            <span className="text-xs text-muted-foreground font-mono">#{sale.flash_sale_id}</span>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              <span className={cn("font-medium", sale.enabled_item_count > 0 ? "text-brand" : "text-muted-foreground")}>
                                 {sale.enabled_item_count}
                               </span>
-                              <span className="text-slate-400">/{sale.item_count} SP</span>
+                              <span className="text-muted-foreground">/{sale.item_count} SP</span>
                             </span>
                           </div>
                         </div>
@@ -703,9 +703,9 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
               {/* Desktop Table */}
               <div className="hidden md:block">
                 {loading ? (
-                  <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+                  <div className="p-8 text-center text-muted-foreground">Đang tải dữ liệu...</div>
                 ) : filteredData.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">
+                  <div className="p-8 text-center text-muted-foreground">
                     {counts.all === 0
                       ? "Chưa có Flash Sale nào."
                       : "Không có Flash Sale nào phù hợp với bộ lọc."}
@@ -726,19 +726,19 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                         {desktopData.map((sale) => {
                           const sameDay = formatDate(sale.start_time) === formatDate(sale.end_time);
                           const typeConfig = {
-                            2: { label: "Đang chạy", color: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", pulse: true },
-                            1: { label: "Sắp tới", color: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500", pulse: false },
-                            3: { label: "Kết thúc", color: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-400", pulse: false },
-                          }[sale.type] || { label: "Không rõ", color: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-400", pulse: false };
+                            2: { label: "Đang chạy", color: "bg-success/10 text-success border-success", dot: "bg-success", pulse: true },
+                            1: { label: "Sắp tới", color: "bg-info/10 text-info border-info", dot: "bg-info", pulse: false },
+                            3: { label: "Kết thúc", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground", pulse: false },
+                          }[sale.type] || { label: "Không rõ", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground", pulse: false };
 
                           return (
                             <TableRow
                               key={`${sale.shop_id}-${sale.flash_sale_id}`}
-                              className="cursor-pointer hover:bg-slate-50/80 transition-colors"
+                              className="cursor-pointer hover:bg-accent transition-colors"
                               onClick={() => setDetailFlashSale(sale)}
                             >
                               <TableCell>
-                                <span className="text-sm font-medium text-slate-700 truncate block max-w-[160px]">
+                                <span className="text-sm font-medium text-foreground truncate block max-w-[160px]">
                                   {shopNameMap.get(sale.shop_id) || `Shop #${sale.shop_id}`}
                                 </span>
                               </TableCell>
@@ -765,7 +765,7 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-center">
-                                <span className={cn(sale.enabled_item_count > 0 ? "text-orange-500" : "")}>
+                                <span className={cn(sale.enabled_item_count > 0 ? "text-brand" : "")}>
                                   {sale.enabled_item_count}
                                 </span>
                                 <span className="text-muted-foreground">/{sale.item_count}</span>
@@ -778,7 +778,7 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-8 w-8 text-slate-400 hover:text-blue-600 cursor-pointer"
+                                          className="h-8 w-8 text-muted-foreground hover:text-info cursor-pointer"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             setDetailFlashSale(sale);
@@ -842,7 +842,7 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
 
           {/* Last update info */}
           {dataUpdatedAt > 0 && (
-            <div className="px-4 py-2 border-t bg-slate-50/50 text-xs text-slate-400">
+            <div className="px-4 py-2 border-t bg-muted text-xs text-muted-foreground">
               Cập nhật: {formatDateTime(dataUpdatedAt / 1000)}
             </div>
           )}

@@ -91,11 +91,11 @@ export default function UserProfilePanel() {
       <CardContent>
         <div className="grid gap-4 sm:grid-cols-2">
           {infoItems.map((item) => (
-            <div key={item.label} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50">
-              <item.icon className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <div key={item.label} className="flex items-center gap-3 p-3 rounded-lg bg-muted">
+              <item.icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
               <div className="min-w-0">
-                <p className="text-xs text-slate-400">{item.label}</p>
-                <p className="text-sm font-medium text-slate-700 truncate">{item.value}</p>
+                <p className="text-xs text-muted-foreground">{item.label}</p>
+                <p className="text-sm font-medium text-foreground truncate">{item.value}</p>
               </div>
             </div>
           ))}
