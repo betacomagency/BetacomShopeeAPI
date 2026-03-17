@@ -41,6 +41,63 @@ interface ScheduledJob {
   slot_end_time: number;
   items_count: number;
   scheduled_at: string;
+  retry_count?: number;
+}
+
+// Retry configuration
+const MAX_RETRY_COUNT = 3;
+const RETRY_DELAY_MINUTES = 5;
+const ALERT_WEBHOOK_URL = Deno.env.get('FLASH_SALE_ALERT_WEBHOOK') || '';
+
+/**
+ * Classify if an error is transient (can be retried)
+ */
+function isTransientError(error: string): boolean {
+  const transientPatterns = [
+    'network',
+    'timeout',
+    'ETIMEDOUT',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'rate_limit',
+    'too_many_requests',
+    '429',
+    '500',
+    '502',
+    '503',
+    '504',
+    'temporarily_unavailable',
+    'service_unavailable',
+  ];
+  const lowerError = error.toLowerCase();
+  return transientPatterns.some(p => lowerError.includes(p.toLowerCase()));
+}
+
+/**
+ * Send alert webhook for permanent failures
+ */
+async function sendFailureAlert(job: ScheduledJob, errorMsg: string): Promise<void> {
+  if (!ALERT_WEBHOOK_URL) return;
+
+  try {
+    await fetch(ALERT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `❌ Flash Sale Auto FAILED (after ${job.retry_count || 0} retries)\n` +
+              `• Shop: ${job.shop_id}\n` +
+              `• Timeslot: ${job.timeslot_id}\n` +
+              `• Error: ${errorMsg}`,
+        shop_id: job.shop_id,
+        timeslot_id: job.timeslot_id,
+        error: errorMsg,
+        retry_count: job.retry_count || 0,
+      }),
+    });
+    console.log(`[SCHEDULER] Alert sent for job ${job.id}`);
+  } catch (e) {
+    console.error(`[SCHEDULER] Failed to send alert:`, (e as Error).message);
+  }
 }
 
 interface FlashSaleItem {
@@ -335,12 +392,14 @@ function parseFlashSaleItems(
 ): Array<Record<string, unknown>> {
   // Kiểm tra lỗi từ Shopee (VD: flash_sale_not_exist)
   if (result.error) {
-    console.log(`[SCHEDULER] Shopee API error: ${result.error} - ${result.message}`);
+    console.log(`[SCHEDULER][parseItems] Shopee API error: ${result.error} - ${result.message}`);
     return [];
   }
 
   const itemInfoList = result?.response?.item_info || [];
   const modelsList = result?.response?.models || [];
+
+  console.log(`[SCHEDULER][parseItems] Raw data: ${itemInfoList.length} items, ${modelsList.length} models`);
 
   // Map items với models
   const itemsWithModels = itemInfoList.map((item: FlashSaleItem) => {
@@ -350,6 +409,7 @@ function parseFlashSaleItems(
 
   // Chỉ lấy items enabled
   const enabledItems = itemsWithModels.filter((item: FlashSaleItem) => item.status === 1);
+  console.log(`[SCHEDULER][parseItems] Enabled items: ${enabledItems.length}/${itemInfoList.length}`);
 
   // Convert sang format để add vào FS mới
   const items: Array<Record<string, unknown>> = [];
@@ -364,7 +424,7 @@ function parseFlashSaleItems(
         item_id: item.item_id,
         purchase_limit: item.purchase_limit || 0,
         item_input_promo_price: model.input_promotion_price,
-        item_stock: model.campaign_stock || 0,
+        item_stock: Math.max(model.campaign_stock || 1, 1), // Minimum 1 - Shopee rejects 0
       });
       continue;
     }
@@ -374,7 +434,7 @@ function parseFlashSaleItems(
         item_id: item.item_id,
         purchase_limit: item.purchase_limit || 0,
         item_input_promo_price: item.input_promotion_price,
-        item_stock: item.campaign_stock || 0,
+        item_stock: Math.max(item.campaign_stock || 1, 1), // Minimum 1 - Shopee rejects 0
       });
       continue;
     }
@@ -384,7 +444,7 @@ function parseFlashSaleItems(
     const modelData = enabledModels.map(m => ({
       model_id: m.model_id,
       input_promo_price: m.input_promotion_price || 0,
-      stock: m.campaign_stock || 0,
+      stock: Math.max(m.campaign_stock || 1, 1), // Minimum 1 - Shopee rejects 0
     }));
     if (modelData.length > 0 && modelData.every(m => m.input_promo_price > 0)) {
       items.push({
@@ -395,6 +455,10 @@ function parseFlashSaleItems(
     }
   }
 
+  console.log(`[SCHEDULER][parseItems] Final parsed items: ${items.length}`);
+  if (items.length > 0) {
+    console.log(`[SCHEDULER][parseItems] Sample item:`, JSON.stringify(items[0]));
+  }
   return items;
 }
 
@@ -501,6 +565,7 @@ async function getTemplateItems(
     }
   }
 
+  console.log(`[SCHEDULER][getTemplateItems] ALL FALLBACKS FAILED - No items found for shop ${shopId}`);
   return [];
 }
 
@@ -634,6 +699,27 @@ async function processJob(
 
     if (createResult.error || !createResult.response?.flash_sale_id) {
       const errorMsg = createResult.message || createResult.error || 'Không thể tạo Flash Sale';
+      const currentRetryCount = job.retry_count || 0;
+      const canRetry = isTransientError(errorMsg) && currentRetryCount < MAX_RETRY_COUNT;
+
+      if (canRetry) {
+        const retryAt = new Date(Date.now() + RETRY_DELAY_MINUTES * 60 * 1000).toISOString();
+        console.log(`[SCHEDULER] Job ${job.id} (create FS) scheduled for retry #${currentRetryCount + 1} at ${retryAt}`);
+
+        await supabase
+          .from('apishopee_flash_sale_auto_history')
+          .update({
+            status: 'retry',
+            retry_count: currentRetryCount + 1,
+            scheduled_at: retryAt,
+            error_message: `Retry ${currentRetryCount + 1}/${MAX_RETRY_COUNT}: ${errorMsg}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', job.id);
+
+        return { success: false, message: `Scheduled for retry: ${errorMsg}` };
+      }
+
       await supabase
         .from('apishopee_flash_sale_auto_history')
         .update({
@@ -644,6 +730,7 @@ async function processJob(
         })
         .eq('id', job.id);
 
+      await sendFailureAlert(job, errorMsg);
       return { success: false, message: errorMsg };
     }
 
@@ -651,6 +738,9 @@ async function processJob(
     console.log(`[SCHEDULER] Created Flash Sale #${newFlashSaleId}`);
 
     // 4. Thêm sản phẩm vào Flash Sale
+    console.log(`[SCHEDULER] Adding ${itemsToAdd.length} items to FS #${newFlashSaleId}`);
+    console.log(`[SCHEDULER] Items payload:`, JSON.stringify(itemsToAdd.slice(0, 3))); // Log first 3 items
+
     const addResult = await callShopeeAPI(
       supabase,
       credentials,
@@ -663,35 +753,115 @@ async function processJob(
       callerUserId,
       callerUserEmail,
       triggeredBy
-    ) as { error?: string; message?: string };
+    ) as { error?: string; message?: string; response?: { success_list?: unknown[]; fail_list?: unknown[] } };
+
+    console.log(`[SCHEDULER] Add items response:`, JSON.stringify(addResult));
 
     let message = `Đã tạo Flash Sale #${newFlashSaleId}`;
+    let finalStatus: 'success' | 'partial' | 'error' = 'success';
+    let addedItemsCount = itemsToAdd.length;
+
     if (addResult.error) {
-      message += ` (Lỗi thêm SP: ${addResult.message || addResult.error})`;
+      const addErrorMsg = addResult.message || addResult.error;
+      message += ` (Lỗi thêm SP: ${addErrorMsg})`;
+      finalStatus = 'partial'; // FS created but items failed
+      addedItemsCount = 0;
+      console.error(`[SCHEDULER] Add items failed for FS #${newFlashSaleId}:`, addErrorMsg);
+
+      // Check if we should retry adding items (transient error)
+      const currentRetryCount = job.retry_count || 0;
+      if (isTransientError(addErrorMsg) && currentRetryCount < MAX_RETRY_COUNT) {
+        // Don't retry - FS already created, would create duplicate
+        // Just mark as partial success with error details
+        console.log(`[SCHEDULER] Add items transient error, but FS already created - marking as partial`);
+      }
     } else {
-      message += ` với ${itemsToAdd.length} sản phẩm`;
+      // Define proper type for fail_list items
+      interface FailedItem {
+        item_id: number;
+        fail_error?: string;
+        fail_message?: string;
+      }
+
+      const successList = addResult.response?.success_list || [];
+      const failList = (addResult.response?.fail_list || []) as FailedItem[];
+
+      addedItemsCount = successList.length;
+
+      if (failList.length > 0) {
+        // Log detailed failure info
+        console.error(`[SCHEDULER] ${failList.length} items FAILED for FS #${newFlashSaleId}:`, JSON.stringify(failList));
+
+        finalStatus = successList.length === 0 ? 'error' : 'partial';
+        message = `FS #${newFlashSaleId}: ${successList.length}/${itemsToAdd.length} items added (${failList.length} failed)`;
+
+        // Store fail reasons for debugging (truncate if too long)
+        const failReasons = failList.slice(0, 5).map(f => `${f.item_id}: ${f.fail_error || 'unknown'}`).join('; ');
+        if (failList.length > 5) {
+          message += ` | Errors: ${failReasons}... (+${failList.length - 5} more)`;
+        } else {
+          message += ` | Errors: ${failReasons}`;
+        }
+      } else if (successList.length === 0 && itemsToAdd.length > 0) {
+        // No success_list and no fail_list but we sent items - unexpected
+        console.warn(`[SCHEDULER] Unexpected: sent ${itemsToAdd.length} items but got empty response`);
+        finalStatus = 'partial';
+        message = `FS #${newFlashSaleId}: Response missing success/fail lists`;
+      } else {
+        message = `Đã tạo Flash Sale #${newFlashSaleId} với ${addedItemsCount} sản phẩm`;
+      }
     }
 
-    // 5. Update success (lưu items_data để dùng cho lần tạo FS tiếp theo nếu cần)
+    // 5. Update status based on result
     await supabase
       .from('apishopee_flash_sale_auto_history')
       .update({
-        status: 'success',
+        status: finalStatus,
         flash_sale_id: newFlashSaleId,
-        items_count: itemsToAdd.length,
+        items_count: addedItemsCount,
         items_data: itemsToAdd, // Lưu items để fallback cho lần sau
+        error_message: finalStatus !== 'success' ? message : null,
         executed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id);
 
-    console.log(`[SCHEDULER] Job ${job.id} completed: ${message}`);
-    return { success: true, message, flashSaleId: newFlashSaleId };
+    console.log(`[SCHEDULER] Job ${job.id} completed (${finalStatus}): ${message}`);
+
+    // Send alert for partial/error failures (items rejected by Shopee)
+    if (finalStatus === 'partial' || finalStatus === 'error') {
+      await sendFailureAlert(job, message);
+    }
+
+    return { success: finalStatus === 'success', message, flashSaleId: newFlashSaleId };
 
   } catch (error) {
     const errorMsg = (error as Error).message;
     console.error(`[SCHEDULER] Job ${job.id} failed:`, errorMsg);
 
+    const currentRetryCount = job.retry_count || 0;
+    const canRetry = isTransientError(errorMsg) && currentRetryCount < MAX_RETRY_COUNT;
+
+    if (canRetry) {
+      // Schedule for retry
+      const retryAt = new Date(Date.now() + RETRY_DELAY_MINUTES * 60 * 1000).toISOString();
+      console.log(`[SCHEDULER] Job ${job.id} scheduled for retry #${currentRetryCount + 1} at ${retryAt}`);
+
+      await supabase
+        .from('apishopee_flash_sale_auto_history')
+        .update({
+          status: 'retry',
+          retry_count: currentRetryCount + 1,
+          scheduled_at: retryAt,
+          error_message: `Retry ${currentRetryCount + 1}/${MAX_RETRY_COUNT}: ${errorMsg}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      return { success: false, message: `Scheduled for retry: ${errorMsg}` };
+    }
+
+    // Permanent failure - mark as error and send alert
     await supabase
       .from('apishopee_flash_sale_auto_history')
       .update({
@@ -701,6 +871,9 @@ async function processJob(
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id);
+
+    // Send alert for permanent failure
+    await sendFailureAlert(job, errorMsg);
 
     return { success: false, message: errorMsg };
   }
@@ -802,11 +975,11 @@ serve(async (req) => {
 
     console.log(`[SCHEDULER] Running at ${now}`);
 
-    // Tìm các scheduled jobs đến hạn
+    // Tìm các scheduled + retry jobs đến hạn
     const { data: pendingJobs, error: queryError } = await supabase
       .from('apishopee_flash_sale_auto_history')
       .select('*')
-      .eq('status', 'scheduled')
+      .in('status', ['scheduled', 'retry'])
       .lte('scheduled_at', now)
       .order('scheduled_at', { ascending: true })
       .limit(200); // Xử lý tối đa 200 jobs mỗi lần
