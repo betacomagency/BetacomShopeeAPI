@@ -304,8 +304,32 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
       const partnerInfo = partnerInfoStr ? JSON.parse(partnerInfoStr) : null;
       sessionStorage.removeItem('shopee_partner_info');
 
+      // Check if this is an app-specific OAuth callback (multi-partner flow)
+      const partnerAppId = sessionStorage.getItem('shopee_partner_app_id');
+      sessionStorage.removeItem('shopee_partner_app_id');
+      sessionStorage.removeItem('shopee_app_category');
+
       try {
-        const newToken = await authenticateWithCode(code, shopId, partnerAccountId, partnerInfo, mainAccountId);
+        let newToken: AccessToken;
+
+        if (partnerAppId) {
+          // App-specific flow: use get-app-token action with partner_app_id
+          const { data, error: fnError } = await supabase.functions.invoke('apishopee-auth', {
+            body: {
+              action: 'get-app-token',
+              partner_app_id: partnerAppId,
+              code,
+              shop_id: shopId,
+              main_account_id: mainAccountId,
+            },
+          });
+          if (fnError) throw new Error(fnError.message || 'Failed to get app token');
+          if (data?.error) throw new Error(data.message || data.error);
+          newToken = { ...data, shop_id: data.shop_id || shopId } as AccessToken;
+        } else {
+          // Legacy flow: use get-token with partner_info
+          newToken = await authenticateWithCode(code, shopId, partnerAccountId, partnerInfo, mainAccountId);
+        }
 
         // Main account auth: response có shop_id_list
         const shopIdList = newToken.shop_id_list;

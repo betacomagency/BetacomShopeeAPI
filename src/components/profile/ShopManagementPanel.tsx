@@ -539,10 +539,15 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     if (!selectedPartnerApp) return;
     setConnectingApp(true);
     try {
+      // Build callback URL (same as DEFAULT_CALLBACK in ShopeeAuthContext)
+      const callbackUrl = import.meta.env.VITE_SHOPEE_CALLBACK_URL
+        || `${window.location.origin}/auth/callback`;
+
       const { data, error } = await supabase.functions.invoke('apishopee-auth', {
         body: {
           action: 'get-app-auth-url',
           partner_app_id: selectedPartnerApp.id,
+          redirect_uri: callbackUrl,
         },
       });
 
@@ -554,8 +559,9 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       sessionStorage.setItem('shopee_app_category', selectedPartnerApp.app_category);
 
       // Redirect to Shopee OAuth
-      if (data?.url || data?.authUrl) {
-        window.location.href = data.url || data.authUrl;
+      const authUrl = data?.auth_url || data?.url || data?.authUrl;
+      if (authUrl) {
+        window.location.href = authUrl;
       } else {
         throw new Error('Không nhận được URL ủy quyền');
       }
