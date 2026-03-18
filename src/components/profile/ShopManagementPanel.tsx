@@ -109,37 +109,52 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
     setLoading(true);
     try {
-      // Query shops via app-specific tokens (per-app tab)
-      const { data: tokenData, error: tokenError } = await supabase
-        .from('apishopee_shop_app_tokens')
-        .select(`
-          id, shop_id, expired_at, access_token_expired_at,
-          expire_in, expire_time, auth_time, token_updated_at,
-          apishopee_shops!inner(id, shop_id, shop_name, shop_logo, region, partner_id, partner_name, created_at)
-        `)
-        .eq('partner_app_id', selectedAppId);
+      // Query app tokens and shop info separately (no FK between tables on shop_id)
+      const [tokensResult, shopsResult] = await Promise.all([
+        supabase
+          .from('apishopee_shop_app_tokens')
+          .select('id, shop_id, expired_at, access_token_expired_at, expire_in, expire_time, auth_time, token_updated_at')
+          .eq('partner_app_id', selectedAppId),
+        supabase
+          .from('apishopee_shops')
+          .select('id, shop_id, shop_name, shop_logo, region, partner_id, partner_name, created_at'),
+      ]);
 
-      if (tokenError) throw tokenError;
+      if (tokensResult.error) throw tokensResult.error;
 
-      if (!tokenData || tokenData.length === 0) {
+      const tokenData = tokensResult.data || [];
+      if (tokenData.length === 0) {
         setShops([]);
         setLoading(false);
         return;
       }
 
-      const shopsWithRole: ShopWithRole[] = tokenData.map(t => {
-        const shop = t.apishopee_shops as unknown as Shop;
-        return {
-          ...shop,
-          // Use per-app token expiry data
-          expired_at: t.expired_at,
-          access_token_expired_at: t.access_token_expired_at,
-          expire_in: t.expire_in,
-          expire_time: t.expire_time,
-          token_updated_at: t.token_updated_at,
-          role: 'admin', // All connected shops are admin-managed
-        };
-      });
+      // Build shop lookup map by Shopee numeric shop_id
+      const shopsData = shopsResult.data || [];
+      const shopMap = new Map(shopsData.map(s => [s.shop_id, s]));
+
+      // Merge token data with shop info
+      const shopsWithRole: ShopWithRole[] = tokenData
+        .map(t => {
+          const shop = shopMap.get(t.shop_id);
+          return {
+            id: shop?.id || '',
+            shop_id: t.shop_id,
+            shop_name: shop?.shop_name || null,
+            shop_logo: shop?.shop_logo || null,
+            region: shop?.region || null,
+            partner_id: shop?.partner_id || null,
+            partner_name: shop?.partner_name || null,
+            created_at: shop?.created_at || '',
+            // Per-app token data
+            expired_at: t.expired_at,
+            access_token_expired_at: t.access_token_expired_at,
+            expire_in: t.expire_in,
+            expire_time: t.expire_time,
+            token_updated_at: t.token_updated_at,
+            role: 'admin',
+          };
+        });
 
       setShops(shopsWithRole);
       setLoading(false);
