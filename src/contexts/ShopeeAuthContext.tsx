@@ -313,7 +313,9 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
         let newToken: AccessToken;
 
         if (partnerAppId) {
-          // App-specific flow: use get-app-token action with partner_app_id
+          // App-specific flow: ensure session is fresh before calling edge function
+          await supabase.auth.refreshSession();
+
           const { data, error: fnError } = await supabase.functions.invoke('apishopee-auth', {
             body: {
               action: 'get-app-token',
