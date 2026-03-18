@@ -105,13 +105,17 @@ export async function authenticateWithCode(
 ): Promise<AccessToken> {
   console.log('[Shopee] authenticateWithCode called:', { code: code.substring(0, 10) + '...', shopId, mainAccountId, partnerInfo });
 
+  // Determine action: app-specific flow uses get-app-token, legacy uses get-token
+  const partnerAppId = (partnerInfo as unknown as Record<string, unknown>)?.partner_app_id as string | undefined;
+  const action = partnerAppId ? 'get-app-token' : 'get-token';
+
   const { data, error } = await supabase.functions.invoke('apishopee-auth', {
     body: {
-      action: 'get-token',
+      action,
       code,
       shop_id: shopId,
       main_account_id: mainAccountId,
-      partner_info: partnerInfo,
+      ...(partnerAppId ? { partner_app_id: partnerAppId } : { partner_info: partnerInfo }),
     },
   });
 

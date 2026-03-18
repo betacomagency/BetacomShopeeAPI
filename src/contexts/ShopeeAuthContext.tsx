@@ -313,21 +313,11 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
         let newToken: AccessToken;
 
         if (partnerAppId) {
-          // App-specific flow: ensure session is fresh before calling edge function
-          await supabase.auth.refreshSession();
-
-          const { data, error: fnError } = await supabase.functions.invoke('apishopee-auth', {
-            body: {
-              action: 'get-app-token',
-              partner_app_id: partnerAppId,
-              code,
-              shop_id: shopId,
-              main_account_id: mainAccountId,
-            },
-          });
-          if (fnError) throw new Error(fnError.message || 'Failed to get app token');
-          if (data?.error) throw new Error(data.message || data.error);
-          newToken = { ...data, shop_id: data.shop_id || shopId } as AccessToken;
+          // App-specific flow: reuse authenticateWithCode pattern (proven to work from callback)
+          // Pass partner_app_id via partnerInfo so edge function uses get-app-token internally
+          newToken = await authenticateWithCode(code, shopId, partnerAccountId, {
+            partner_app_id: partnerAppId,
+          } as unknown as PartnerInfo, mainAccountId);
         } else {
           // Legacy flow: use get-token with partner_info
           newToken = await authenticateWithCode(code, shopId, partnerAccountId, partnerInfo, mainAccountId);
