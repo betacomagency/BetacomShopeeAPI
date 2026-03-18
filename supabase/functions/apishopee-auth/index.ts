@@ -486,6 +486,13 @@ serve(async (req) => {
         data: { user },
       } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
       userId = user?.id;
+
+      // Fallback: if JWT expired but still decodable, use extracted userId
+      // This handles the case where OAuth redirect causes JWT to expire
+      if (!userId && jwtUserId) {
+        console.warn('[AUTH] getUser() failed but JWT decode succeeded, using fallback userId:', jwtUserId);
+        userId = jwtUserId;
+      }
     }
 
     switch (action) {
