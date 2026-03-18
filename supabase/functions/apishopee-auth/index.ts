@@ -62,6 +62,25 @@ async function getPartnerCredentials(
     };
   }
 
+  // Nếu có partner_id từ request, lookup credentials từ DB (secure: không dùng key từ request)
+  if (partnerInfo?.partner_id) {
+    const { data: app, error } = await supabase
+      .from('apishopee_partner_apps')
+      .select('partner_id, partner_key, partner_name')
+      .eq('partner_id', partnerInfo.partner_id)
+      .eq('is_active', true)
+      .single();
+
+    if (app?.partner_key && !error) {
+      console.log('[PARTNER] Using partner from DB lookup:', app.partner_id);
+      return {
+        partnerId: app.partner_id,
+        partnerKey: app.partner_key,
+        partnerName: app.partner_name,
+      };
+    }
+  }
+
   // Nếu có shop_id, lấy partner từ shop
   if (shopId) {
     const { data, error } = await supabase
