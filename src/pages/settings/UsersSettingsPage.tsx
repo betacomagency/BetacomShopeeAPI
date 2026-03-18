@@ -39,7 +39,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { getFeaturePermissions } from '@/config/menu-config';
-import { AppRole, ROLE_DEFAULTS } from '@/hooks/usePermissions';
+import { AppRole } from '@/hooks/usePermissions';
 
 const ALL_FEATURES = getFeaturePermissions();
 
@@ -107,6 +107,7 @@ export default function UsersSettingsPage() {
 
   // Per-user feature override state
   const [userAppRole, setUserAppRole] = useState<AppRole | null>(null);
+  const [userRoleFeatures, setUserRoleFeatures] = useState<string[]>([]);
   const [featureAdds, setFeatureAdds] = useState<string[]>([]);
   const [featureRemoves, setFeatureRemoves] = useState<string[]>([]);
 
@@ -336,6 +337,7 @@ export default function UsersSettingsPage() {
     setShopSearchQuery('');
     setLoadingPermissionData(true);
     setUserAppRole(null);
+    setUserRoleFeatures([]);
     setFeatureAdds([]);
     setFeatureRemoves([]);
 
@@ -362,6 +364,7 @@ export default function UsersSettingsPage() {
 
       if (permRes.data?.role) {
         setUserAppRole(permRes.data.role as AppRole);
+        setUserRoleFeatures(permRes.data.features ?? []);
       }
 
       const overrides = user.permissions as Record<string, unknown> | null;
@@ -378,8 +381,8 @@ export default function UsersSettingsPage() {
 
   const roleDefaults = useMemo(() => {
     if (!userAppRole || userAppRole === 'super_admin') return [];
-    return ROLE_DEFAULTS[userAppRole] || [];
-  }, [userAppRole]);
+    return userRoleFeatures;
+  }, [userAppRole, userRoleFeatures]);
 
   const addableFeatures = useMemo(() => {
     return ALL_FEATURES.filter(f => !roleDefaults.includes(f.key));
