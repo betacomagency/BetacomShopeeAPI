@@ -555,6 +555,7 @@ export default function FlashSaleCopyPage() {
             user_id: user.id,
             timeslot_id: slot.timeslot_id,
             status: 'scheduled',
+            lead_time_minutes: leadTimeMinutes,
             scheduled_at: new Date((slot.start_time - leadTimeMinutes * 60) * 1000).toISOString(),
             slot_start_time: slot.start_time,
             slot_end_time: slot.end_time,
