@@ -546,8 +546,8 @@ serve(async (req) => {
 
         console.log('[AUTH] get-token request:', { code: code.substring(0, 10) + '...', shopId, hasPartnerInfo: !!partnerInfo });
 
-        // Lấy partner credentials (không dùng partner_key từ request - phải lấy từ DB/env)
-        const credentials = await getPartnerCredentials(supabase, partnerInfo, shopId, false);
+        // Allow request credentials for get-token (must match get-auth-url credentials for valid signature)
+        const credentials = await getPartnerCredentials(supabase, partnerInfo, shopId, true);
         console.log('[AUTH] Using partner credentials:', { partnerId: credentials.partnerId });
 
         const getTokenStart = Date.now();
