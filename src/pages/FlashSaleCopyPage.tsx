@@ -314,6 +314,8 @@ export default function FlashSaleCopyPage() {
       const criteriaList = data?.response?.criteria;
       if (Array.isArray(criteriaList) && criteriaList.length > 0) {
         const c = criteriaList[0] as CriteriaData;
+        // Override min_promo_stock to 1 (Shopee returns 5 but we allow lower stock)
+        c.min_promo_stock = DEFAULT_CRITERIA.min_promo_stock;
         setCriteria(c);
 
         // Auto-check all models against criteria and auto-exclude failed ones
