@@ -65,7 +65,7 @@ interface CriteriaData {
 const DEFAULT_CRITERIA: CriteriaData = {
   min_discount: 5,
   max_discount: 90,
-  min_promo_stock: 5,
+  min_promo_stock: 1,
   max_promo_stock: 10000,
   min_product_rating: 4,
   max_days_to_ship: 2,
