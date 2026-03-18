@@ -24,7 +24,7 @@ export const ROLE_DEFAULTS: Record<AppRole, string[]> = {
     'settings/profile',
   ],
   member: [
-    'home', 'shop-performance', 'settings/profile',
+    'home', 'flash-sale', 'shop-performance', 'settings/profile',
   ],
 };
 

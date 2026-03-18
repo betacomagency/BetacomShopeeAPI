@@ -46,7 +46,11 @@ interface ScheduledJob {
 
 // Retry configuration
 const MAX_RETRY_COUNT = 3;
-const RETRY_DELAY_MINUTES = 5;
+/** Exponential backoff: 1min → 3min → 5min based on retry count */
+function getRetryDelayMinutes(retryCount: number): number {
+  const delays = [1, 3, 5];
+  return delays[Math.min(retryCount, delays.length - 1)];
+}
 const ALERT_WEBHOOK_URL = Deno.env.get('FLASH_SALE_ALERT_WEBHOOK') || '';
 
 /**
@@ -714,7 +718,8 @@ async function processJob(
       const canRetry = isTransientError(errorMsg) && currentRetryCount < MAX_RETRY_COUNT;
 
       if (canRetry) {
-        const retryAt = new Date(Date.now() + RETRY_DELAY_MINUTES * 60 * 1000).toISOString();
+        const retryDelayMin = getRetryDelayMinutes(currentRetryCount);
+        const retryAt = new Date(Date.now() + retryDelayMin * 60 * 1000).toISOString();
         console.log(`[SCHEDULER] Job ${job.id} (create FS) scheduled for retry #${currentRetryCount + 1} at ${retryAt}`);
 
         await supabase
@@ -854,7 +859,8 @@ async function processJob(
 
     if (canRetry) {
       // Schedule for retry
-      const retryAt = new Date(Date.now() + RETRY_DELAY_MINUTES * 60 * 1000).toISOString();
+      const retryDelayMin = getRetryDelayMinutes(currentRetryCount);
+      const retryAt = new Date(Date.now() + retryDelayMin * 60 * 1000).toISOString();
       console.log(`[SCHEDULER] Job ${job.id} scheduled for retry #${currentRetryCount + 1} at ${retryAt}`);
 
       await supabase
@@ -1011,6 +1017,17 @@ serve(async (req) => {
 
     console.log(`[SCHEDULER] Found ${pendingJobs.length} pending jobs`);
 
+    // Optimistic lock: đánh dấu processing ngay để tránh duplicate nếu scheduler chạy chồng
+    const jobIds = pendingJobs.map((j: { id: string }) => j.id);
+    const { error: lockError } = await supabase
+      .from('apishopee_flash_sale_auto_history')
+      .update({ status: 'processing', updated_at: new Date().toISOString() })
+      .in('id', jobIds);
+
+    if (lockError) {
+      console.error(`[SCHEDULER] Failed to lock jobs:`, lockError.message);
+    }
+
     // Nhóm jobs theo shop_id để xử lý song song giữa các shop
     const jobsByShop = new Map<number, typeof pendingJobs>();
     for (const job of pendingJobs) {
@@ -1023,8 +1040,8 @@ serve(async (req) => {
 
     console.log(`[SCHEDULER] ${pendingJobs.length} jobs across ${jobsByShop.size} shops`);
 
-    // Xử lý các shop song song (tối đa 10 shop cùng lúc)
-    const MAX_CONCURRENT_SHOPS = 10;
+    // Xử lý các shop song song (giới hạn 5 shop/batch để tránh Shopee rate limit khi dùng chung partner_id)
+    const MAX_CONCURRENT_SHOPS = 5;
     const shopEntries = Array.from(jobsByShop.entries());
     const results: Array<{ jobId: string; shopId: number; timeslotId: number; success: boolean; message: string; flashSaleId?: number }> = [];
 
@@ -1056,6 +1073,12 @@ serve(async (req) => {
         if (result.status === 'fulfilled') {
           results.push(...result.value);
         }
+      }
+
+      // Delay giữa các batch để tránh Shopee rate limit (tất cả shop chung 1 partner_id)
+      if (i + MAX_CONCURRENT_SHOPS < shopEntries.length) {
+        console.log(`[SCHEDULER] Batch delay: waiting 2s before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
