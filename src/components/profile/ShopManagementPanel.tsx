@@ -14,7 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { SimpleDataTable, CellShopInfo, CellBadge, CellText, CellActions } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -32,7 +31,7 @@ import {
 } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { usePermissionsContext } from '@/contexts/PermissionsContext';
-import { ShopAppConnectionStatus, usePartnerApps, type PartnerApp } from '@/components/profile/ShopAppConnectionStatus';
+import { usePartnerApps, type PartnerApp } from '@/components/profile/ShopAppConnectionStatus';
 
 // Số shop mỗi trang
 const SHOPS_PER_PAGE = 30;
@@ -64,7 +63,7 @@ interface ShopManagementPanelProps {
 
 export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelProps) {
   const { toast } = useToast();
-  const { user, login, isLoading: isAuthLoading } = useShopeeAuth();
+  const { user, isLoading: isAuthLoading } = useShopeeAuth();
   const { user: authUser, isLoading: isAuthContextLoading } = useAuth();
   const { isAdmin: isSystemAdmin } = usePermissionsContext();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -82,20 +81,21 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const [shopToDelete, setShopToDelete] = useState<ShopWithRole | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Connect new shop dialog
-  const [connectDialogOpen, setConnectDialogOpen] = useState(false);
-  const [partnerIdInput, setPartnerIdInput] = useState('');
-  const [partnerKeyInput, setPartnerKeyInput] = useState('');
-  const [partnerNameInput, setPartnerNameInput] = useState('');
-  const [connecting, setConnecting] = useState(false);
+  // (connect dialog removed — now uses active app tab directly)
 
-  // Connect via registered partner app (multi-app flow)
+  // Partner apps (ERP, Ads tabs)
   const { partnerApps } = usePartnerApps();
-  const [connectAppDialogOpen, setConnectAppDialogOpen] = useState(false);
-  const [selectedPartnerApp, setSelectedPartnerApp] = useState<PartnerApp | null>(null);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [connectingApp, setConnectingApp] = useState(false);
 
 
+
+  // Auto-select first partner app tab
+  useEffect(() => {
+    if (partnerApps.length > 0 && !selectedAppId) {
+      setSelectedAppId(partnerApps[0].id);
+    }
+  }, [partnerApps, selectedAppId]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -104,48 +104,42 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const [shopSearchQuery, setShopSearchQuery] = useState('');
   const [shopFilterStatus, setShopFilterStatus] = useState<'all' | 'token_ok' | 'token_expired' | 'auth_expired'>('all');
   const loadShops = useCallback(async (userId?: string) => {
-    // Sử dụng userId được truyền vào, hoặc fallback về user?.id
     const effectiveUserId = userId || user?.id;
-    
-    if (!effectiveUserId) {
-      return;
-    }
+    if (!effectiveUserId || !selectedAppId) return;
+
     setLoading(true);
     try {
-      // Query shop_members với role info và join luôn shops data
-      const { data: memberData, error: memberError } = await supabase
-        .from('apishopee_shop_members')
+      // Query shops via app-specific tokens (per-app tab)
+      const { data: tokenData, error: tokenError } = await supabase
+        .from('apishopee_shop_app_tokens')
         .select(`
-          shop_id, 
-          role_id, 
-          apishopee_roles(name),
-          apishopee_shops(id, shop_id, shop_name, shop_logo, region, partner_id, partner_name, created_at, token_updated_at, expired_at, access_token_expired_at, expire_in, expire_time)
+          id, shop_id, expired_at, access_token_expired_at,
+          expire_in, expire_time, auth_time, token_updated_at,
+          apishopee_shops!inner(id, shop_id, shop_name, shop_logo, region, partner_id, partner_name, created_at)
         `)
-        .eq('profile_id', effectiveUserId)
-        .eq('is_active', true);
+        .eq('partner_app_id', selectedAppId);
 
-      if (memberError) {
-        throw memberError;
-      }
+      if (tokenError) throw tokenError;
 
-      if (!memberData || memberData.length === 0) {
+      if (!tokenData || tokenData.length === 0) {
         setShops([]);
         setLoading(false);
         return;
       }
 
-      // Map data từ join query
-      const shopsWithRole: ShopWithRole[] = memberData
-        .filter(m => m.apishopee_shops) // Chỉ lấy những member có shop data
-        .map(m => {
-          // Supabase returns single object for .single() relations
-          const shop = m.apishopee_shops as unknown as Shop;
-          const roles = m.apishopee_roles as unknown as { name?: string } | null;
-          return {
-            ...shop,
-            role: roles?.name || 'member',
-          };
-        });
+      const shopsWithRole: ShopWithRole[] = tokenData.map(t => {
+        const shop = t.apishopee_shops as unknown as Shop;
+        return {
+          ...shop,
+          // Use per-app token expiry data
+          expired_at: t.expired_at,
+          access_token_expired_at: t.access_token_expired_at,
+          expire_in: t.expire_in,
+          expire_time: t.expire_time,
+          token_updated_at: t.token_updated_at,
+          role: 'admin', // All connected shops are admin-managed
+        };
+      });
 
       setShops(shopsWithRole);
       setLoading(false);
@@ -157,7 +151,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       });
       setLoading(false);
     }
-  }, [user?.id, toast]);
+  }, [user?.id, selectedAppId, toast]);
 
   // Check for refresh param from OAuth callback
   useEffect(() => {
@@ -178,11 +172,18 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     }
   }, [searchParams, setSearchParams, user?.id, authUser?.id, isAnyAuthLoading, loadShops]);
 
-  // Reset hasLoadedRef when component mounts (fixes tab switching issue)
+  // Reset and reload when app tab changes
   useEffect(() => {
     hasLoadedRef.current = false;
     fetchedShopInfoRef.current = new Set();
-  }, []);
+    if (selectedAppId) {
+      const userId = authUser?.id || user?.id;
+      if (userId && !isAnyAuthLoading) {
+        loadShops(userId);
+        hasLoadedRef.current = true;
+      }
+    }
+  }, [selectedAppId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Sử dụng authUser từ useAuth (AuthContext) thay vì user từ useShopeeAuth
@@ -491,62 +492,20 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     }
   };
 
-  const handleConnectNewShop = async () => {
-    // Reset state và mở dialog
-    setPartnerIdInput('');
-    setPartnerKeyInput('');
-    setPartnerNameInput('');
-    setConnectDialogOpen(true);
-  };
+  // Connect account for the currently active app tab
+  const handleConnectForActiveApp = async () => {
+    const activeApp = partnerApps.find(a => a.id === selectedAppId);
+    if (!activeApp) return;
 
-  const handleSubmitConnect = async () => {
-    if (!partnerIdInput || !partnerKeyInput) {
-      toast({
-        title: 'Lỗi',
-        description: 'Vui lòng nhập Partner ID và Partner Key',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setConnecting(true);
-    try {
-      const partnerInfo = {
-        partner_id: Number(partnerIdInput),
-        partner_key: partnerKeyInput,
-        partner_name: partnerNameInput || undefined,
-      };
-
-      await login(undefined, undefined, partnerInfo);
-      // Dialog sẽ tự đóng khi redirect
-    } catch (err) {
-      toast({
-        title: 'Lỗi',
-        description: (err as Error).message,
-        variant: 'destructive',
-      });
-      setConnecting(false);
-    }
-  };
-
-  // Connect shop via registered partner app (multi-app flow)
-  const handleConnectApp = async (partnerApp: PartnerApp) => {
-    setSelectedPartnerApp(partnerApp);
-    setConnectAppDialogOpen(true);
-  };
-
-  const handleSubmitConnectApp = async () => {
-    if (!selectedPartnerApp) return;
     setConnectingApp(true);
     try {
-      // Build callback URL (same as DEFAULT_CALLBACK in ShopeeAuthContext)
       const callbackUrl = import.meta.env.VITE_SHOPEE_CALLBACK_URL
         || `${window.location.origin}/auth/callback`;
 
       const { data, error } = await supabase.functions.invoke('apishopee-auth', {
         body: {
           action: 'get-app-auth-url',
-          partner_app_id: selectedPartnerApp.id,
+          partner_app_id: activeApp.id,
           redirect_uri: callbackUrl,
         },
       });
@@ -554,11 +513,9 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Store partner_app_id in sessionStorage for callback handling
-      sessionStorage.setItem('shopee_partner_app_id', selectedPartnerApp.id);
-      sessionStorage.setItem('shopee_app_category', selectedPartnerApp.app_category);
+      sessionStorage.setItem('shopee_partner_app_id', activeApp.id);
+      sessionStorage.setItem('shopee_app_category', activeApp.app_category);
 
-      // Redirect to Shopee OAuth
       const authUrl = data?.auth_url || data?.url || data?.authUrl;
       if (authUrl) {
         window.location.href = authUrl;
@@ -763,18 +720,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         </CellBadge>
       ),
     },
-    // Per-app connection status (multi-partner)
-    ...(partnerApps.length > 0 ? [{
-      key: 'app_status',
-      header: 'Apps',
-      render: (shop: ShopWithRole) => (
-        <ShopAppConnectionStatus
-          shopId={shop.shop_id}
-          compact
-          onConnectApp={!readOnly && isSystemAdmin ? handleConnectApp : undefined}
-        />
-      ),
-    }] : []),
     {
       key: 'token_updated_at',
       header: 'Ủy quyền',
@@ -892,6 +837,22 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
     <div className="h-full flex flex-col">
       <Card className="flex flex-col flex-1 min-h-0">
         <CardHeader className="pb-4 flex-shrink-0 border-b bg-card sticky top-0 z-10">
+          {/* App tabs (ERP / Ads) */}
+          {partnerApps.length > 0 && (
+            <div className="flex gap-1 mb-3">
+              {partnerApps.map(app => (
+                <Button
+                  key={app.id}
+                  variant={selectedAppId === app.id ? 'default' : 'outline'}
+                  size="sm"
+                  className={`cursor-pointer ${selectedAppId === app.id ? 'bg-brand hover:bg-brand/90' : ''}`}
+                  onClick={() => setSelectedAppId(app.id)}
+                >
+                  {app.app_category === 'ads' ? 'Ads' : 'ERP'}
+                </Button>
+              ))}
+            </div>
+          )}
           <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2 w-full md:w-auto">
               <div className="relative flex-1 md:w-64 md:flex-none">
@@ -941,11 +902,16 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
                 <Button
                   size="sm"
                   className="bg-brand hover:bg-brand/90 h-8 md:h-9"
-                  onClick={handleConnectNewShop}
+                  onClick={handleConnectForActiveApp}
+                  disabled={connectingApp || !selectedAppId}
                 >
-                  <svg className="w-4 h-4 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
+                  {connectingApp ? (
+                    <Spinner size="sm" className="mr-1.5" />
+                  ) : (
+                    <svg className="w-4 h-4 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
                   <span className="hidden sm:inline">Kết nối tài khoản</span>
                 </Button>
               </div>
@@ -1043,116 +1009,6 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
             </Button>
             <Button variant="destructive" onClick={handleDeleteShop} disabled={deleting}>
               {deleting ? 'Đang xóa...' : 'Xóa Shop'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Connect New Shop Dialog */}
-      <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Kết nối tài khoản Shopee</DialogTitle>
-            <DialogDescription>
-              Nhập thông tin Partner từ Shopee Open Platform. Tất cả shop trong tài khoản sẽ được tự động thêm vào hệ thống.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="partner_id">Partner ID <span className="text-destructive">*</span></Label>
-              <Input
-                id="partner_id"
-                type="number"
-                placeholder="Nhập Partner ID"
-                value={partnerIdInput}
-                onChange={(e) => setPartnerIdInput(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="partner_key">Partner Key <span className="text-destructive">*</span></Label>
-              <Input
-                id="partner_key"
-                type="password"
-                placeholder="Nhập Partner Key"
-                value={partnerKeyInput}
-                onChange={(e) => setPartnerKeyInput(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="partner_name">Tên Partner (tùy chọn)</Label>
-              <Input
-                id="partner_name"
-                placeholder="VD: My App Partner"
-                value={partnerNameInput}
-                onChange={(e) => setPartnerNameInput(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConnectDialogOpen(false)}>
-              Hủy
-            </Button>
-            <Button
-              className="bg-brand hover:bg-brand/90"
-              onClick={handleSubmitConnect}
-              disabled={connecting || !partnerIdInput || !partnerKeyInput}
-            >
-              {connecting ? (
-                <>
-                  <Spinner size="sm" className="mr-2" />
-                  Đang kết nối...
-                </>
-              ) : (
-                'Kết nối với Shopee'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Connect App Dialog (multi-app flow) */}
-      <Dialog open={connectAppDialogOpen} onOpenChange={setConnectAppDialogOpen}>
-        <DialogContent className="sm:max-w-[380px]">
-          <DialogHeader>
-            <DialogTitle>Kết nối App: {selectedPartnerApp?.partner_name}</DialogTitle>
-            <DialogDescription>
-              Ủy quyền shop với app {selectedPartnerApp?.app_category === 'ads' ? 'Ads' : 'ERP'} để sử dụng các tính năng tương ứng.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">App</span>
-                <span className="font-medium">{selectedPartnerApp?.partner_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Loại</span>
-                <span className="font-medium">{selectedPartnerApp?.app_category === 'ads' ? 'Ads Service' : 'ERP System'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Partner ID</span>
-                <span className="font-mono text-xs">{selectedPartnerApp?.partner_id}</span>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConnectAppDialogOpen(false)}>
-              Hủy
-            </Button>
-            <Button
-              className="bg-brand hover:bg-brand/90 cursor-pointer"
-              onClick={handleSubmitConnectApp}
-              disabled={connectingApp}
-            >
-              {connectingApp ? (
-                <>
-                  <Spinner size="sm" className="mr-2" />
-                  Đang kết nối...
-                </>
-              ) : (
-                'Ủy quyền với Shopee'
-              )}
             </Button>
           </DialogFooter>
         </DialogContent>
