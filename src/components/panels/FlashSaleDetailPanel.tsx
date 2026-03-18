@@ -175,87 +175,96 @@ export function FlashSaleDetailPanel({
 
   return (
     <div className="flex flex-col" style={{ maxHeight: "75vh" }}>
-      {/* Scrollable table area — scrollbar-gutter: stable prevents overlap with dialog X button */}
+      {/* Scrollable content area */}
       <div
         className="flex-1 overflow-y-auto min-h-0"
         style={{ scrollbarGutter: "stable" }}>
-        <table className="w-full table-fixed">
-          <colgroup>
-            <col style={{ width: "22%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "16%" }} />
-          </colgroup>
-          <thead className="bg-muted border-b sticky top-0 z-10">
-            <tr>
-              <th className="h-11 px-3 text-left align-middle font-medium text-muted-foreground text-xs">
-                Phân loại hàng
-              </th>
-              <th className="h-11 px-3 text-right align-middle font-medium text-muted-foreground text-xs">
-                Giá gốc
-              </th>
-              <th className="h-11 px-3 text-right align-middle font-medium text-muted-foreground text-xs">
-                Giá đã giảm
-              </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs">
-                KM
-              </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs leading-tight">
-                SL SP
-              </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs">
-                Kho hàng
-              </th>
-              <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs leading-tight">
-                Giới hạn
-                <br />
-                đặt hàng
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={COL_COUNT} className="h-48">
-                  <div className="flex items-center justify-center">
-                    <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
-                  </div>
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={COL_COUNT}
-                  className="h-32 text-center text-muted-foreground">
-                  Chưa có sản phẩm nào trong Flash Sale này
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <ItemRow
+
+        {/* Loading / Empty states */}
+        {loading ? (
+          <div className="h-48 flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="h-32 flex items-center justify-center text-muted-foreground">
+            Chưa có sản phẩm nào trong Flash Sale này
+          </div>
+        ) : (
+          <>
+            {/* Mobile Card Layout */}
+            <div className="md:hidden divide-y">
+              {items.map((item) => (
+                <MobileItemCard
                   key={item.item_id}
                   item={item}
                   expanded={expandedItems.has(item.item_id)}
                   onToggleExpand={() => toggleExpand(item.item_id)}
                 />
-              ))
-            )}
-          </tbody>
-        </table>
+              ))}
+            </div>
+
+            {/* Desktop Table Layout */}
+            <table className="hidden md:table w-full table-fixed">
+              <colgroup>
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "16%" }} />
+              </colgroup>
+              <thead className="bg-muted border-b sticky top-0 z-10">
+                <tr>
+                  <th className="h-11 px-3 text-left align-middle font-medium text-muted-foreground text-xs">
+                    Phân loại hàng
+                  </th>
+                  <th className="h-11 px-3 text-right align-middle font-medium text-muted-foreground text-xs">
+                    Giá gốc
+                  </th>
+                  <th className="h-11 px-3 text-right align-middle font-medium text-muted-foreground text-xs">
+                    Giá đã giảm
+                  </th>
+                  <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs">
+                    KM
+                  </th>
+                  <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs leading-tight">
+                    SL SP
+                  </th>
+                  <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs">
+                    Kho hàng
+                  </th>
+                  <th className="h-11 px-3 text-center align-middle font-medium text-muted-foreground text-xs leading-tight">
+                    Giới hạn
+                    <br />
+                    đặt hàng
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <ItemRow
+                    key={item.item_id}
+                    item={item}
+                    expanded={expandedItems.has(item.item_id)}
+                    onToggleExpand={() => toggleExpand(item.item_id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </div>
 
       {/* Sticky footer: pagination */}
-      <div className="flex-shrink-0 border-t px-4 py-3 flex items-center justify-between gap-4 bg-card">
+      <div className="flex-shrink-0 border-t px-3 py-2 md:px-4 md:py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-card">
         <span className="text-xs text-muted-foreground shrink-0">
           {totalCount > 0
             ? `${totalCount} sản phẩm · Trang ${page}/${totalPages}`
             : ""}
         </span>
         {totalPages > 1 && (
-          <Pagination className="justify-end">
+          <Pagination className="justify-center sm:justify-end">
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
@@ -299,7 +308,147 @@ export function FlashSaleDetailPanel({
   );
 }
 
-// Item Row Component
+// Mobile Card Component - replaces table on small screens
+interface MobileItemCardProps {
+  item: FlashSaleItemData;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}
+
+function MobileModelRow({ model, purchaseLimit }: {
+  model: NonNullable<FlashSaleItemData["models"]>[number];
+  purchaseLimit: number;
+}) {
+  const promoPrice = model.input_promotion_price || model.promotion_price_with_tax;
+  const discount = calcDiscount(model.original_price, promoPrice);
+  const limit = model.purchase_limit ?? purchaseLimit;
+
+  return (
+    <div className="py-2 px-3 border-t border-dashed border-border/50">
+      <div className="text-xs text-muted-foreground mb-1.5 truncate">
+        {model.model_name || `Model #${model.model_id}`}
+      </div>
+      <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-xs">
+        <div>
+          <span className="text-muted-foreground">Giá gốc: </span>
+          <span className="line-through text-muted-foreground/70">{formatPrice(model.original_price)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">KM: </span>
+          <span className="font-medium text-foreground">{formatPrice(promoPrice)}</span>
+        </div>
+        <div>
+          {discount > 0 && (
+            <span className="px-1 py-0.5 text-[10px] font-medium text-brand border border-brand/30 rounded">
+              -{discount}%
+            </span>
+          )}
+        </div>
+        <div>
+          <span className="text-muted-foreground">SL: </span>
+          <span className="text-brand font-medium">{model.campaign_stock ?? 0}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Kho: </span>
+          <span>{model.stock ?? 0}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Limit: </span>
+          <span>{limit > 0 ? limit : "-"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileItemCard({ item, expanded, onToggleExpand }: MobileItemCardProps) {
+  const hasModels = item.models && item.models.length > 0;
+  const modelsToShow = expanded ? item.models : item.models?.slice(0, 3);
+  const itemImage = getItemImage(item);
+
+  return (
+    <div className="bg-card">
+      {/* Item header with image */}
+      <div className="flex items-center gap-3 p-3">
+        <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+          {itemImage ? (
+            <ImageWithZoom
+              src={itemImage}
+              alt={item.item_name || `Item #${item.item_id}`}
+              className="w-full h-full object-cover"
+              zoomSize={240}
+            />
+          ) : (
+            <div className="w-8 h-8 bg-muted rounded" />
+          )}
+        </div>
+        <span className="text-sm font-medium text-foreground line-clamp-2 flex-1">
+          {item.item_name || `Item #${item.item_id}`}
+        </span>
+      </div>
+
+      {/* Models or single item data */}
+      {hasModels ? (
+        <div>
+          {modelsToShow?.map((model) => (
+            <MobileModelRow
+              key={model.model_id}
+              model={model}
+              purchaseLimit={item.purchase_limit}
+            />
+          ))}
+          {item.models && item.models.length > 3 && (
+            <button
+              onClick={onToggleExpand}
+              className="w-full py-2 text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 cursor-pointer border-t border-dashed border-border/50">
+              {expanded ? (
+                <>Thu gọn <ChevronUp className="h-3.5 w-3.5" /></>
+              ) : (
+                <>Xem tất cả {item.models.length} phân loại <ChevronDown className="h-3.5 w-3.5" /></>
+              )}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="px-3 pb-3">
+          <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-xs">
+            <div>
+              <span className="text-muted-foreground">Giá gốc: </span>
+              <span className="line-through text-muted-foreground/70">{formatPrice(item.original_price)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">KM: </span>
+              <span className="font-medium text-foreground">
+                {formatPrice(item.input_promotion_price || item.promotion_price_with_tax)}
+              </span>
+            </div>
+            <div>
+              {calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax) > 0 && (
+                <span className="px-1 py-0.5 text-[10px] font-medium text-brand border border-brand/30 rounded">
+                  -{calcDiscount(item.original_price, item.input_promotion_price || item.promotion_price_with_tax)}%
+                </span>
+              )}
+            </div>
+            <div>
+              <span className="text-muted-foreground">SL: </span>
+              <span className="text-brand font-medium">{item.campaign_stock ?? 0}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Kho: </span>
+              <span>{item.stock ?? 0}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Limit: </span>
+              <span>{item.purchase_limit > 0 ? item.purchase_limit : "-"}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Item Row Component (Desktop table)
 interface ItemRowProps {
   item: FlashSaleItemData;
   expanded: boolean;

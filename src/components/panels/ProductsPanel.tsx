@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Search, Package, ChevronDown, ChevronUp, Link2, Database, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -531,7 +532,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 {/* Product Info */}
                 <div className="col-span-3 flex gap-3">
                   <div className="relative flex-shrink-0">
-                    <input type="checkbox" className="absolute -left-1 top-0 w-4 h-4" />
+                    <Checkbox className="absolute -left-0.5 top-0" />
                     {product.image_url_list?.[0] ? (
                       <div className="ml-5">
                         <ImageWithZoom
@@ -676,7 +677,7 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 {/* Product Header */}
                 <div className="flex gap-3 mb-3">
                   <div className="relative flex-shrink-0">
-                    <input type="checkbox" className="absolute -left-1 top-0 w-4 h-4" />
+                    <Checkbox className="absolute -left-0.5 top-0" />
                     {product.image_url_list?.[0] ? (
                       <div className="ml-5">
                         <ImageWithZoom

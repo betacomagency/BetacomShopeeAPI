@@ -5,7 +5,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Trash2, Eye, Clock, Calendar as CalendarIcon, Copy, ChevronDown } from "lucide-react";
+import { RefreshCw, Trash2, Eye, Copy, ChevronDown, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -74,6 +74,12 @@ import { CreateFlashSalePanel } from "./CreateFlashSalePanel";
 import { FlashSaleDetailPanel } from "./FlashSaleDetailPanel";
 import { AutoSetupDialog } from "@/components/dialogs/AutoSetupDialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 interface FlashSalePanelProps {
@@ -446,15 +452,15 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
   return (
     <Card className="border-0 shadow-sm flex flex-col h-[calc(100vh-73px)]">
       <CardContent className="p-0 flex flex-col h-full overflow-hidden">
-        {/* Sticky Header */}
-        <div className="flex-shrink-0 border-b px-4 py-3 flex items-center justify-end gap-2">
+        {/* Sticky Header - responsive: wrap on mobile */}
+        <div className="flex-shrink-0 border-b px-3 py-2 md:px-4 md:py-3 flex flex-wrap items-center justify-end gap-2">
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 size="sm"
                 data-empty={!dateFilter}
-                className="w-[160px] justify-between text-left font-normal data-[empty=true]:text-muted-foreground"
+                className="flex-1 min-w-[130px] md:flex-none md:w-[160px] justify-between text-left font-normal data-[empty=true]:text-muted-foreground"
               >
                 {dateFilter ? format(dateFilter, "dd/MM/yyyy", { locale: vi }) : "Lọc theo ngày"}
                 <ChevronDown className="h-4 w-4 opacity-50" />
@@ -485,7 +491,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
           <Select
             value={activeTab}
             onValueChange={(v) => setActiveTab(v as FilterType)}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="flex-1 min-w-[130px] md:flex-none md:w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -516,7 +522,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
               await refetch();
             }}
             disabled={isSyncing || loading}
-            className="bg-brand/10 border-brand/20 hover:bg-brand/15 text-brand">
+            className="w-full md:w-auto bg-brand/10 border-brand/20 hover:bg-brand/15 text-brand">
             <RefreshCw
               className={cn(
                 "h-4 w-4 mr-2",
@@ -549,7 +555,6 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                   const dateStr = startDate.toLocaleDateString("vi-VN", {
                     day: "2-digit",
                     month: "2-digit",
-                    year: "numeric",
                   });
                   const startTimeStr = startDate.toLocaleTimeString("vi-VN", {
                     hour: "2-digit",
@@ -560,49 +565,101 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                     minute: "2-digit",
                   });
 
+                  /* Left border color by status */
+                  const borderColor =
+                    sale.type === 2
+                      ? "border-l-success"
+                      : sale.type === 1
+                        ? "border-l-info"
+                        : "border-l-muted-foreground/30";
+
                   return (
-                    <div key={sale.flash_sale_id} className="p-4 bg-card">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                            {dateStr}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                            {startTimeStr} - {endTimeStr}
-                          </span>
+                    <div
+                      key={sale.flash_sale_id}
+                      className={cn(
+                        "px-3 py-2.5 bg-card border-l-[3px] transition-colors",
+                        borderColor,
+                      )}
+                      onClick={() => handleViewDetail(sale)}>
+                      {/* Row 1: Time slot + actions */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-foreground min-w-0">
+                          <span>{dateStr}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span>{startTimeStr} - {endTimeStr}</span>
                         </div>
-                        <Switch
-                          checked={Number(sale.status) === 1}
-                          onCheckedChange={() => handleToggleStatus(sale)}
-                          disabled={
-                            !canToggle(sale) ||
-                            togglingId === sale.flash_sale_id
-                          }
-                          className="data-[state=checked]:bg-green-500"
-                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Switch
+                            checked={Number(sale.status) === 1}
+                            onCheckedChange={(e) => {
+                              e; // prevent card click
+                              handleToggleStatus(sale);
+                            }}
+                            disabled={
+                              !canToggle(sale) ||
+                              togglingId === sale.flash_sale_id
+                            }
+                            className="data-[state=checked]:bg-green-500"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground cursor-pointer"
+                                onClick={(e) => e.stopPropagation()}>
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewDetail(sale);
+                                }}>
+                                <Eye className="h-4 w-4 mr-2" /> Chi tiết
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="cursor-pointer text-success"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopy(sale);
+                                }}>
+                                <Copy className="h-4 w-4 mr-2" /> Sao chép
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="cursor-pointer text-destructive"
+                                disabled={!canDelete(sale)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(sale);
+                                }}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Xóa
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
 
-                      <div className="mt-2 flex items-center gap-2">
+                      {/* Row 2: Status + SP count */}
+                      <div className="mt-1 flex items-center justify-between">
                         <span
                           className={cn(
-                            "px-2 py-0.5 rounded-full text-xs font-medium",
+                            "text-xs font-medium",
                             sale.type === 2
-                              ? "bg-success/10 text-success"
+                              ? "text-success"
                               : sale.type === 1
-                                ? "bg-info/10 text-info"
-                                : "bg-muted text-muted-foreground",
+                                ? "text-info"
+                                : "text-muted-foreground",
                           )}>
                           {TYPE_LABELS[sale.type]}
                         </span>
-                        <span className="text-xs text-muted-foreground font-mono">
-                          #{sale.flash_sale_id}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-auto">
+                        <span className="text-xs">
                           <span
                             className={cn(
-                              "font-medium",
+                              "font-semibold",
                               sale.enabled_item_count > 0
                                 ? "text-brand"
                                 : "text-muted-foreground",
@@ -614,37 +671,12 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                           </span>
                         </span>
                       </div>
-
-                      <div className="mt-3 flex items-center justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => handleViewDetail(sale)}>
-                          <Eye className="w-3 h-3 mr-1" /> Chi tiết
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs text-success border-success/20"
-                          onClick={() => handleCopy(sale)}>
-                          <Copy className="w-3 h-3 mr-1" /> Sao chép
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs text-destructive"
-                          onClick={() => handleDeleteClick(sale)}
-                          disabled={!canDelete(sale)}>
-                          <Trash2 className="w-3 h-3 mr-1" /> Xóa
-                        </Button>
-                      </div>
                     </div>
                   );
                 })}
 
                 {mobileTotalPages > 1 && (
-                  <div className="px-4 py-3">
+                  <div className="px-3 py-3">
                     <Pagination>
                       <PaginationContent>
                         <PaginationItem>
@@ -927,15 +959,15 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
 
           {/* Last sync info */}
           {(lastSyncedAt || dataUpdatedAt) && (
-            <div className="px-4 py-2 border-t bg-muted/50 text-xs text-muted-foreground flex items-center justify-between">
-              <span>
+            <div className="px-3 py-2 md:px-4 border-t bg-muted/50 text-xs text-muted-foreground flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between">
+              <span className="truncate">
                 {lastSyncedAt &&
                   `Đồng bộ Shopee: ${formatDateTime(new Date(lastSyncedAt).getTime() / 1000)}`}
                 {lastSyncedAt && dataUpdatedAt && " • "}
                 {dataUpdatedAt &&
                   `Cập nhật UI: ${formatDateTime(dataUpdatedAt / 1000)}`}
               </span>
-              <span className="text-muted-foreground/50">
+              <span className="text-muted-foreground/50 shrink-0">
                 Tự động làm mới mỗi 30 phút
               </span>
             </div>
@@ -984,7 +1016,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
       <Dialog
         open={!!detailFlashSale}
         onOpenChange={(open) => !open && setDetailFlashSale(null)}>
-        <DialogContent className="sm:max-w-[900px] p-0 gap-0 overflow-hidden">
+        <DialogContent className="max-w-[100vw] sm:max-w-[900px] h-[90vh] sm:h-auto p-0 gap-0 overflow-hidden">
           {detailFlashSale && (
             <FlashSaleDetailPanel
               shopId={shopId}

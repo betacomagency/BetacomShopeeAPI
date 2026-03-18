@@ -900,57 +900,54 @@ export default function FlashSaleAutoSetupPage() {
           <div className="flex-shrink-0">
             {/* Header with Filter and Actions */}
             <div className="border-b">
-              <div className="flex items-center justify-between px-4 py-3">
-                {/* Filters - left side */}
-                <div className="flex items-center gap-2">
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[160px] h-8 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        { value: 'all', label: 'Tất cả', count: stats.total },
-                        { value: 'success', label: 'Thành công', count: stats.success },
-                        { value: 'error', label: 'Lỗi', count: stats.error },
-                        { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
-                      ].map((tab) => (
-                        <SelectItem key={tab.value} value={tab.value}>
-                          {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        data-empty={!dateFilter}
-                        className="w-[180px] justify-between text-left font-normal data-[empty=true]:text-muted-foreground"
-                      >
-                        {dateFilter ? format(dateFilter, 'dd/MM/yyyy', { locale: vi }) : 'Lọc theo ngày'}
-                        <ChevronDown className="h-4 w-4 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={dateFilter}
-                        onSelect={setDateFilter}
-                        defaultMonth={dateFilter}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  {dateFilter && (
-                    <button
-                      onClick={() => setDateFilter(undefined)}
-                      className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2 md:px-4 md:py-3">
+                {/* Filters */}
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="flex-1 min-w-[120px] md:flex-none md:w-[160px] h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: 'all', label: 'Tất cả', count: stats.total },
+                      { value: 'success', label: 'Thành công', count: stats.success },
+                      { value: 'error', label: 'Lỗi', count: stats.error },
+                      { value: 'scheduled', label: 'Đã lên lịch', count: stats.pending },
+                    ].map((tab) => (
+                      <SelectItem key={tab.value} value={tab.value}>
+                        {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      data-empty={!dateFilter}
+                      className="flex-1 min-w-[120px] md:flex-none md:w-[180px] justify-between text-left font-normal data-[empty=true]:text-muted-foreground"
                     >
-                      Xóa lọc
-                    </button>
-                  )}
-                </div>
-
+                      {dateFilter ? format(dateFilter, 'dd/MM/yyyy', { locale: vi }) : 'Lọc theo ngày'}
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dateFilter}
+                      onSelect={setDateFilter}
+                      defaultMonth={dateFilter}
+                    />
+                  </PopoverContent>
+                </Popover>
+                {dateFilter && (
+                  <button
+                    onClick={() => setDateFilter(undefined)}
+                    className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    Xóa lọc
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1020,61 +1017,67 @@ export default function FlashSaleAutoSetupPage() {
                   const startTimeStr = formatTime(record.slot_start_time);
                   const endTimeStr = formatTime(record.slot_end_time);
 
+                  /* Left border color by status */
+                  const borderColor =
+                    record.status === 'success'
+                      ? 'border-l-success'
+                      : record.status === 'error'
+                        ? 'border-l-destructive'
+                        : record.status === 'processing'
+                          ? 'border-l-info'
+                          : 'border-l-info/50';
+
                   return (
-                    <div key={record.id} className="p-4 bg-card">
-                      {/* Row 1: Date + Time + Status Badge */}
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-1 text-sm text-foreground font-medium">
-                          <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                          <span>{startTimeStr} {dateStr} – {dateStr === endDateStr ? endTimeStr : `${endTimeStr} ${endDateStr}`}</span>
+                    <div key={record.id} className={cn("px-3 py-2.5 bg-card border-l-[3px]", borderColor)}>
+                      {/* Row 1: Time slot + Status + Delete */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm text-foreground font-medium">
+                          {startTimeStr} {dateStr} – {dateStr === endDateStr ? endTimeStr : `${endTimeStr} ${endDateStr}`}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Badge variant="outline" className={cn("flex items-center gap-1 text-[10px] px-1.5 py-0", statusConfig.color)}>
+                            {statusConfig.icon}
+                            {statusConfig.label}
+                          </Badge>
+                          {(record.status === 'scheduled' || record.status === 'pending') && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                              onClick={() => setDeleteConfirmId(record.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
-                        <Badge variant="outline" className={cn("flex items-center gap-1", statusConfig.color)}>
-                          {statusConfig.icon}
-                          {statusConfig.label}
-                        </Badge>
                       </div>
 
-                      {/* Row 2: Items count + Flash Sale ID + Delete */}
-                      <div className="mt-2 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm text-muted-foreground">
-                            <span className="text-muted-foreground">Số SP: </span>
-                            <span className="font-medium">{record.items_count}</span>
+                      {/* Row 2: Meta info */}
+                      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>
+                          Số SP: <span className="font-medium text-foreground">{record.items_count}</span>
+                        </span>
+                        {record.status === 'success' && record.flash_sale_id && (
+                          <span className="text-success font-mono">
+                            FS #{record.flash_sale_id}
                           </span>
-                          {record.status === 'success' && record.flash_sale_id && (
-                            <span className="text-xs text-success font-mono">
-                              FS #{record.flash_sale_id}
-                            </span>
-                          )}
-                          {record.lead_time_minutes > 0 && (
-                            <span className="text-xs text-info">
-                              {record.lead_time_minutes} phút trước
-                            </span>
-                          )}
-                        </div>
-                        {(record.status === 'scheduled' || record.status === 'pending') && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
-                            onClick={() => setDeleteConfirmId(record.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                        )}
+                        {record.lead_time_minutes > 0 && (
+                          <span className="text-info">
+                            {record.lead_time_minutes} phút trước
+                          </span>
+                        )}
+                        {record.status === 'scheduled' && record.scheduled_at && (
+                          <span className="text-info">
+                            Chờ đến: {formatDateTime(record.scheduled_at)}
+                          </span>
                         )}
                       </div>
 
                       {/* Error message if any */}
                       {record.status === 'error' && record.error_message && (
-                        <div className="mt-2 text-xs text-destructive bg-destructive/10 p-2 rounded">
+                        <div className="mt-1.5 text-xs text-destructive bg-destructive/10 px-2 py-1.5 rounded">
                           {record.error_message}
-                        </div>
-                      )}
-
-                      {/* Scheduled info */}
-                      {record.status === 'scheduled' && record.scheduled_at && (
-                        <div className="mt-2 text-xs text-info bg-info/10 p-2 rounded">
-                          Chờ đến: {formatDateTime(record.scheduled_at)}
                         </div>
                       )}
                     </div>

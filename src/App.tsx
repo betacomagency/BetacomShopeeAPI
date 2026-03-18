@@ -33,6 +33,7 @@ import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
 import FlashSaleCopyPage from '@/pages/FlashSaleCopyPage';
 import FlashSaleOverviewPage from '@/pages/FlashSaleOverviewPage';
 import ProductsPage from '@/pages/ProductsPage';
+import AdsPage from '@/pages/AdsPage';
 import DocsPage from '@/pages/DocsPage';
 
 // Admin Pages
@@ -82,6 +83,7 @@ function App() {
                 <Route element={<MainLayout />}>
                   <Route path="/dashboard" element={<HomePage />} />
                   <Route path="/products" element={<ProductsPage />} />
+                  <Route path="/ads" element={<AdsPage />} />
                   <Route path="/flash-sale" element={<FlashSalePage />} />
                   <Route path="/flash-sale/detail/:flashSaleId" element={<FlashSaleDetailPage />} />
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />

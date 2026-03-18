@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { usePermissionsContext } from '@/contexts/PermissionsContext';
+import { ShopAppConnectionStatus, usePartnerApps, type PartnerApp } from '@/components/profile/ShopAppConnectionStatus';
 
 // Số shop mỗi trang
 const SHOPS_PER_PAGE = 30;
@@ -87,6 +88,12 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const [partnerKeyInput, setPartnerKeyInput] = useState('');
   const [partnerNameInput, setPartnerNameInput] = useState('');
   const [connecting, setConnecting] = useState(false);
+
+  // Connect via registered partner app (multi-app flow)
+  const { partnerApps } = usePartnerApps();
+  const [connectAppDialogOpen, setConnectAppDialogOpen] = useState(false);
+  const [selectedPartnerApp, setSelectedPartnerApp] = useState<PartnerApp | null>(null);
+  const [connectingApp, setConnectingApp] = useState(false);
 
 
 
@@ -448,7 +455,13 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         .delete()
         .eq('shop_id', shopToDelete.id);
 
-      // 3. Delete the shop (cascade also handles remaining refs)
+      // 3. Delete app-specific tokens (multi-partner)
+      await supabase
+        .from('apishopee_shop_app_tokens')
+        .delete()
+        .eq('shop_id', shopToDelete.shop_id);
+
+      // 4. Delete the shop (cascade also handles remaining refs)
       const { error: shopError } = await supabase
         .from('apishopee_shops')
         .delete()
@@ -513,6 +526,46 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         variant: 'destructive',
       });
       setConnecting(false);
+    }
+  };
+
+  // Connect shop via registered partner app (multi-app flow)
+  const handleConnectApp = async (partnerApp: PartnerApp) => {
+    setSelectedPartnerApp(partnerApp);
+    setConnectAppDialogOpen(true);
+  };
+
+  const handleSubmitConnectApp = async () => {
+    if (!selectedPartnerApp) return;
+    setConnectingApp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('apishopee-auth', {
+        body: {
+          action: 'get-app-auth-url',
+          partner_app_id: selectedPartnerApp.id,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      // Store partner_app_id in sessionStorage for callback handling
+      sessionStorage.setItem('shopee_partner_app_id', selectedPartnerApp.id);
+      sessionStorage.setItem('shopee_app_category', selectedPartnerApp.app_category);
+
+      // Redirect to Shopee OAuth
+      if (data?.url || data?.authUrl) {
+        window.location.href = data.url || data.authUrl;
+      } else {
+        throw new Error('Không nhận được URL ủy quyền');
+      }
+    } catch (err) {
+      toast({
+        title: 'Lỗi',
+        description: (err as Error).message,
+        variant: 'destructive',
+      });
+      setConnectingApp(false);
     }
   };
 
@@ -704,6 +757,18 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         </CellBadge>
       ),
     },
+    // Per-app connection status (multi-partner)
+    ...(partnerApps.length > 0 ? [{
+      key: 'app_status',
+      header: 'Apps',
+      render: (shop: ShopWithRole) => (
+        <ShopAppConnectionStatus
+          shopId={shop.shop_id}
+          compact
+          onConnectApp={!readOnly && isSystemAdmin ? handleConnectApp : undefined}
+        />
+      ),
+    }] : []),
     {
       key: 'token_updated_at',
       header: 'Ủy quyền',
@@ -1040,12 +1105,55 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
         </DialogContent>
       </Dialog>
 
-
-
+      {/* Connect App Dialog (multi-app flow) */}
+      <Dialog open={connectAppDialogOpen} onOpenChange={setConnectAppDialogOpen}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>Kết nối App: {selectedPartnerApp?.partner_name}</DialogTitle>
+            <DialogDescription>
+              Ủy quyền shop với app {selectedPartnerApp?.app_category === 'ads' ? 'Ads' : 'ERP'} để sử dụng các tính năng tương ứng.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">App</span>
+                <span className="font-medium">{selectedPartnerApp?.partner_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Loại</span>
+                <span className="font-medium">{selectedPartnerApp?.app_category === 'ads' ? 'Ads Service' : 'ERP System'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Partner ID</span>
+                <span className="font-mono text-xs">{selectedPartnerApp?.partner_id}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConnectAppDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-brand hover:bg-brand/90 cursor-pointer"
+              onClick={handleSubmitConnectApp}
+              disabled={connectingApp}
+            >
+              {connectingApp ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  Đang kết nối...
+                </>
+              ) : (
+                'Ủy quyền với Shopee'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
 }
-
 
 export default ShopManagementPanel;
