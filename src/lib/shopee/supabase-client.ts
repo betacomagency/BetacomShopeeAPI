@@ -105,6 +105,12 @@ export async function authenticateWithCode(
 ): Promise<AccessToken> {
   console.log('[Shopee] authenticateWithCode called:', { code: code.substring(0, 10) + '...', shopId, mainAccountId, partnerInfo });
 
+  // Refresh session to ensure JWT is fresh after cross-origin redirect from Shopee OAuth
+  const { error: sessionError } = await supabase.auth.refreshSession();
+  if (sessionError) {
+    console.warn('[Shopee] Session refresh failed, trying with current session:', sessionError.message);
+  }
+
   // Determine action: app-specific flow uses get-app-token, legacy uses get-token
   const partnerAppId = (partnerInfo as unknown as Record<string, unknown>)?.partner_app_id as string | undefined;
   const action = partnerAppId ? 'get-app-token' : 'get-token';
