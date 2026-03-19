@@ -4,10 +4,11 @@
  * Giải quyết vấn đề mỗi useAuth() tạo state riêng
  */
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { supabase, forceRefreshSession, isJwtExpiredError } from '@/lib/supabase';
 import { User, Session } from '@supabase/supabase-js';
 import { logCompletedActivity } from '@/lib/activity-logger';
+import { LocalStorageTokenStorage } from '@/lib/shopee/storage/local-storage';
 
 interface Profile {
   id: string;
@@ -198,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const signUp = async (email: string, password: string, fullName?: string) => {
+  const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
     setIsLoading(true);
     setError(null);
 
@@ -224,9 +225,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       return { success: false, error: message };
     }
-  };
+  }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     setError(null);
     const startTime = new Date();
 
@@ -282,9 +283,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { success: false, error: message };
     }
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       // Clear state first để UI update ngay
       setUser(null);
@@ -294,6 +295,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Sign out from Supabase (scope: 'local' để chỉ logout device này)
       await supabase.auth.signOut({ scope: 'local' });
+
+      // Clear Shopee tokens from localStorage on signOut
+      LocalStorageTokenStorage.clearAll();
 
       // Fallback: Xóa trực tiếp localStorage key nếu Supabase không xóa hết
       if (typeof window !== 'undefined') {
@@ -305,6 +309,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
       setProfile(null);
 
+      // Clear Shopee tokens even on error
+      LocalStorageTokenStorage.clearAll();
+
       // Fallback clear
       if (typeof window !== 'undefined') {
         localStorage.removeItem('betacom-auth-token');
@@ -313,32 +320,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : 'Đăng xuất thất bại';
       setError(message);
     }
-  };
+  }, []);
 
-  const clearError = () => setError(null);
+  const clearError = useCallback(() => setError(null), []);
 
-  const updateProfile = async () => {
+  const updateProfile = useCallback(async () => {
     if (user) {
       await loadProfile(user.id);
     }
-  };
+  }, [user]);
+
+  // Memoize context value để tránh re-render toàn bộ consumer mỗi khi provider render
+  const value = useMemo(() => ({
+    user,
+    session,
+    profile,
+    isAuthenticated: !!session,
+    isLoading,
+    error,
+    signUp,
+    signIn,
+    signOut,
+    clearError,
+    updateProfile,
+  }), [user, session, profile, isLoading, error, signUp, signIn, signOut, clearError, updateProfile]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        profile,
-        isAuthenticated: !!session,
-        isLoading,
-        error,
-        signUp,
-        signIn,
-        signOut,
-        clearError,
-        updateProfile,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

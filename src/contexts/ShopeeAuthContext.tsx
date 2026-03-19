@@ -3,7 +3,7 @@
  * Giải quyết vấn đề mỗi useShopeeAuth() tạo state riêng
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import {
   getStoredToken,
   storeToken,
@@ -22,6 +22,10 @@ import { usePermissionsContext } from '@/contexts/PermissionsContext';
 // Simple in-memory cache for shops data
 const shopsCache = new Map<string, { data: ShopInfo[]; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// In-memory storage for sensitive OAuth data (never persisted to sessionStorage)
+let pendingPartnerInfo: PartnerInfo | undefined = undefined;
+let pendingPartnerAppId: string | undefined = undefined;
 
 interface ShopInfo {
   shop_id: number;
@@ -282,7 +286,8 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
 
       try {
         if (partnerInfo) {
-          sessionStorage.setItem('shopee_partner_info', JSON.stringify(partnerInfo));
+          // Store in memory only — never persist partner_key to sessionStorage
+          pendingPartnerInfo = partnerInfo;
         }
 
         const authUrl = await getAuthorizationUrl(callbackUrl, partnerAccountId, partnerInfo);
@@ -300,14 +305,13 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       setError(null);
 
-      const partnerInfoStr = sessionStorage.getItem('shopee_partner_info');
-      const partnerInfo = partnerInfoStr ? JSON.parse(partnerInfoStr) : null;
-      sessionStorage.removeItem('shopee_partner_info');
+      // Read from in-memory storage (not sessionStorage) to protect partner_key
+      const partnerInfo = pendingPartnerInfo;
+      pendingPartnerInfo = undefined;
 
       // Check if this is an app-specific OAuth callback (multi-partner flow)
-      const partnerAppId = sessionStorage.getItem('shopee_partner_app_id');
-      sessionStorage.removeItem('shopee_partner_app_id');
-      sessionStorage.removeItem('shopee_app_category');
+      const partnerAppId = pendingPartnerAppId;
+      pendingPartnerAppId = undefined;
 
       try {
         let newToken: AccessToken;
@@ -337,9 +341,9 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user && newToken.access_token && newToken.refresh_token) {
-              // Lưu từng shop + tạo shop_members
-              for (const sid of shopIdList) {
-                await saveUserShop(
+              // Lưu tất cả shop song song + tạo shop_members
+              await Promise.all(shopIdList.map(sid =>
+                saveUserShop(
                   user.id,
                   sid,
                   newToken.access_token,
@@ -348,8 +352,8 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
                   newToken.merchant_id,
                   undefined,
                   partnerInfo
-                );
-              }
+                )
+              ));
               console.log(`[AUTH] All ${shopIdList.length} shops saved for merchant:`, newToken.merchant_id);
 
               // Fetch shop info cho từng shop
@@ -473,25 +477,26 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.id, selectedShopId, loadTokenFromSource]);
 
+  // Memoize context value để tránh re-render toàn bộ consumer mỗi khi provider render
+  const value = useMemo(() => ({
+    token,
+    isAuthenticated,
+    isLoading,
+    isConfigured,
+    useBackend,
+    error,
+    user,
+    shops,
+    selectedShopId,
+    login,
+    logout,
+    refresh,
+    handleCallback,
+    switchShop,
+  }), [token, isAuthenticated, isLoading, isConfigured, useBackend, error, user, shops, selectedShopId, login, logout, refresh, handleCallback, switchShop]);
+
   return (
-    <ShopeeAuthContext.Provider
-      value={{
-        token,
-        isAuthenticated,
-        isLoading,
-        isConfigured,
-        useBackend,
-        error,
-        user,
-        shops,
-        selectedShopId,
-        login,
-        logout,
-        refresh,
-        handleCallback,
-        switchShop,
-      }}
-    >
+    <ShopeeAuthContext.Provider value={value}>
       {children}
     </ShopeeAuthContext.Provider>
   );

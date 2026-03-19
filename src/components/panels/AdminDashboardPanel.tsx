@@ -235,8 +235,8 @@ export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
           </h2>
           <div className="flex items-center gap-3 text-xs">
             <span className="text-success">{shopHealth.healthy} OK</span>
-            {shopHealth.expiring > 0 && <span className="text-warning">{shopHealth.expiring} sắp hết hạn</span>}
-            {shopHealth.expired > 0 && <span className="text-destructive">{shopHealth.expired} hết hạn</span>}
+            {shopHealth.expiring > 0 ? <span className="text-warning">{shopHealth.expiring} sắp hết hạn</span> : null}
+            {shopHealth.expired > 0 ? <span className="text-destructive">{shopHealth.expired} hết hạn</span> : null}
           </div>
         </div>
 

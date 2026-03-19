@@ -623,7 +623,7 @@ export function AutoSetupDialog({
           )}
 
           {/* Top: Lead Time & Template - hidden when running */}
-          {!isRunning && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {!isRunning ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
                 <Clock className="h-4 w-4 text-success" />
@@ -684,7 +684,7 @@ export function AutoSetupDialog({
                 </div>
               )}
             </div>
-          </div>}
+          </div> : null}
 
           {/* Product Table - shown when not running and has items */}
           {!isRunning && templateItems.length > 0 && (
@@ -692,7 +692,7 @@ export function AutoSetupDialog({
           )}
 
           {/* Bottom: Time Slots - hidden when running */}
-          {!isRunning && <div className="space-y-3">
+          {!isRunning ? <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-2">
                 <Clock className="h-4 w-4 text-info" />
@@ -769,7 +769,7 @@ export function AutoSetupDialog({
                 </div>
               )}
             </div>
-          </div>}
+          </div> : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isRunning} className="w-full md:w-auto mt-2 md:mt-0">

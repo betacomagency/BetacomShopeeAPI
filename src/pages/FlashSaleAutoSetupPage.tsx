@@ -237,19 +237,19 @@ export default function FlashSaleAutoSetupPage() {
       if (data?.response?.time_slot_list) slots = data.response.time_slot_list;
       else if (Array.isArray(data?.response)) slots = data.response;
 
-      // Fetch danh sách Flash Sale đã tồn tại (type 1 = sắp tới, type 2 = đang chạy)
-      const { data: existingFS } = await supabase
-        .from('apishopee_flash_sale_data')
-        .select('timeslot_id')
-        .eq('shop_id', selectedShopId)
-        .in('type', [1, 2]); // Chỉ lấy FS sắp tới và đang chạy
-
-      // Fetch danh sách slot đã được lên lịch tự động (pending/scheduled)
-      const { data: scheduledSlots } = await supabase
-        .from('apishopee_flash_sale_auto_history')
-        .select('timeslot_id')
-        .eq('shop_id', selectedShopId)
-        .in('status', ['pending', 'scheduled']);
+      // Fetch song song: Flash Sale đã tồn tại + slot đã lên lịch tự động
+      const [{ data: existingFS }, { data: scheduledSlots }] = await Promise.all([
+        supabase
+          .from('apishopee_flash_sale_data')
+          .select('timeslot_id')
+          .eq('shop_id', selectedShopId)
+          .in('type', [1, 2]), // Chỉ lấy FS sắp tới và đang chạy
+        supabase
+          .from('apishopee_flash_sale_auto_history')
+          .select('timeslot_id')
+          .eq('shop_id', selectedShopId)
+          .in('status', ['pending', 'scheduled']),
+      ]);
 
       const usedIds = new Set<number>([
         ...(existingFS || []).map((fs: { timeslot_id: number }) => fs.timeslot_id).filter(Boolean),
