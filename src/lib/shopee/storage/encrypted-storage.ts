@@ -22,9 +22,11 @@ export class EncryptedStorageTokenStorage implements TokenStorage {
     this.key = shopId
       ? `${STORAGE_KEY_PREFIX}_${shopId}`
       : `${STORAGE_KEY_PREFIX}_default`;
-    this.encryptionKey = encryptionKey
-      || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_TOKEN_ENCRYPTION_KEY : '')
-      || 'default-encryption-key-change-me';
+    const envKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_TOKEN_ENCRYPTION_KEY : '';
+    this.encryptionKey = encryptionKey || envKey || '';
+    if (!this.encryptionKey) {
+      console.error('[EncryptedStorage] No encryption key configured. Set VITE_TOKEN_ENCRYPTION_KEY env variable.');
+    }
   }
 
   /**
@@ -124,7 +126,13 @@ export class EncryptedStorageTokenStorage implements TokenStorage {
       }
 
       const json = await this.decrypt(data);
-      return JSON.parse(json) as AccessToken;
+      const parsed = JSON.parse(json);
+      if (!parsed || typeof parsed !== 'object' || !parsed.access_token) {
+        console.warn('[EncryptedStorage] Invalid token data, clearing');
+        localStorage.removeItem(this.key);
+        return null;
+      }
+      return parsed as AccessToken;
     } catch (error) {
       console.error('[EncryptedStorage] Failed to get token:', error);
       return null;

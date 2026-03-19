@@ -31,7 +31,9 @@ export default function AuthCallback() {
       const errorParam = searchParams.get('error');
 
       if (errorParam) {
-        const errorMsg = `Shopee authorization failed: ${errorParam}`;
+        // Sanitize error param to prevent XSS from URL parameters
+        const sanitized = errorParam.replace(/[<>"'&]/g, '');
+        const errorMsg = `Shopee authorization failed: ${sanitized}`;
         setError(errorMsg);
         toast({
           title: "Kết nối thất bại",

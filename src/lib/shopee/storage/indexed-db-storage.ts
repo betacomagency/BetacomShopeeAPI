@@ -25,10 +25,14 @@ export class IndexedDBTokenStorage implements TokenStorage {
   private async getDB(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
 
-    this.dbPromise = new Promise((resolve, reject) => {
+    this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        // Clear cached promise so next call retries instead of failing permanently
+        this.dbPromise = null;
+        reject(request.error);
+      };
       request.onsuccess = () => resolve(request.result);
 
       request.onupgradeneeded = (event) => {

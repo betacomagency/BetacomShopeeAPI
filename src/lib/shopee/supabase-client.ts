@@ -28,10 +28,9 @@ export async function getAuthorizationUrl(
 ): Promise<string> {
   console.log('[Shopee] getAuthorizationUrl called');
   console.log('[Shopee] redirect_uri:', redirectUri);
-  console.log('[Shopee] partnerInfo:', partnerInfo ? { 
-    partner_id: partnerInfo.partner_id, 
-    partner_key: partnerInfo.partner_key?.substring(0, 10) + '...',
-    partner_name: partnerInfo.partner_name 
+  console.log('[Shopee] partnerInfo:', partnerInfo ? {
+    partner_id: partnerInfo.partner_id,
+    partner_name: partnerInfo.partner_name
   } : null);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -103,7 +102,7 @@ export async function authenticateWithCode(
   partnerInfo?: PartnerInfo,
   mainAccountId?: number
 ): Promise<AccessToken> {
-  console.log('[Shopee] authenticateWithCode called:', { code: code.substring(0, 10) + '...', shopId, mainAccountId, partnerInfo });
+  console.log('[Shopee] authenticateWithCode called:', { shopId, mainAccountId });
 
   // Refresh session to ensure JWT is fresh after cross-origin redirect from Shopee OAuth
   const { error: sessionError } = await supabase.auth.refreshSession();
@@ -125,7 +124,7 @@ export async function authenticateWithCode(
     },
   });
 
-  console.log('[Shopee] authenticateWithCode response:', { data, error });
+  console.log('[Shopee] authenticateWithCode response:', { hasData: !!data, error });
 
   if (error) {
     throw new Error(error.message || 'Failed to authenticate');
@@ -141,7 +140,7 @@ export async function authenticateWithCode(
     shop_id: data.shop_id || shopId,
   };
 
-  console.log('[Shopee] Final token:', { shop_id: token.shop_id, merchant_id: token.merchant_id, shop_id_list: token.shop_id_list, has_access_token: !!token.access_token });
+  console.log('[Shopee] Token obtained for shop_id:', token.shop_id);
 
   return token;
 }
@@ -240,12 +239,14 @@ export async function getAllShopsByPartner(
   partnerAppId: string,
   pageSize = 100
 ): Promise<GetShopsByPartnerResponse['authed_shop_list']> {
+  const MAX_PAGES = 100; // Safety guard against infinite loops
   const allShops: GetShopsByPartnerResponse['authed_shop_list'] = [];
   let pageNo = 1;
   let hasMore = true;
 
-  while (hasMore) {
+  while (hasMore && pageNo <= MAX_PAGES) {
     const result = await getShopsByPartner(partnerAppId, pageSize, pageNo);
+    if (!result.authed_shop_list || result.authed_shop_list.length === 0) break;
     allShops.push(...result.authed_shop_list);
     hasMore = result.more;
     pageNo++;
@@ -327,12 +328,14 @@ export async function getAllMerchantsByPartner(
   partnerAppId: string,
   pageSize = 100
 ): Promise<GetMerchantsByPartnerResponse['authed_merchant_list']> {
+  const MAX_PAGES = 100; // Safety guard against infinite loops
   const allMerchants: GetMerchantsByPartnerResponse['authed_merchant_list'] = [];
   let pageNo = 1;
   let hasMore = true;
 
-  while (hasMore) {
+  while (hasMore && pageNo <= MAX_PAGES) {
     const result = await getMerchantsByPartner(partnerAppId, pageSize, pageNo);
+    if (!result.authed_merchant_list || result.authed_merchant_list.length === 0) break;
     allMerchants.push(...result.authed_merchant_list);
     hasMore = result.more;
     pageNo++;

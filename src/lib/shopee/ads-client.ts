@@ -20,12 +20,16 @@ async function callAdsProxy({ api_path, shop_id, method = 'GET', params = {}, bo
   });
 
   if (error) throw new Error(error.message || 'Proxy call failed');
-  if (data?.response?.data?.error) {
-    const shopeeError = data.response.data;
-    throw new Error(shopeeError.message || `Shopee error: ${shopeeError.error}`);
+
+  const responseData = data?.response?.data;
+  if (responseData?.error) {
+    throw new Error(responseData.message || `Shopee error: ${responseData.error}`);
+  }
+  if (responseData === undefined || responseData === null) {
+    throw new Error(`No response data from ${api_path}`);
   }
 
-  return data?.response?.data;
+  return responseData;
 }
 
 // Campaign list

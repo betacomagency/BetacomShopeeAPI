@@ -3,7 +3,7 @@
  * Uses React Query for caching + Supabase realtime for updates
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
@@ -312,8 +312,8 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
   const prevStatsRef = useRef<ReviewStats>(DEFAULT_STATS);
   const prevShopIdRef = useRef(shopId);
 
-  // Query key for reviews
-  const queryKey = ['reviews', shopId, userId];
+  // Stable query key reference to prevent re-subscribe on every render
+  const queryKey = useMemo(() => ['reviews', shopId, userId], [shopId, userId]);
 
   // Fetch stats for all reviews (total, replied, rating counts, avg)
   const fetchStats = useCallback(async (): Promise<ReviewStats> => {
@@ -349,7 +349,8 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
 
     const repliedCount = data.filter(r => r.reply_text).length;
     const sumRating = data.reduce((acc, r) => acc + r.rating_star, 0);
-    const avgRating = totalCount && totalCount > 0 ? sumRating / totalCount : 0;
+    // Use data.length (actual fetched rows) as denominator, not totalCount which may be larger
+    const avgRating = data.length > 0 ? sumRating / data.length : 0;
 
     const ratingCounts: Record<number, number> = {};
     data.forEach(r => {

@@ -36,19 +36,30 @@ export class LocalStorageTokenStorage implements TokenStorage {
   async get(): Promise<AccessToken | null> {
     try {
       const data = localStorage.getItem(this.key);
-      
+
       if (!data) {
         // Fallback to default key
         const defaultData = localStorage.getItem(`${STORAGE_KEY_PREFIX}_default`);
         if (!defaultData) return null;
-        return JSON.parse(defaultData) as AccessToken;
+        return this.parseAndValidate(defaultData);
       }
-      
-      return JSON.parse(data) as AccessToken;
+
+      return this.parseAndValidate(data);
     } catch (error) {
       console.error('[TokenStorage] Failed to get token:', error);
       return null;
     }
+  }
+
+  /** Parse JSON and validate it has required token fields */
+  private parseAndValidate(raw: string): AccessToken | null {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.access_token) {
+      console.warn('[TokenStorage] Invalid token data in storage, clearing');
+      localStorage.removeItem(this.key);
+      return null;
+    }
+    return parsed as AccessToken;
   }
 
   async clear(): Promise<void> {

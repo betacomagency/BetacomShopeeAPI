@@ -37,6 +37,7 @@ export interface DashboardData {
     topSellers: TopProduct[];
     lowStock: LowStockProduct[];
     isLoading: boolean;
+    error: string | null;
   };
   flashSales: {
     total: number;
@@ -58,13 +59,14 @@ export interface DashboardData {
     triggerSync: (forceSync?: boolean) => Promise<void>;
   };
   isLoading: boolean;
+  error: string | null;
 }
 
 const STALE_TIME = 5 * 60 * 1000; // 5 minutes
 
 export function useDashboardData(shopId: number | null, userId: string | null): DashboardData {
   // --- Products: counts by status ---
-  const { data: productCounts, isLoading: isCountsLoading } = useQuery({
+  const { data: productCounts, isLoading: isCountsLoading, error: countsError } = useQuery({
     queryKey: ['dashboard-product-counts', shopId],
     queryFn: async (): Promise<ProductCounts> => {
       const { data, error } = await supabase
@@ -87,7 +89,7 @@ export function useDashboardData(shopId: number | null, userId: string | null): 
   });
 
   // --- Products: top sellers ---
-  const { data: topSellers, isLoading: isTopLoading } = useQuery({
+  const { data: topSellers, isLoading: isTopLoading, error: topError } = useQuery({
     queryKey: ['dashboard-top-sellers', shopId],
     queryFn: async (): Promise<TopProduct[]> => {
       const { data, error } = await supabase
@@ -106,7 +108,7 @@ export function useDashboardData(shopId: number | null, userId: string | null): 
   });
 
   // --- Products: low stock ---
-  const { data: lowStock, isLoading: isLowStockLoading } = useQuery({
+  const { data: lowStock, isLoading: isLowStockLoading, error: lowStockError } = useQuery({
     queryKey: ['dashboard-low-stock', shopId],
     queryFn: async (): Promise<LowStockProduct[]> => {
       const { data, error } = await supabase
@@ -146,6 +148,8 @@ export function useDashboardData(shopId: number | null, userId: string | null): 
   });
 
   const isProductsLoading = isCountsLoading || isTopLoading || isLowStockLoading;
+  const productError = countsError || topError || lowStockError;
+  const overallError = productError ? (productError as Error).message : null;
 
   return {
     products: {
@@ -153,6 +157,7 @@ export function useDashboardData(shopId: number | null, userId: string | null): 
       topSellers: topSellers || [],
       lowStock: lowStock || [],
       isLoading: isProductsLoading,
+      error: productError ? (productError as Error).message : null,
     },
     flashSales: {
       total: flashSaleData.length,
@@ -174,5 +179,6 @@ export function useDashboardData(shopId: number | null, userId: string | null): 
       triggerSync: syncData.triggerSync,
     },
     isLoading: isProductsLoading || isFlashSaleLoading,
+    error: overallError,
   };
 }

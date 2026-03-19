@@ -13,7 +13,6 @@ import {
   Package,
   Clock,
   TrendingUp,
-  Megaphone,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -65,13 +64,6 @@ export const menuItems: MenuItem[] = [
       { title: 'Danh sách', icon: Zap, path: '/flash-sale', permissionKey: 'flash-sale' },
       { title: 'Lịch sử', icon: Clock, path: '/flash-sale/auto-setup', permissionKey: 'flash-sale' },
     ],
-  },
-  {
-    title: 'Quảng cáo',
-    icon: Megaphone,
-    path: '/ads',
-    permissionKey: 'ads',
-    description: 'Quản lý chiến dịch quảng cáo Shopee Ads',
   },
   {
     title: 'Hiệu quả bán hàng',
