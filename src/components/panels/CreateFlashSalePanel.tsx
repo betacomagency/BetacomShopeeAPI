@@ -124,6 +124,7 @@ export function CreateFlashSalePanel({
 
   useEffect(() => {
     fetchTimeSlots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
 
   // Handle create flash sale

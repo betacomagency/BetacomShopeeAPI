@@ -182,7 +182,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
   const {
     data: flashSales,
     loading,
-    error,
+    error: _error,
     refetch,
     dataUpdatedAt,
   } = useFlashSaleData(shopId, userId);
@@ -591,8 +591,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
                         <div className="flex items-center gap-1 shrink-0">
                           <Switch
                             checked={Number(sale.status) === 1}
-                            onCheckedChange={(e) => {
-                              e; // prevent card click
+                            onCheckedChange={(_e) => {
                               handleToggleStatus(sale);
                             }}
                             disabled={

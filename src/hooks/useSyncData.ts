@@ -4,7 +4,7 @@
  * Sử dụng React Query để cache sync status
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { SyncStatus, STALE_MINUTES } from '@/lib/shopee/flash-sale';
@@ -71,8 +71,8 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
   // Track if auto sync has been triggered for this session
   const autoSyncTriggeredRef = useRef(false);
 
-  // Query key for sync status
-  const queryKey = ['syncStatus', shopId, userId];
+  // Query key for sync status (memoized to prevent re-renders)
+  const queryKey = useMemo(() => ['syncStatus', shopId, userId], [shopId, userId]);
 
   // Fetch sync status using React Query
   const { data: syncStatus } = useQuery({

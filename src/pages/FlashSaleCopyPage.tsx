@@ -8,7 +8,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Clock,
-  Package,
   Play,
   RefreshCw,
   CheckCircle2,
@@ -35,7 +34,8 @@ import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { useSyncData } from '@/hooks/useSyncData';
 import { supabase } from '@/lib/supabase';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Badge } from '@/components/ui/badge';
+// Badge available for future use
+// import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 // ==================== INTERFACES ====================
@@ -180,6 +180,7 @@ export default function FlashSaleCopyPage() {
       fetchTemplateItems();
       fetchTimeSlots();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedShopId, flashSaleId]);
 
   // Fetch criteria after template items loaded
@@ -187,6 +188,7 @@ export default function FlashSaleCopyPage() {
     if (templateItems.length > 0 && selectedShopId) {
       fetchCriteria();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateItems.length, selectedShopId]);
 
   // ==================== DATA FETCHING ====================
@@ -439,6 +441,7 @@ export default function FlashSaleCopyPage() {
         return next;
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemEdits, criteria, templateItems]);
 
   // Count active items for footer button
@@ -1000,7 +1003,7 @@ interface ProductTableProps {
   getEffectiveValues: (itemId: number, modelId: number, origPromo: number, origStock: number) => { promoPrice: number; campaignStock: number };
 }
 
-function ProductTable({ items, excludedItems, excludedModels, onToggleItem, onToggleModel, isModelExcluded, criteria, loadingCriteria, failedModels, itemEdits, onEditModel, getEffectiveValues }: ProductTableProps) {
+function ProductTable({ items, excludedItems, excludedModels: _excludedModels, onToggleItem, onToggleModel, isModelExcluded, criteria, loadingCriteria, failedModels, itemEdits: _itemEdits, onEditModel, getEffectiveValues }: ProductTableProps) {
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
   const toggleExpand = (itemId: number) => {

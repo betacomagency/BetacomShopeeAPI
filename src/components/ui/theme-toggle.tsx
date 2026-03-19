@@ -20,7 +20,7 @@ interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ className, variant = 'ghost', size = 'icon' }: ThemeToggleProps) {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
 
   return (
     <DropdownMenu>

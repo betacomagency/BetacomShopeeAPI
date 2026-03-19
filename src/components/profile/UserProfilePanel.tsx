@@ -26,6 +26,7 @@ export default function UserProfilePanel() {
     if (user?.id) {
       loadProfile();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const loadProfile = async () => {

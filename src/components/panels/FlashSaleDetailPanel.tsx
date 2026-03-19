@@ -157,6 +157,7 @@ export function FlashSaleDetailPanel({
   useEffect(() => {
     setPage(1);
     fetchItems(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId, flashSale.flash_sale_id]);
 
   const handlePageChange = (newPage: number) => {

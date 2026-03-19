@@ -4,7 +4,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -31,7 +30,6 @@ interface AdsPerformancePanelProps {
 type DateRange = '7d' | '14d' | '30d';
 
 export function AdsPerformancePanel({ shopId }: AdsPerformancePanelProps) {
-  const { toast } = useToast();
   const [data, setData] = useState<DailyPerformance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

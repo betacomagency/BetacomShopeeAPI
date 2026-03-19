@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { CellBadge } from '@/components/ui/data-table';
 import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/hooks/use-toast';
 
 interface PartnerApp {
   id: string;
@@ -37,13 +36,13 @@ interface ShopAppConnectionStatusProps {
  * Shows connected/not-connected badge per partner app with token expiry info.
  */
 export function ShopAppConnectionStatus({ shopId, onConnectApp, compact = false }: ShopAppConnectionStatusProps) {
-  const { toast } = useToast();
   const [partnerApps, setPartnerApps] = useState<PartnerApp[]>([]);
   const [appTokens, setAppTokens] = useState<AppToken[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadAppStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
 
   const loadAppStatus = async () => {
@@ -143,6 +142,7 @@ export function ShopAppConnectionStatus({ shopId, onConnectApp, compact = false 
  * Hook to load partner apps from database.
  * Returns active partner apps for use in connect dialogs.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePartnerApps() {
   const [partnerApps, setPartnerApps] = useState<PartnerApp[]>([]);
   const [loading, setLoading] = useState(true);

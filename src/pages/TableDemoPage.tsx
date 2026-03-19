@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react';
-import { Calendar, Clock, CheckCircle2, AlertCircle, Trash2, MoreHorizontal, ChevronDown } from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, AlertCircle, Trash2, MoreHorizontal } from 'lucide-react';
 
 // Mock data
 const mockData = [

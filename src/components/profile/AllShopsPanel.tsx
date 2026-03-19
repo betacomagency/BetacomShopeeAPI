@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { usePermissionsContext } from '@/contexts/PermissionsContext';
 import { Button } from '@/components/ui/button';
@@ -84,7 +83,6 @@ interface PartnerApp {
 
 export function AllShopsPanel() {
   const { toast } = useToast();
-  const { user: authUser } = useAuth();
   const { login } = useShopeeAuth();
   const [loading, setLoading] = useState(true);
   const [shops, setShops] = useState<Shop[]>([]);
@@ -324,7 +322,7 @@ export function AllShopsPanel() {
       if (data && data.length > 0) {
         setSelectedPartnerAppId(data[0].id);
       }
-    } catch (err) {
+    } catch {
       toast({
         title: 'Lỗi',
         description: 'Không thể tải danh sách partner apps',

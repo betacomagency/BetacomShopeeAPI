@@ -18,7 +18,7 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
-export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
+export default function Sidebar({ collapsed, onToggle: _onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();

@@ -174,7 +174,7 @@ serve(async (req) => {
       const resolvedCategory = app_category || resolveAppCategory(api_path);
 
       // Try multi-app flow first: lookup from shop_app_tokens JOIN partner_apps
-      const { data: appToken, error: appError } = await supabase
+      const { data: appToken } = await supabase
         .from('apishopee_shop_app_tokens')
         .select('access_token, apishopee_partner_apps!inner(partner_id, partner_key, app_category)')
         .eq('shop_id', shop_id)

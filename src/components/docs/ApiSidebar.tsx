@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,7 +17,6 @@ import {
   Truck,
   CreditCard,
   Bell,
-  ArrowLeft,
 } from "lucide-react";
 import {
   apiModules,
@@ -71,7 +69,6 @@ export function ApiSidebar({
   onSelect: (api: ApiEndpoint) => void;
   onSelectPush: (push: PushMechanism) => void;
 }) {
-  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [openModules, setOpenModules] = useState<Record<string, boolean>>(
     Object.fromEntries(apiModules.map((m) => [m.id, true])),

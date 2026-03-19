@@ -14,10 +14,8 @@ import {
   Package,
   Ban,
   Eye,
-  EyeOff,
   RefreshCw,
   Search,
-  Filter,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
@@ -150,7 +148,7 @@ function formatRelativeTime(dateString: string): string {
   });
 }
 
-export function ProductHistoryPanel({ shopId, userId }: ProductHistoryPanelProps) {
+export function ProductHistoryPanel({ shopId, userId: _userId }: ProductHistoryPanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -161,9 +159,9 @@ export function ProductHistoryPanel({ shopId, userId }: ProductHistoryPanelProps
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
 
-  // Query keys
-  const historyQueryKey = ['product-history', shopId, filterType, showUnreadOnly, currentPage];
-  const statsQueryKey = ['product-history-stats', shopId];
+  // Query keys (memoized to prevent re-renders)
+  const historyQueryKey = useMemo(() => ['product-history', shopId, filterType, showUnreadOnly, currentPage], [shopId, filterType, showUnreadOnly, currentPage]);
+  const statsQueryKey = useMemo(() => ['product-history-stats', shopId], [shopId]);
 
   // Fetch history logs
   const { data: historyData, isLoading: loadingHistory, refetch: refetchHistory } = useQuery({

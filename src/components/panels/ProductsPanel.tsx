@@ -121,10 +121,10 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
   const pageSize = 20;
 
 
-  // Query keys
-  const productsQueryKey = ['products', shopId];
-  const modelsQueryKey = ['product-models', shopId];
-  const syncStatusQueryKey = ['products-sync-status', shopId];
+  // Query keys (memoized to prevent re-renders)
+  const productsQueryKey = useMemo(() => ['products', shopId], [shopId]);
+  const modelsQueryKey = useMemo(() => ['product-models', shopId], [shopId]);
+  const syncStatusQueryKey = useMemo(() => ['products-sync-status', shopId], [shopId]);
 
   // Fetch products từ database với React Query (cache vĩnh viễn cho đến khi invalidate)
   const { data: products = [], isLoading: loadingProducts } = useQuery({

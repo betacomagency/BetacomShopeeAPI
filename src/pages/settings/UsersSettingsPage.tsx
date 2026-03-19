@@ -28,13 +28,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { SimpleDataTable, CellText, CellBadge, CellActions } from '@/components/ui/data-table';
+import { SimpleDataTable, CellText, CellActions } from '@/components/ui/data-table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import {
   Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2,
-  Store, Search, Save, X, Check, Users, Grid3X3, ChevronDown,
+  Store, Search, Save, X, Check, Users, Grid3X3,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -125,9 +124,9 @@ export default function UsersSettingsPage() {
   const [savingBulk, setSavingBulk] = useState(false);
 
   // Inline shop popover
-  const [inlinePopoverUserId, setInlinePopoverUserId] = useState<string | null>(null);
-  const [inlineShopSearch, setInlineShopSearch] = useState('');
-  const [savingInline, setSavingInline] = useState(false);
+  const [_inlinePopoverUserId, _setInlinePopoverUserId] = useState<string | null>(null);
+  const [inlineShopSearch, _setInlineShopSearch] = useState('');
+  const [_savingInline, setSavingInline] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -645,7 +644,7 @@ export default function UsersSettingsPage() {
   };
 
   // Toggle user selection for bulk
-  const toggleUserSelection = (userId: string) => {
+  const _toggleUserSelection = (userId: string) => {
     setSelectedUserIds(prev =>
       prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
     );
@@ -715,7 +714,7 @@ export default function UsersSettingsPage() {
   };
 
   // Inline filtered shops for popover
-  const inlineFilteredShops = useMemo(() => {
+  const _inlineFilteredShops = useMemo(() => {
     return allShopsList.filter(shop =>
       !inlineShopSearch ||
       shop.shop_name?.toLowerCase().includes(inlineShopSearch.toLowerCase()) ||
@@ -797,7 +796,7 @@ export default function UsersSettingsPage() {
         const shops = user.shops || [];
         const isAdminRole = user.appRole === 'admin' || user.appRole === 'super_admin';
         const isCurrentUser = user.id === currentUser?.id;
-        const canEdit = !isAdminRole && !isCurrentUser;
+        const _canEdit = !isAdminRole && !isCurrentUser;
 
         return (
           <div className="flex items-center gap-1.5">

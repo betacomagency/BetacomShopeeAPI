@@ -299,7 +299,6 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
 
   // Determine which dataset to paginate
   const isScheduledTab = activeTab === "scheduled";
-  const currentData = isScheduledTab ? [] : filteredData; // Flash sale data (not used for scheduled tab)
 
   // Desktop pagination
   const desktopTotal = isScheduledTab ? filteredAutoHistory.length : filteredData.length;
@@ -341,7 +340,6 @@ export function AllShopsFlashSalePanel({ userId }: AllShopsFlashSalePanelProps) 
     resetPages();
   };
 
-  const isLoadingAny = loading || autoLoading;
   const isFetchingAny = isFetching || autoFetching;
 
   // ==================== RENDER ====================

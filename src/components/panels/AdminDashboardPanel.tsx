@@ -14,13 +14,11 @@ import {
   XCircle,
   Clock,
   Zap,
-  RefreshCw,
   Store,
   Bell,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useApiCallStats } from "@/hooks/useApiCallStats";
 import { useShopeeAuth } from "@/hooks/useShopeeAuth";
@@ -82,8 +80,8 @@ const PUSH_TYPE_LABELS: Record<number, string> = {
 
 // ==================== COMPONENT ====================
 
-export function AdminDashboardPanel({ userId }: AdminDashboardPanelProps) {
-  const { shops } = useShopeeAuth();
+export function AdminDashboardPanel({ userId: _userId }: AdminDashboardPanelProps) {
+  const { shops: _shops } = useShopeeAuth();
 
   // Section 1: API Stats (24h)
   const { data: statsData, isLoading: statsLoading } = useApiCallStats({ dateRange: "24h" });

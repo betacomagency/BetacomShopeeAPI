@@ -17,7 +17,7 @@ interface AdminSidebarProps {
   onMobileClose?: () => void;
 }
 
-export default function AdminSidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose }: AdminSidebarProps) {
+export default function AdminSidebar({ collapsed, onToggle: _onToggle, mobileOpen = false, onMobileClose }: AdminSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();

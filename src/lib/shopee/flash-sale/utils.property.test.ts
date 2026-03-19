@@ -28,7 +28,6 @@ import {
   STATUS_COLORS,
   TYPE_ICONS,
   TYPE_PRIORITY,
-  STALE_MINUTES,
   ERROR_MESSAGES,
 } from './types';
 

@@ -87,6 +87,7 @@ const DATE_OPTIONS = [
   { value: 'all', label: 'Tất cả' },
 ];
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const CATEGORY_COLORS: Record<string, string> = {
   auth: 'bg-info/10 text-info',
   product: 'bg-info/10 text-info',
@@ -97,6 +98,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   review: 'bg-warning/10 text-warning',
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const STATUS_COLORS: Record<string, string> = {
   success: 'bg-success/10 text-success',
   failed: 'bg-destructive/10 text-destructive',
@@ -120,6 +122,7 @@ const TRIGGERED_BY_COLORS: Record<string, string> = {
   system: 'bg-muted text-muted-foreground',
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatDate(dateString: string | null): string {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleString('vi-VN', {
@@ -143,6 +146,7 @@ function formatFullDate(dateString: string | null): string {
   });
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatEndpoint(endpoint: string): string {
   // Show only the last 2 segments: e.g. /api/v2/product/get_item_list → product/get_item_list
   const parts = endpoint.split('/').filter(Boolean);

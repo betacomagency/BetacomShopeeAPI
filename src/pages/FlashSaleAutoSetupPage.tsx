@@ -15,7 +15,6 @@ import {
   CheckCircle,
   XCircle,
   Play,
-  Square,
   AlertCircle,
   Trash2,
 } from 'lucide-react';
@@ -38,14 +37,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Pagination,
   PaginationContent,
-  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
@@ -161,7 +158,7 @@ export default function FlashSaleAutoSetupPage() {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
-  const [usedTimeslotIds, setUsedTimeslotIds] = useState<Set<number>>(new Set()); // Timeslots đã có FS
+  const [_usedTimeslotIds, setUsedTimeslotIds] = useState<Set<number>>(new Set()); // Timeslots đã có FS
 
   // Latest flash sale items (template)
   const [templateItems, setTemplateItems] = useState<FlashSaleItem[]>([]);
@@ -178,7 +175,7 @@ export default function FlashSaleAutoSetupPage() {
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const [leadTimeMinutes, setLeadTimeMinutes] = useState<number>(0);
   const [isCustomLeadTime, setIsCustomLeadTime] = useState(false);
-  const [customLeadTimeInput, setCustomLeadTimeInput] = useState<string>('');
+  const [_customLeadTimeInput, setCustomLeadTimeInput] = useState<string>('');
 
   // History state
   const [history, setHistory] = useState<AutoHistoryRecord[]>([]);
@@ -499,12 +496,14 @@ export default function FlashSaleAutoSetupPage() {
       // If copying from a specific flash sale, fetch that one; otherwise fetch latest
       fetchLatestTemplate(copyFromFlashSaleId || undefined);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedShopId, copyFromFlashSaleId]);
 
   useEffect(() => {
     if (selectedShopId) {
       fetchHistory();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedShopId, statusFilter, dateFilter]);
 
   // Realtime subscription: auto-refresh khi scheduler hoàn thành jobs
@@ -539,6 +538,7 @@ export default function FlashSaleAutoSetupPage() {
     return () => {
       supabase.removeChannel(channel);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedShopId, triggerSync]);
 
   // Group time slots by date
@@ -587,7 +587,7 @@ export default function FlashSaleAutoSetupPage() {
   };
 
   // Open setup dialog - always available
-  const handleStartClick = () => {
+  const _handleStartClick = () => {
     setShowSetupDialog(true);
   };
 
@@ -854,7 +854,7 @@ export default function FlashSaleAutoSetupPage() {
   };
 
   // Stop auto setup
-  const stopAutoSetup = () => {
+  const _stopAutoSetup = () => {
     setIsRunning(false);
     isRunningRef.current = false;
     toast({ title: 'Đã dừng', description: 'Quá trình tự động cài đặt đã bị dừng' });

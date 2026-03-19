@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
@@ -108,7 +107,7 @@ export function AutoSetupDialog({
   // Setup options
   const [leadTimeMinutes, setLeadTimeMinutes] = useState<number>(0);
   const [isCustomLeadTime, setIsCustomLeadTime] = useState(false);
-  const [customLeadTimeInput, setCustomLeadTimeInput] = useState<string>('');
+  const [_customLeadTimeInput, setCustomLeadTimeInput] = useState<string>('');
   const [isRunning, setIsRunning] = useState(false);
 
   // Progress tracking
@@ -126,6 +125,7 @@ export function AutoSetupDialog({
       fetchTimeSlots();
       fetchLatestTemplate();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, shopId, copyFromFlashSaleId]);
 
   // Reset state when dialog closes
@@ -293,14 +293,6 @@ export function AutoSetupDialog({
     if (newSelected.has(timeslotId)) newSelected.delete(timeslotId);
     else newSelected.add(timeslotId);
     setSelectedSlots(newSelected);
-  };
-
-  const toggleAllSlots = () => {
-    if (selectedSlots.size === timeSlots.length) {
-      setSelectedSlots(new Set());
-    } else {
-      setSelectedSlots(new Set(timeSlots.map(s => s.timeslot_id)));
-    }
   };
 
   const toggleDateSlots = (dateKey: string) => {

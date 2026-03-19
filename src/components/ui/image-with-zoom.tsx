@@ -4,7 +4,7 @@
  * Sử dụng Portal để render zoom image ra ngoài container tránh bị cắt bởi overflow
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +15,23 @@ interface ImageWithZoomProps {
   zoomSize?: number;
 }
 
+/** Calculate zoom position relative to image element */
+function calcZoomPosition(rect: DOMRect, zoomSize: number) {
+  let top = rect.top;
+  let left = rect.right + 8;
+
+  if (left + zoomSize > window.innerWidth) {
+    left = rect.left - zoomSize - 8;
+  }
+  if (left < 0) left = 8;
+  if (top + zoomSize > window.innerHeight) {
+    top = window.innerHeight - zoomSize - 8;
+  }
+  if (top < 0) top = 8;
+
+  return { top, left };
+}
+
 export function ImageWithZoom({
   src,
   alt,
@@ -22,40 +39,12 @@ export function ImageWithZoom({
   zoomSize = 280,
 }: ImageWithZoomProps) {
   const [showZoom, setShowZoom] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
   const imgRef = useRef<HTMLImageElement>(null);
 
-  useEffect(() => {
-    if (showZoom && imgRef.current) {
-      const rect = imgRef.current.getBoundingClientRect();
-
-      // Position zoom to the right of the image
-      let top = rect.top;
-      let left = rect.right + 8; // 8px gap to the right
-
-      // Check if zoom would go off the right edge of viewport
-      if (left + zoomSize > window.innerWidth) {
-        // Position to the left of the image instead
-        left = rect.left - zoomSize - 8;
-      }
-
-      // Check if zoom would go off the left edge
-      if (left < 0) {
-        left = 8;
-      }
-
-      // Check if zoom would go off the bottom
-      if (top + zoomSize > window.innerHeight) {
-        top = window.innerHeight - zoomSize - 8;
-      }
-
-      // Check if zoom would go off the top
-      if (top < 0) {
-        top = 8;
-      }
-
-      setPosition({ top, left });
-    }
+  // Compute position on render when zoom is visible (no useEffect + setState)
+  const position = useMemo(() => {
+    if (!showZoom || !imgRef.current) return { top: 0, left: 0 };
+    return calcZoomPosition(imgRef.current.getBoundingClientRect(), zoomSize);
   }, [showZoom, zoomSize]);
 
   return (

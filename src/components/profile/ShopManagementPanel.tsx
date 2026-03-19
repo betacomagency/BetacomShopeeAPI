@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { usePermissionsContext } from '@/contexts/PermissionsContext';
-import { usePartnerApps, type PartnerApp } from '@/components/profile/ShopAppConnectionStatus';
+import { usePartnerApps } from '@/components/profile/ShopAppConnectionStatus';
 
 // Số shop mỗi trang
 const SHOPS_PER_PAGE = 30;
@@ -158,7 +158,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
       setShops(shopsWithRole);
       setLoading(false);
-    } catch (err) {
+    } catch {
       toast({
         title: 'Lỗi',
         description: 'Không thể tải danh sách shop',
