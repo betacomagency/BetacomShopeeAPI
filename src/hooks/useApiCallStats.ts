@@ -21,7 +21,7 @@ export interface ApiCallSummary {
 }
 
 /** Map dateRange filter to days for RPC */
-function dateRangeToDays(range?: string): number {
+export function dateRangeToDays(range?: string): number {
   switch (range) {
     case '1h':
     case '24h':

@@ -30,7 +30,7 @@ export interface UseSyncDataReturn {
 /**
  * Check if data is stale based on last sync time
  */
-function isDataStale(lastSyncedAt: string | null, staleMinutes: number): boolean {
+export function isDataStale(lastSyncedAt: string | null, staleMinutes: number): boolean {
   if (!lastSyncedAt) return true;
 
   const lastSync = new Date(lastSyncedAt);

@@ -28,7 +28,7 @@ export interface PushLogFilters {
   pageSize: number;
 }
 
-function getDateFilter(range?: string): string | null {
+export function getDateFilter(range?: string): string | null {
   if (!range || range === 'all') return null;
   const now = new Date();
   switch (range) {

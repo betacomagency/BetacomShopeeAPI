@@ -9,7 +9,7 @@ async function callProxy<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 /** Phát hiện lỗi rate limit từ Shopee (error code 4xx hoặc message chứa "too many") */
-function isRateLimit(msg: string): boolean {
+export function isRateLimit(msg: string): boolean {
   return /rate.?limit|too.?many|429/i.test(msg);
 }
 
