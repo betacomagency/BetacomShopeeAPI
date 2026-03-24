@@ -23,49 +23,44 @@ import {
   getAuthorizationUrl,
   isTokenValid,
   handleOAuthCallback,
+  authenticateWithCode,
+  refreshToken,
+  clearToken,
   SHOPEE_CONFIG,
 } from '@/lib/shopee/browser-safe';
 
 // ==================== isConfigValid ====================
 
 describe('isConfigValid', () => {
-  it('returns true when partner_id > 0 and partner_key is non-empty', () => {
-    const origId = SHOPEE_CONFIG.partner_id;
-    const origKey = SHOPEE_CONFIG.partner_key;
+  const origId = SHOPEE_CONFIG.partner_id;
+  const origKey = SHOPEE_CONFIG.partner_key;
+  const origCallback = SHOPEE_CONFIG.callback_url;
 
+  afterEach(() => {
+    SHOPEE_CONFIG.partner_id = origId;
+    SHOPEE_CONFIG.partner_key = origKey;
+    SHOPEE_CONFIG.callback_url = origCallback;
+  });
+
+  it('returns true when partner_id > 0 and partner_key is non-empty', () => {
     SHOPEE_CONFIG.partner_id = 123456;
     SHOPEE_CONFIG.partner_key = 'test_key_abc';
 
     expect(isConfigValid()).toBe(true);
-
-    SHOPEE_CONFIG.partner_id = origId;
-    SHOPEE_CONFIG.partner_key = origKey;
   });
 
   it('returns false when partner_id is 0', () => {
-    const origId = SHOPEE_CONFIG.partner_id;
-    const origKey = SHOPEE_CONFIG.partner_key;
-
     SHOPEE_CONFIG.partner_id = 0;
     SHOPEE_CONFIG.partner_key = 'test_key_abc';
 
     expect(isConfigValid()).toBe(false);
-
-    SHOPEE_CONFIG.partner_id = origId;
-    SHOPEE_CONFIG.partner_key = origKey;
   });
 
   it('returns false when partner_key is empty', () => {
-    const origId = SHOPEE_CONFIG.partner_id;
-    const origKey = SHOPEE_CONFIG.partner_key;
-
     SHOPEE_CONFIG.partner_id = 123456;
     SHOPEE_CONFIG.partner_key = '';
 
     expect(isConfigValid()).toBe(false);
-
-    SHOPEE_CONFIG.partner_id = origId;
-    SHOPEE_CONFIG.partner_key = origKey;
   });
 });
 
@@ -210,5 +205,92 @@ describe('handleOAuthCallback', () => {
     expect(mockStorage.store).toHaveBeenCalledTimes(1);
     const storedToken = mockStorage.store.mock.calls[0][0];
     expect(storedToken.access_token).toBeTruthy();
+  });
+});
+
+// ==================== authenticateWithCode ====================
+
+describe('authenticateWithCode', () => {
+  beforeEach(() => {
+    mockStorage.store.mockReset();
+    mockStorage.store.mockResolvedValue(undefined);
+  });
+
+  it('returns a mock token with access_token and refresh_token', async () => {
+    const token = await authenticateWithCode('test-code', 12345);
+    expect(token.access_token).toContain('mock_access_token_');
+    expect(token.refresh_token).toContain('mock_refresh_token_');
+    expect(token.shop_id).toBe(12345);
+  });
+
+  it('stores the token via tokenStorage', async () => {
+    await authenticateWithCode('code', 1);
+    expect(mockStorage.store).toHaveBeenCalledTimes(1);
+  });
+
+  it('works without shopId', async () => {
+    const token = await authenticateWithCode('code');
+    expect(token.access_token).toBeTruthy();
+    expect(token.shop_id).toBeUndefined();
+  });
+});
+
+// ==================== refreshToken ====================
+
+describe('refreshToken', () => {
+  beforeEach(() => {
+    mockStorage.store.mockReset();
+    mockStorage.store.mockResolvedValue(undefined);
+    mockStorage.get.mockReset();
+  });
+
+  it('returns a refreshed mock token', async () => {
+    mockStorage.get.mockResolvedValue({
+      access_token: 'old',
+      refresh_token: 'old_refresh',
+      expire_in: 14400,
+    });
+
+    const token = await refreshToken(99, 88);
+    expect(token.access_token).toContain('mock_refreshed_token_');
+    expect(token.shop_id).toBe(99);
+    expect(token.merchant_id).toBe(88);
+  });
+
+  it('preserves existing refresh_token from stored token', async () => {
+    mockStorage.get.mockResolvedValue({
+      access_token: 'old',
+      refresh_token: 'keep_this_refresh',
+      expire_in: 14400,
+    });
+
+    const token = await refreshToken();
+    expect(token.refresh_token).toBe('keep_this_refresh');
+  });
+
+  it('uses fallback refresh_token when no stored token', async () => {
+    mockStorage.get.mockResolvedValue(null);
+
+    const token = await refreshToken();
+    expect(token.refresh_token).toContain('mock_refresh_');
+  });
+
+  it('stores the new token', async () => {
+    mockStorage.get.mockResolvedValue(null);
+
+    await refreshToken();
+    expect(mockStorage.store).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ==================== clearToken ====================
+
+describe('clearToken', () => {
+  it('calls tokenStorage.clear', async () => {
+    mockStorage.clear.mockReset();
+    mockStorage.clear.mockResolvedValue(undefined);
+
+    await clearToken();
+    expect(mockStorage.clear).toHaveBeenCalledTimes(1);
   });
 });

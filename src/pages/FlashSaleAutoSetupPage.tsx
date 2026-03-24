@@ -194,6 +194,84 @@ export default function FlashSaleAutoSetupPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
 
+  // Multi-select state
+  const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const isAllPageSelected = pagedHistory.length > 0 && pagedHistory.every(r => selectedRecords.has(r.id));
+  const isSomeSelected = selectedRecords.size > 0;
+
+  const toggleRecordSelection = (id: string) => {
+    setSelectedRecords(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPage = () => {
+    if (isAllPageSelected) {
+      setSelectedRecords(prev => {
+        const next = new Set(prev);
+        pagedHistory.forEach(r => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedRecords(prev => {
+        const next = new Set(prev);
+        pagedHistory.forEach(r => next.add(r.id));
+        return next;
+      });
+    }
+  };
+
+  const bulkDeleteSelected = async () => {
+    setShowBulkDeleteConfirm(false);
+    setBulkDeleting(true);
+    try {
+      const idsToDelete = [...selectedRecords];
+      const recordsToDelete = history.filter(h => idsToDelete.includes(h.id));
+
+      // Delete flash sales on Shopee for records that have flash_sale_id
+      const uniqueFlashSaleIds = [
+        ...new Set(recordsToDelete.map(h => Number(h.flash_sale_id)).filter(id => id > 0)),
+      ];
+
+      for (const flashSaleId of uniqueFlashSaleIds) {
+        try {
+          const { data } = await supabase.functions.invoke('apishopee-flash-sale', {
+            body: { action: 'delete-flash-sale', shop_id: selectedShopId, flash_sale_id: flashSaleId },
+          });
+          if (data?.error && !isFlashSaleNotExistError(data.error)) {
+            console.error(`Failed to delete flash sale ${flashSaleId}:`, data.error);
+          }
+        } catch (err) {
+          console.error(`Failed to delete flash sale ${flashSaleId}:`, err);
+        }
+        if (uniqueFlashSaleIds.length > 1) await new Promise(r => setTimeout(r, 300));
+      }
+
+      // Delete records from database
+      const { error } = await supabase
+        .from('apishopee_flash_sale_auto_history')
+        .delete()
+        .in('id', idsToDelete);
+      if (error) throw error;
+
+      setHistory(prev => prev.filter(h => !idsToDelete.includes(h.id)));
+      setSelectedRecords(new Set());
+      toast({
+        title: 'Đã xóa',
+        description: `Đã xóa ${idsToDelete.length} bản ghi${uniqueFlashSaleIds.length > 0 ? ` và ${uniqueFlashSaleIds.length} Flash Sale trên Shopee` : ''}`,
+      });
+    } catch (err) {
+      toast({ title: 'Lỗi', description: (err as Error).message, variant: 'destructive' });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const location = useLocation();
 
   // Get copyFromFlashSaleId directly from location state
@@ -501,6 +579,7 @@ export default function FlashSaleAutoSetupPage() {
 
   useEffect(() => {
     if (selectedShopId) {
+      setSelectedRecords(new Set());
       fetchHistory();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -948,7 +1027,39 @@ export default function FlashSaleAutoSetupPage() {
                     Xóa lọc
                   </button>
                 )}
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Bulk actions */}
+                {isSomeSelected && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowBulkDeleteConfirm(true)}
+                    disabled={bulkDeleting}
+                    className="cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    Xóa {selectedRecords.size} đã chọn
+                  </Button>
+                )}
               </div>
+
+              {/* Select all bar */}
+              {history.length > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 md:px-4 border-t bg-muted/30">
+                  <Checkbox
+                    checked={isAllPageSelected}
+                    onCheckedChange={toggleSelectAllPage}
+                    className="cursor-pointer"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {isAllPageSelected ? 'Bỏ chọn trang này' : 'Chọn tất cả trang này'}
+                    {selectedRecords.size > 0 && ` · ${selectedRecords.size} đã chọn`}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Progress */}
@@ -1028,10 +1139,15 @@ export default function FlashSaleAutoSetupPage() {
                           : 'border-l-info/50';
 
                   return (
-                    <div key={record.id} className={cn("px-3 py-2.5 bg-card border-l-[3px]", borderColor)}>
-                      {/* Row 1: Time slot + Status + Delete */}
+                    <div key={record.id} className={cn("px-3 py-2.5 bg-card border-l-[3px]", borderColor, selectedRecords.has(record.id) && "bg-primary/5")}>
+                      {/* Row 1: Checkbox + Time slot + Status + Delete */}
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-foreground font-medium">
+                        <Checkbox
+                          checked={selectedRecords.has(record.id)}
+                          onCheckedChange={() => toggleRecordSelection(record.id)}
+                          className="shrink-0 cursor-pointer"
+                        />
+                        <span className="text-sm text-foreground font-medium flex-1">
                           {startTimeStr} {dateStr} – {dateStr === endDateStr ? endTimeStr : `${endTimeStr} ${endDateStr}`}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
@@ -1039,16 +1155,14 @@ export default function FlashSaleAutoSetupPage() {
                             {statusConfig.icon}
                             {statusConfig.label}
                           </Badge>
-                          {(record.status === 'scheduled' || record.status === 'pending') && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
-                              onClick={() => setDeleteConfirmId(record.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                            onClick={() => setDeleteConfirmId(record.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </div>
 
@@ -1125,9 +1239,15 @@ export default function FlashSaleAutoSetupPage() {
                     return (
                       <div
                         key={record.id}
-                        className="bg-card rounded-xl border border-border p-4 hover:shadow-md hover:border-primary/30 transition-all group"
+                        className={cn("bg-card rounded-xl border border-border p-4 hover:shadow-md hover:border-primary/30 transition-all group", selectedRecords.has(record.id) && "border-primary/50 bg-primary/5")}
                       >
-                        <div className="grid grid-cols-[1fr_auto_100px_140px_140px_40px] items-center gap-4">
+                        <div className="grid grid-cols-[24px_1fr_auto_100px_140px_140px_40px] items-center gap-4">
+                          {/* Checkbox */}
+                          <Checkbox
+                            checked={selectedRecords.has(record.id)}
+                            onCheckedChange={() => toggleRecordSelection(record.id)}
+                            className="cursor-pointer"
+                          />
                           {/* Main Info */}
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
@@ -1183,16 +1303,12 @@ export default function FlashSaleAutoSetupPage() {
 
                           {/* Delete Action */}
                           <div className="flex justify-center">
-                            {(record.status === 'scheduled' || record.status === 'pending') ? (
-                              <button
-                                className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                                onClick={() => setDeleteConfirmId(record.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <div className="w-8" />
-                            )}
+                            <button
+                              className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                              onClick={() => setDeleteConfirmId(record.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1437,6 +1553,34 @@ export default function FlashSaleAutoSetupPage() {
               className="bg-destructive hover:bg-destructive/90"
             >
               Xóa tất cả
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm bulk delete selected records */}
+      <AlertDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa {selectedRecords.size} bản ghi đã chọn</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const selected = history.filter(h => selectedRecords.has(h.id));
+                const fsCount = selected.filter(h => h.flash_sale_id && Number(h.flash_sale_id) > 0).length;
+                if (fsCount > 0) {
+                  return `${fsCount} Flash Sale trên Shopee cũng sẽ bị xóa. Hành động này không thể hoàn tác.`;
+                }
+                return 'Các bản ghi đã chọn sẽ bị xóa. Hành động này không thể hoàn tác.';
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={bulkDeleteSelected}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Xóa {selectedRecords.size} bản ghi
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

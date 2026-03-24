@@ -231,6 +231,15 @@ describe('supabase-client', () => {
 
       await expect(getShopsByPartner('uuid')).rejects.toThrow('proxy fail');
     });
+
+    it('throws when responseData.error is set', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        data: { response: { data: { error: 'partner_err', message: 'Partner error' } } },
+        error: null,
+      });
+
+      await expect(getShopsByPartner('uuid')).rejects.toThrow('Partner error');
+    });
   });
 
   // ── getShopInfo ───────────────────────────────────────────────────────────
@@ -253,6 +262,15 @@ describe('supabase-client', () => {
 
       await expect(getShopInfo(1)).rejects.toThrow('network');
     });
+
+    it('throws when responseData.error is set', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        data: { response: { data: { error: 'shop_not_found', message: 'Shop not found' } } },
+        error: null,
+      });
+
+      await expect(getShopInfo(1)).rejects.toThrow('Shop not found');
+    });
   });
 
   // ── getMerchantsByPartner ─────────────────────────────────────────────────
@@ -274,6 +292,12 @@ describe('supabase-client', () => {
       });
 
       await expect(getMerchantsByPartner('uuid')).rejects.toThrow('Bad request');
+    });
+
+    it('throws on invoke error', async () => {
+      mockInvoke.mockResolvedValueOnce({ data: null, error: { message: 'merchant proxy fail' } });
+
+      await expect(getMerchantsByPartner('uuid')).rejects.toThrow('merchant proxy fail');
     });
   });
 
