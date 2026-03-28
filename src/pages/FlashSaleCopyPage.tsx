@@ -166,6 +166,10 @@ export default function FlashSaleCopyPage() {
   const [excludedItems, setExcludedItems] = useState<Set<number>>(new Set());
   const [excludedModels, setExcludedModels] = useState<Set<string>>(new Set()); // "itemId:modelId"
 
+  // Exclusion reason tracking — lý do từng model bị auto-exclude
+  type ExclusionReason = 'no_stock' | 'criteria_fail' | 'disabled' | 'no_price';
+  const [exclusionReasons, setExclusionReasons] = useState<Map<string, ExclusionReason[]>>(new Map());
+
   // Criteria state
   const [criteria, setCriteria] = useState<CriteriaData>(DEFAULT_CRITERIA);
   const [loadingCriteria, setLoadingCriteria] = useState(false);
@@ -196,6 +200,9 @@ export default function FlashSaleCopyPage() {
   const fetchTemplateItems = async () => {
     if (!selectedShopId || !flashSaleId) return;
     setLoadingTemplate(true);
+    // Reset exclusion state để tránh duplicate khi re-render (StrictMode)
+    setExclusionReasons(new Map());
+    setExcludedModels(new Set());
     try {
       // Get source FS time info
       const { data: fsData } = await supabase
@@ -228,21 +235,45 @@ export default function FlashSaleCopyPage() {
       const enabledItems = itemsWithModels.filter((item: FlashSaleItem) => item.status === 1);
       setTemplateItems(enabledItems);
 
-      // Auto-exclude models with stock = 0
+      // Auto-exclude models + track exclusion reasons
       const noStockModels = new Set<string>();
+      const newReasons = new Map<string, ExclusionReason[]>();
+
       for (const item of enabledItems) {
         if (item.models) {
           for (const model of item.models) {
+            const key = `${item.item_id}:${model.model_id}`;
+            // RC1: stock = 0 → hết hàng (FS đã chạy xong)
             if ((model.stock ?? 0) === 0) {
-              noStockModels.add(`${item.item_id}:${model.model_id}`);
+              noStockModels.add(key);
+              newReasons.set(key, [...(newReasons.get(key) || []), 'no_stock']);
+            }
+            // RC3: model bị vô hiệu/từ chối bởi Shopee
+            if (model.status !== undefined && model.status !== 1) {
+              noStockModels.add(key);
+              newReasons.set(key, [...(newReasons.get(key) || []), 'disabled']);
+            }
+            // RC4: model không có giá khuyến mãi
+            const promoPrice = model.input_promotion_price || 0;
+            if (promoPrice <= 0) {
+              noStockModels.add(key);
+              newReasons.set(key, [...(newReasons.get(key) || []), 'no_price']);
             }
           }
         }
       }
+
       if (noStockModels.size > 0) {
         setExcludedModels(prev => {
           const next = new Set(prev);
           noStockModels.forEach(k => next.add(k));
+          return next;
+        });
+      }
+      if (newReasons.size > 0) {
+        setExclusionReasons(prev => {
+          const next = new Map(prev);
+          newReasons.forEach((reasons, key) => next.set(key, [...(next.get(key) || []), ...reasons]));
           return next;
         });
       }
@@ -346,11 +377,18 @@ export default function FlashSaleCopyPage() {
           }
         }
         setFailedModels(failed);
-        // Auto-exclude failed models
+        // Auto-exclude failed models + track criteria_fail reason (RC2)
         if (autoExcludeModels.size > 0) {
           setExcludedModels(prev => {
             const next = new Set(prev);
             autoExcludeModels.forEach(k => next.add(k));
+            return next;
+          });
+          setExclusionReasons(prev => {
+            const next = new Map(prev);
+            autoExcludeModels.forEach(key => {
+              next.set(key, [...(next.get(key) || []), 'criteria_fail']);
+            });
             return next;
           });
         }
@@ -387,9 +425,11 @@ export default function FlashSaleCopyPage() {
   const getEffectiveValues = useCallback((itemId: number, modelId: number, originalPromo: number, originalStock: number) => {
     const key = `${itemId}:${modelId}`;
     const edit = itemEdits.get(key);
+    const rawStock = edit?.campaignStock ?? originalStock;
     return {
       promoPrice: edit?.promoPrice ?? originalPromo,
-      campaignStock: edit?.campaignStock ?? originalStock,
+      // Nếu stock = 0, mặc định lên 1 (Shopee reject stock=0)
+      campaignStock: rawStock === 0 ? 1 : rawStock,
     };
   }, [itemEdits]);
 
@@ -446,6 +486,38 @@ export default function FlashSaleCopyPage() {
 
   // Count active items for footer button
   const activeItemCount = templateItems.filter(item => !excludedItems.has(item.item_id)).length;
+
+  // ==================== EXCLUSION SUMMARY (Phase 3) ====================
+
+  const countByReason = useCallback((reason: ExclusionReason): number => {
+    let count = 0;
+    exclusionReasons.forEach(reasons => {
+      if (reasons.includes(reason)) count++;
+    });
+    return count;
+  }, [exclusionReasons]);
+
+  const restoreAllExcluded = useCallback(() => {
+    // Chỉ khôi phục stock=0 và criteria_fail (user có thể ghi đè)
+    // KHÔNG khôi phục 'disabled' hoặc 'no_price' (Shopee sẽ reject)
+    const restorable = new Set<string>();
+    exclusionReasons.forEach((reasons, key) => {
+      const onlyUserOverridable = reasons.every(r => r === 'no_stock' || r === 'criteria_fail');
+      if (onlyUserOverridable) restorable.add(key);
+    });
+
+    setExcludedModels(prev => {
+      const next = new Set(prev);
+      restorable.forEach(k => next.delete(k));
+      return next;
+    });
+    // Xóa exclusionReasons cho các model đã khôi phục để banner cập nhật đúng
+    setExclusionReasons(prev => {
+      const next = new Map(prev);
+      restorable.forEach(k => next.delete(k));
+      return next;
+    });
+  }, [exclusionReasons]);
 
   // ==================== SLOT SELECTION ====================
 
@@ -698,6 +770,34 @@ export default function FlashSaleCopyPage() {
           </div>
         </div>
       </div>
+
+      {/* Banner cảnh báo phân loại bị loại bỏ tự động */}
+      {exclusionReasons.size > 0 && !loadingTemplate && !loadingCriteria && (
+        <div className="flex-shrink-0 px-6 pt-3">
+          <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+            <AlertCircle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="flex items-center justify-between gap-3">
+              <span className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>{exclusionReasons.size}</strong> phân loại bị tự động loại:{' '}
+                {[
+                  countByReason('no_stock') > 0 && `${countByReason('no_stock')} hết hàng`,
+                  countByReason('criteria_fail') > 0 && `${countByReason('criteria_fail')} chưa đạt tiêu chí`,
+                  countByReason('disabled') > 0 && `${countByReason('disabled')} bị vô hiệu`,
+                  countByReason('no_price') > 0 && `${countByReason('no_price')} chưa có giá`,
+                ].filter(Boolean).join(', ')}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={restoreAllExcluded}
+                className="cursor-pointer flex-shrink-0 border-amber-500/50 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-950/40"
+              >
+                Bỏ loại tất cả
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
@@ -1220,7 +1320,7 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
             const noStock = (model.stock ?? 0) === 0;
 
             return (
-              <tr key={model.model_id} className={cn("border-b hover:bg-background/50", (excluded || noStock || isFailed) && "opacity-40")}>
+              <tr key={model.model_id} className={cn("border-b hover:bg-background/50", (excluded || isFailed) && "opacity-40", noStock && !excluded && "opacity-60")}>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2 pl-2">
                     <TooltipProvider>
@@ -1232,9 +1332,10 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                               onCheckedChange={() => {
                                 if (!isFailed) onToggleModel(item.item_id, model.model_id);
                               }}
-                              disabled={isItemExcluded || isFailed || noStock}
+                              disabled={isItemExcluded || isFailed}
                               className={cn(
-                                (isFailed || noStock) && "opacity-50 cursor-not-allowed"
+                                isFailed && "opacity-50 cursor-not-allowed",
+                                noStock && !isFailed && "cursor-pointer"
                               )}
                             />
                           </span>
@@ -1245,6 +1346,11 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                             <ul className="text-xs space-y-0.5">
                               {criteriaCheck.reasons.map((r, i) => <li key={i}>• {r}</li>)}
                             </ul>
+                          </TooltipContent>
+                        )}
+                        {noStock && !isFailed && (
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="text-xs">Hết hàng (stock = 0). Bấm để thêm lại với stock mặc định = 1.</p>
                           </TooltipContent>
                         )}
                       </Tooltip>
@@ -1258,6 +1364,11 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                           {criteriaCheck.reasons[0]}
                         </span>
                       )}
+                      {noStock && !isFailed && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 truncate block">
+                          Hết hàng — stock sẽ đặt = 1
+                        </span>
+                      )}
                     </div>
                   </div>
                 </td>
@@ -1267,10 +1378,10 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                     type="number"
                     value={effPromo}
                     onChange={e => onEditModel(item.item_id, model.model_id, 'promoPrice', Number(e.target.value))}
-                    disabled={noStock}
+                    disabled={excluded}
                     className={cn(
                       "h-8 text-sm text-right w-full font-medium",
-                      noStock && "bg-muted cursor-not-allowed",
+                      excluded && "bg-muted cursor-not-allowed",
                       isEdited && effPromo !== origPromo ? "border-info bg-info/10/50" : "",
                       !criteriaCheck.pass ? "border-warning" : ""
                     )}
@@ -1292,14 +1403,14 @@ function ProductRow({ item, expanded, onToggleExpand, isItemExcluded, onToggleIt
                     type="number"
                     value={effStock}
                     onChange={e => onEditModel(item.item_id, model.model_id, 'campaignStock', Number(e.target.value))}
-                    disabled={noStock}
+                    disabled={excluded}
                     className={cn(
                       "h-8 text-sm text-center w-full font-medium text-brand",
-                      noStock && "bg-muted cursor-not-allowed text-muted-foreground",
+                      excluded && "bg-muted cursor-not-allowed text-muted-foreground",
                       isEdited && effStock !== origStock ? "border-info bg-info/10/50" : "",
                       !criteriaCheck.pass ? "border-warning" : ""
                     )}
-                    min={0}
+                    min={1}
                   />
                 </td>
                 <td className="px-3 py-2.5 text-sm text-muted-foreground text-center">{model.stock ?? 0}</td>

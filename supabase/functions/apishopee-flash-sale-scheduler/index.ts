@@ -42,6 +42,7 @@ interface ScheduledJob {
   items_count: number;
   scheduled_at: string;
   retry_count?: number;
+  items_data?: Array<Record<string, unknown>>;
 }
 
 // Retry configuration
@@ -994,7 +995,7 @@ serve(async (req) => {
     // Tìm các scheduled + retry jobs đến hạn
     const { data: pendingJobs, error: queryError } = await supabase
       .from('apishopee_flash_sale_auto_history')
-      .select('*')
+      .select('id, shop_id, user_id, timeslot_id, slot_start_time, slot_end_time, items_count, scheduled_at, retry_count, items_data')
       .in('status', ['scheduled', 'retry'])
       .lte('scheduled_at', now)
       .order('scheduled_at', { ascending: true })
