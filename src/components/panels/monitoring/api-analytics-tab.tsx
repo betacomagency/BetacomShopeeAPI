@@ -102,30 +102,43 @@ export function ApiAnalyticsTab() {
   const [hours, setHours] = useState(24);
   const { data, isLoading, error } = useApiAnalytics(hours);
 
-  // Error logs with date filter
+  // Error logs with filters
   const today = format(new Date(), 'yyyy-MM-dd');
   const [errorDate, setErrorDate] = useState(today);
   const [errorFnFilter, setErrorFnFilter] = useState<string | undefined>();
   const [errorPage, setErrorPage] = useState(1);
   const [selectedError, setSelectedError] = useState<ErrorLogItem | null>(null);
-  const { data: errorLogs, isLoading: errLoading } = useErrorLogs(errorDate, errorFnFilter, errorPage);
+  const [shopIdFilter, setShopIdFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [searchFilter, setSearchFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const { data: errorLogs, isLoading: errLoading } = useErrorLogs({
+    date: errorDate,
+    edgeFunction: errorFnFilter,
+    page: errorPage,
+    shopId: shopIdFilter ? Number(shopIdFilter) : undefined,
+    status: statusFilter,
+    search: searchFilter || undefined,
+  });
 
   // Navigate dates
   const prevDay = () => {
     const d = new Date(errorDate);
     d.setDate(d.getDate() - 1);
     setErrorDate(format(d, 'yyyy-MM-dd'));
-    setErrorPage(1);
-    setSelectedError(null);
+    setErrorPage(1); setSelectedError(null);
   };
   const nextDay = () => {
     const d = new Date(errorDate);
     d.setDate(d.getDate() + 1);
     if (d <= new Date()) {
       setErrorDate(format(d, 'yyyy-MM-dd'));
-      setErrorPage(1);
-      setSelectedError(null);
+      setErrorPage(1); setSelectedError(null);
     }
+  };
+  const resetFilters = () => {
+    setErrorFnFilter(undefined); setShopIdFilter(''); setStatusFilter(undefined);
+    setSearchFilter(''); setSearchInput(''); setErrorPage(1); setSelectedError(null);
   };
 
   if (isLoading) return <Spinner className="mt-8" />;
@@ -224,31 +237,67 @@ export function ApiAnalyticsTab() {
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">Error Logs</CardTitle>
-            <div className="flex items-center gap-2">
-              {/* Function filter */}
-              <select
-                value={errorFnFilter ?? ''}
-                onChange={(e) => { setErrorFnFilter(e.target.value || undefined); setErrorPage(1); setSelectedError(null); }}
+            <div className="flex items-center gap-1">
+              <button onClick={prevDay} className="cursor-pointer rounded p-1 hover:bg-accent"><ChevronLeft className="h-4 w-4" /></button>
+              <input
+                type="date"
+                value={errorDate}
+                max={today}
+                onChange={(e) => { setErrorDate(e.target.value); setErrorPage(1); setSelectedError(null); }}
                 className="cursor-pointer rounded border border-input bg-background px-2 py-1 text-xs outline-none"
-              >
-                <option value="">All Functions</option>
-                {functions.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
-              </select>
-              {/* Date navigator */}
-              <div className="flex items-center gap-1">
-                <button onClick={prevDay} className="cursor-pointer rounded p-1 hover:bg-accent"><ChevronLeft className="h-4 w-4" /></button>
-                <input
-                  type="date"
-                  value={errorDate}
-                  max={today}
-                  onChange={(e) => { setErrorDate(e.target.value); setErrorPage(1); setSelectedError(null); }}
-                  className="cursor-pointer rounded border border-input bg-background px-2 py-1 text-xs outline-none"
-                />
-                <button onClick={nextDay} className="cursor-pointer rounded p-1 hover:bg-accent" disabled={errorDate === today}><ChevronRight className="h-4 w-4" /></button>
-              </div>
+              />
+              <button onClick={nextDay} className="cursor-pointer rounded p-1 hover:bg-accent" disabled={errorDate === today}><ChevronRight className="h-4 w-4" /></button>
             </div>
           </div>
-          {errorLogs && <p className="mt-1 text-xs text-muted-foreground">{errorLogs.total} error(s) on {errorDate}</p>}
+          {/* Filter row */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select
+              value={errorFnFilter ?? ''}
+              onChange={(e) => { setErrorFnFilter(e.target.value || undefined); setErrorPage(1); setSelectedError(null); }}
+              className="cursor-pointer rounded border border-input bg-background px-2 py-1 text-xs outline-none"
+            >
+              <option value="">All Functions</option>
+              {functions.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
+            </select>
+            <select
+              value={statusFilter ?? ''}
+              onChange={(e) => { setStatusFilter(e.target.value || undefined); setErrorPage(1); setSelectedError(null); }}
+              className="cursor-pointer rounded border border-input bg-background px-2 py-1 text-xs outline-none"
+            >
+              <option value="">Errors only</option>
+              <option value="failed">Failed</option>
+              <option value="timeout">Timeout</option>
+              <option value="success">Success</option>
+            </select>
+            <input
+              type="text"
+              value={shopIdFilter}
+              onChange={(e) => { setShopIdFilter(e.target.value.replace(/\D/g, '')); setErrorPage(1); setSelectedError(null); }}
+              placeholder="Shop ID"
+              className="w-24 rounded border border-input bg-background px-2 py-1 text-xs outline-none"
+            />
+            <form
+              className="flex"
+              onSubmit={(e) => { e.preventDefault(); setSearchFilter(searchInput); setErrorPage(1); setSelectedError(null); }}
+            >
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search error/endpoint..."
+                className="w-40 rounded-l border border-input bg-background px-2 py-1 text-xs outline-none"
+              />
+              <button type="submit" className="cursor-pointer rounded-r border border-l-0 border-input bg-muted px-2 py-1 text-xs hover:bg-accent">
+                Search
+              </button>
+            </form>
+            {(errorFnFilter || statusFilter || shopIdFilter || searchFilter) && (
+              <button onClick={resetFilters} className="cursor-pointer rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent">
+                Clear filters
+              </button>
+            )}
+          </div>
+          {errorLogs && <p className="mt-2 text-xs text-muted-foreground">{errorLogs.total} log(s) on {errorDate}</p>}
         </CardHeader>
         <CardContent>
           {errLoading && <Spinner className="mt-4" />}

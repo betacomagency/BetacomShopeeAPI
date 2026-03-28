@@ -28,15 +28,29 @@ export interface ErrorLogsResult {
   items: ErrorLogItem[];
 }
 
-export function useErrorLogs(date: string, edgeFunction?: string, page = 1, pageSize = 50) {
+export interface ErrorLogsFilters {
+  date: string;
+  edgeFunction?: string;
+  page?: number;
+  pageSize?: number;
+  shopId?: number;
+  status?: string;
+  search?: string;
+}
+
+export function useErrorLogs(filters: ErrorLogsFilters) {
+  const { date, edgeFunction, page = 1, pageSize = 50, shopId, status, search } = filters;
   return useQuery<ErrorLogsResult>({
-    queryKey: ['error-logs', date, edgeFunction, page, pageSize],
+    queryKey: ['error-logs', date, edgeFunction, page, pageSize, shopId, status, search],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_error_logs', {
         p_date: date,
         p_edge_function: edgeFunction ?? null,
         p_page: page,
         p_page_size: pageSize,
+        p_shop_id: shopId ?? null,
+        p_status: status ?? null,
+        p_search: search ?? null,
       });
       if (error) throw error;
       return data as ErrorLogsResult;
