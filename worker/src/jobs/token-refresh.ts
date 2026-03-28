@@ -109,19 +109,6 @@ async function logRefreshResult(
   newExpiredAt?: number
 ): Promise<void> {
   try {
-    // Note: apishopee_token_refresh_logs table may not exist — skip if missing
-    await supabase.from('apishopee_token_refresh_logs').insert({
-      shop_id: shopId,
-      shopee_shop_id: shopeeShopId,
-      success,
-      error_message: errorMessage,
-      old_token_expired_at: oldExpiredAt,
-      new_token_expired_at: newExpiredAt,
-      refresh_source: 'auto',
-    }).then(({ error }) => {
-      if (error) console.warn('[TOKEN-REFRESH] Log table insert skipped:', error.message);
-    });
-
     await logActivity(supabase, {
       shopId: shopeeShopId,
       actionType: 'token_refresh',
