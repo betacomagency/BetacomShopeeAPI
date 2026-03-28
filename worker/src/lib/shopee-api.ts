@@ -136,7 +136,7 @@ export async function saveToken(
   token: Record<string, unknown>
 ): Promise<boolean> {
   const expireIn = token.expire_in as number;
-  const expiredAt = new Date(Date.now() + expireIn * 1000).toISOString();
+  const expiredAt = Date.now() + expireIn * 1000;
 
   const { error } = await supabase.from('apishopee_shops').upsert({
     shop_id: shopId,

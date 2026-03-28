@@ -109,6 +109,7 @@ async function logRefreshResult(
   newExpiredAt?: number
 ): Promise<void> {
   try {
+    // Note: apishopee_token_refresh_logs table may not exist — skip if missing
     await supabase.from('apishopee_token_refresh_logs').insert({
       shop_id: shopId,
       shopee_shop_id: shopeeShopId,
@@ -117,6 +118,8 @@ async function logRefreshResult(
       old_token_expired_at: oldExpiredAt,
       new_token_expired_at: newExpiredAt,
       refresh_source: 'auto',
+    }).then(({ error }) => {
+      if (error) console.warn('[TOKEN-REFRESH] Log table insert skipped:', error.message);
     });
 
     await logActivity(supabase, {
@@ -205,7 +208,7 @@ async function refreshMerchantGroup(
   }
 
   const newToken = refreshResult.data;
-  const newExpiredAt = new Date(Date.now() + (newToken.expire_in as number) * 1000).toISOString();
+  const newExpiredAt = Date.now() + (newToken.expire_in as number) * 1000;
 
   const { error: updateError } = await supabase
     .from('apishopee_shops')
@@ -214,6 +217,7 @@ async function refreshMerchantGroup(
       refresh_token: newToken.refresh_token,
       expire_in: newToken.expire_in,
       expired_at: newExpiredAt,
+      access_token_expired_at: newExpiredAt,
       token_updated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -259,7 +263,7 @@ async function refreshStandaloneShop(shop: ShopToken): Promise<RefreshResult> {
   }
 
   const newToken = refreshResult.data;
-  const newExpiredAt = new Date(Date.now() + (newToken.expire_in as number) * 1000).toISOString();
+  const newExpiredAt = Date.now() + (newToken.expire_in as number) * 1000;
 
   const { error: updateError } = await supabase
     .from('apishopee_shops')
@@ -268,6 +272,7 @@ async function refreshStandaloneShop(shop: ShopToken): Promise<RefreshResult> {
       refresh_token: newToken.refresh_token,
       expire_in: newToken.expire_in,
       expired_at: newExpiredAt,
+      access_token_expired_at: newExpiredAt,
       token_updated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -321,7 +326,7 @@ async function refreshAppTokens(): Promise<RefreshResult[]> {
 
     if (refreshResult.success && refreshResult.data) {
       const newToken = refreshResult.data;
-      const newExpiredAt = new Date(Date.now() + (newToken.expire_in as number) * 1000).toISOString();
+      const newExpiredAt = Date.now() + (newToken.expire_in as number) * 1000;
 
       for (const at of groupTokens) {
         const { error: updateError } = await supabase
@@ -361,7 +366,7 @@ async function refreshAppTokens(): Promise<RefreshResult[]> {
 
     if (refreshResult.success && refreshResult.data) {
       const newToken = refreshResult.data;
-      const newExpiredAt = new Date(Date.now() + (newToken.expire_in as number) * 1000).toISOString();
+      const newExpiredAt = Date.now() + (newToken.expire_in as number) * 1000;
 
       const { error: updateError } = await supabase
         .from('apishopee_shop_app_tokens')
