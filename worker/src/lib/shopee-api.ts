@@ -128,21 +128,30 @@ export async function refreshAccessToken(
 }
 
 /**
- * Save refreshed token to DB.
+ * Save refreshed token to DB. Logs error but does not throw — caller handles fallback.
  */
 export async function saveToken(
   supabase: SupabaseClient,
   shopId: number,
   token: Record<string, unknown>
-): Promise<void> {
-  await supabase.from('apishopee_shops').upsert({
+): Promise<boolean> {
+  const expireIn = token.expire_in as number;
+  const expiredAt = new Date(Date.now() + expireIn * 1000).toISOString();
+
+  const { error } = await supabase.from('apishopee_shops').upsert({
     shop_id: shopId,
     access_token: token.access_token,
     refresh_token: token.refresh_token,
-    expire_in: token.expire_in,
-    expired_at: Date.now() + (token.expire_in as number) * 1000,
+    expire_in: expireIn,
+    expired_at: expiredAt,
     token_updated_at: new Date().toISOString(),
   }, { onConflict: 'shop_id' });
+
+  if (error) {
+    console.error(`[SHOPEE-API] Failed to save token for shop ${shopId}:`, error.message);
+    return false;
+  }
+  return true;
 }
 
 // ==================== API CALLER ====================
@@ -227,7 +236,7 @@ export async function callShopeeApi(opts: CallShopeeApiOptions): Promise<unknown
   try {
     let result = await makeRequest(token.access_token) as Record<string, unknown>;
 
-    // Auto-refresh token on auth failure
+    // Auto-refresh token on auth failure (no mutation of original token object)
     if (result.error === 'error_auth' || (result.message as string)?.includes?.('Invalid access_token')) {
       const firstStatus = getApiCallStatus(result);
       logCall(firstStatus.status, Date.now() - startTime, {
@@ -240,10 +249,12 @@ export async function callShopeeApi(opts: CallShopeeApiOptions): Promise<unknown
       const retryStart = Date.now();
       const newToken = await refreshAccessToken(credentials, token.refresh_token, shopId);
       if (!newToken.error) {
-        await saveToken(supabase, shopId, newToken);
+        const saved = await saveToken(supabase, shopId, newToken);
+        if (!saved) {
+          console.warn(`[SHOPEE-API] Token refreshed but failed to persist for shop ${shopId}`);
+        }
         wasTokenRefreshed = true;
-        token.access_token = newToken.access_token as string;
-        token.refresh_token = newToken.refresh_token as string;
+        // Use new token for retry without mutating the original token object
         result = await makeRequest(newToken.access_token as string) as Record<string, unknown>;
       }
 

@@ -59,7 +59,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   flash_sale: "bg-brand/10 text-brand border-brand",
   auth: "bg-info/10 text-info border-info",
   products: "bg-info/10 text-info border-info",
-  reviews: "bg-info/10 text-info border-info",
   system: "bg-muted text-muted-foreground border-border",
 };
 

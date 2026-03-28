@@ -143,14 +143,19 @@ async function syncShopFlashSales(
 
 // ==================== MAIN ENTRY POINT ====================
 
-let isRunning = false;
+let _isRunning = false;
+
+/** Check if sync is currently running (used by graceful shutdown) */
+export function isSyncRunning(): boolean {
+  return _isRunning;
+}
 
 export async function runFlashSaleSync(): Promise<void> {
-  if (isRunning) {
+  if (_isRunning) {
     console.log('[FS-SYNC] Previous run still active, skipping');
     return;
   }
-  isRunning = true;
+  _isRunning = true;
 
   try {
     console.log('[FS-SYNC] Starting flash sale sync for all shops');
@@ -196,6 +201,6 @@ export async function runFlashSaleSync(): Promise<void> {
   } catch (error) {
     console.error('[FS-SYNC] Fatal error:', (error as Error).message);
   } finally {
-    isRunning = false;
+    _isRunning = false;
   }
 }

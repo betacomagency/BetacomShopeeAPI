@@ -502,14 +502,19 @@ async function syncFlashSaleDataForShop(
 // ==================== MAIN ENTRY POINT ====================
 
 /** Running flag to prevent overlapping executions */
-let isRunning = false;
+let _isRunning = false;
+
+/** Check if scheduler is currently running (used by graceful shutdown) */
+export function isSchedulerRunning(): boolean {
+  return _isRunning;
+}
 
 export async function runFlashSaleScheduler(): Promise<void> {
-  if (isRunning) {
+  if (_isRunning) {
     console.log('[FS-SCHEDULER] Previous run still active, skipping');
     return;
   }
-  isRunning = true;
+  _isRunning = true;
 
   try {
     const now = new Date().toISOString();
@@ -599,6 +604,6 @@ export async function runFlashSaleScheduler(): Promise<void> {
   } catch (error) {
     console.error('[FS-SCHEDULER] Fatal error:', (error as Error).message);
   } finally {
-    isRunning = false;
+    _isRunning = false;
   }
 }

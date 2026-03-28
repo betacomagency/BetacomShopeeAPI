@@ -59,7 +59,6 @@ const CATEGORY_OPTIONS = [
   { value: 'shop', label: 'Shop' },
   { value: 'order', label: 'Order' },
   { value: 'finance', label: 'Finance' },
-  { value: 'review', label: 'Review' },
 ];
 
 const STATUS_OPTIONS = [
@@ -95,7 +94,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
   shop: 'bg-success/10 text-success',
   order: 'bg-info/10 text-info',
   finance: 'bg-success/10 text-success',
-  review: 'bg-warning/10 text-warning',
 };
 
 // eslint-disable-next-line react-refresh/only-export-components
