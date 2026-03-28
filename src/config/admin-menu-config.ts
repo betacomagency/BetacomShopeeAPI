@@ -8,6 +8,7 @@ import {
   Activity,
   Store,
   Users,
+  Heart,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -23,4 +24,5 @@ export const adminMenuItems: AdminMenuItem[] = [
   { title: 'API Call Logs', icon: Activity, path: '/admin/api-logs' },
   { title: 'Quản lý Shop', icon: Store, path: '/admin/shops' },
   { title: 'Quản lý người dùng', icon: Users, path: '/admin/users' },
+  { title: 'Monitoring', icon: Heart, path: '/admin/monitoring' },
 ];

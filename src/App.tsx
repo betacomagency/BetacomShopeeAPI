@@ -40,6 +40,7 @@ const DocsPage = lazy(() => import('@/pages/DocsPage'));
 
 // Admin Pages
 const AdminDashboardPage = lazy(() => import('@/pages/admin/AdminDashboardPage'));
+const MonitoringPage = lazy(() => import('@/pages/admin/monitoring-page'));
 
 // Shop Performance Page
 const ShopPerformancePage = lazy(() => import('@/pages/ShopPerformancePage'));
@@ -108,6 +109,7 @@ function App() {
                   <Route path="/admin/shops" element={<ShopsSettingsPage />} />
                   <Route path="/admin/shops/:shopId" element={<ShopInfoPage />} />
                   <Route path="/admin/users" element={<UsersSettingsPage />} />
+                  <Route path="/admin/monitoring" element={<MonitoringPage />} />
                 </Route>
 
                 {/* Backwards compat redirects */}
