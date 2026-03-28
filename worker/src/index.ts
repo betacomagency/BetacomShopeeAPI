@@ -14,6 +14,7 @@ import { config } from './config';
 import { supabase } from './lib/supabase';
 import { runFlashSaleScheduler } from './jobs/flash-sale-scheduler';
 import { runFlashSaleSync } from './jobs/flash-sale-sync';
+import { runTokenRefresh } from './jobs/token-refresh';
 
 // ==================== ERROR HANDLERS ====================
 
@@ -82,8 +83,18 @@ cron.schedule('10,40 * * * *', async () => {
   }
 });
 
-// TODO Phase 2: Token refresh, orders, products, escrow
-// TODO Phase 3: Ads enqueue, queue processor, backfill, budget scheduler, cleanup
+// Token refresh — every 30 minutes (runs before sync jobs to ensure valid tokens)
+cron.schedule('0,30 * * * *', async () => {
+  console.log(`[CRON] Token refresh triggered at ${new Date().toISOString()}`);
+  try {
+    await runTokenRefresh();
+  } catch (err) {
+    console.error('[CRON] Token refresh error:', (err as Error).message);
+  }
+});
+
+// TODO Phase 2: orders, products sync
+// TODO Phase 3: Ads (future)
 
 // ==================== HEALTH CHECK ====================
 
@@ -130,8 +141,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // Poll until jobs finish or timeout
   const { isSchedulerRunning } = await import('./jobs/flash-sale-scheduler');
   const { isSyncRunning } = await import('./jobs/flash-sale-sync');
+  const { isTokenRefreshRunning } = await import('./jobs/token-refresh');
 
-  while ((isSchedulerRunning() || isSyncRunning()) && Date.now() - start < maxWait) {
+  while ((isSchedulerRunning() || isSyncRunning() || isTokenRefreshRunning()) && Date.now() - start < maxWait) {
     console.log('[WORKER] Waiting for running jobs to finish...');
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
@@ -158,4 +170,5 @@ console.log(`[WORKER] Shopee API: ${config.shopeeBaseUrl}`);
 console.log('[WORKER] Registered cron jobs:');
 console.log('  - Flash Sale Scheduler: */2 * * * *');
 console.log('  - Flash Sale Sync:      10,40 * * * *');
+console.log('  - Token Refresh:        0,30 * * * *');
 console.log('='.repeat(60));
