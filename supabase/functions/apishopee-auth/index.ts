@@ -12,7 +12,7 @@ import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
 };
 
 // Shopee API config (fallback nếu không có partner_info)
@@ -488,6 +488,9 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Extract request ID for tracing (available in catch block)
+  const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
   try {
     const body = await req.json();
     const action = body.action;
@@ -569,6 +572,7 @@ serve(async (req) => {
           userId: userId || jwtUserId,
           userEmail: jwtUserEmail,
           triggeredBy: 'user',
+          requestId,
         });
 
         console.log('[AUTH] Shopee API response:', {
@@ -651,6 +655,7 @@ serve(async (req) => {
           userId: userId || jwtUserId,
           userEmail: jwtUserEmail,
           triggeredBy: 'user',
+          requestId,
         });
 
         if (token.error) {
@@ -770,6 +775,7 @@ serve(async (req) => {
           userId: userId || jwtUserId,
           userEmail: jwtUserEmail,
           triggeredBy: 'user',
+          requestId,
         });
 
         if (token.error) {
@@ -828,6 +834,7 @@ serve(async (req) => {
           userId: userId || jwtUserId,
           userEmail: jwtUserEmail,
           triggeredBy: 'user',
+          requestId,
         });
 
         if (token.error) {
@@ -880,6 +887,7 @@ serve(async (req) => {
           userId: userId || jwtUserId,
           userEmail: jwtUserEmail,
           triggeredBy: 'user',
+          requestId,
         });
 
         console.log('[AUTH] Resend code response:', {

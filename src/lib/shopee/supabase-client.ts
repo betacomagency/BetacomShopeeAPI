@@ -50,6 +50,7 @@ export async function getAuthorizationUrl(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabaseAnonKey}`,
         'apikey': supabaseAnonKey,
+        'x-request-id': crypto.randomUUID(),
       },
       body: JSON.stringify({
         action: 'get-auth-url',

@@ -10,7 +10,7 @@ import { resolveAppCategory } from '../_shared/api-route-map.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
@@ -80,6 +80,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Extract request ID for tracing (available in catch block)
+  const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
   try {
     const {
       api_path,      // e.g. "/api/v2/product/get_item_base_info"
@@ -94,7 +97,7 @@ serve(async (req) => {
     if (!api_path) {
       return new Response(
         JSON.stringify({ error: 'api_path is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId } }
       );
     }
 
@@ -309,10 +312,11 @@ serve(async (req) => {
         userId: callerUserId,
         userEmail: callerUserEmail,
         triggeredBy,
+        requestId,
       });
       return new Response(
         JSON.stringify({ error: (fetchErr as Error).message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId } }
       );
     }
 
@@ -337,6 +341,7 @@ serve(async (req) => {
       userId: callerUserId,
       userEmail: callerUserEmail,
       triggeredBy,
+      requestId,
     });
 
     return new Response(
@@ -356,7 +361,7 @@ serve(async (req) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId }
       }
     );
 
@@ -364,7 +369,7 @@ serve(async (req) => {
     console.error('[API Proxy] Error:', err);
     return new Response(
       JSON.stringify({ error: (err as Error).message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId } }
     );
   }
 });

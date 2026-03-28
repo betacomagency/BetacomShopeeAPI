@@ -27,6 +27,7 @@ export interface LogApiCallParams {
   userId?: string;
   userEmail?: string;
   triggeredBy?: TriggeredBy;
+  requestId?: string;
 }
 
 // Sensitive keys to redact in logs
@@ -80,6 +81,7 @@ export function logApiCall(supabase: SupabaseClient, params: LogApiCallParams): 
       user_id: params.userId,
       user_email: params.userEmail,
       triggered_by: params.triggeredBy || 'system',
+      request_id: params.requestId || null,
       created_at: new Date().toISOString(),
     })
     .then(({ error }) => {

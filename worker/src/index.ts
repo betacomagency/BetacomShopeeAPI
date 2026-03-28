@@ -15,6 +15,8 @@ import { supabase } from './lib/supabase';
 import { runFlashSaleScheduler } from './jobs/flash-sale-scheduler';
 import { runFlashSaleSync } from './jobs/flash-sale-sync';
 import { runTokenRefresh } from './jobs/token-refresh';
+import { startHeartbeat } from './utils/health-heartbeat';
+import { registerCronJob, markCronStart, markCronSuccess, markCronFailed, getAllCronStatuses } from './utils/cron-status';
 
 // ==================== ERROR HANDLERS ====================
 
@@ -61,35 +63,53 @@ async function cleanupStuckJobs(): Promise<void> {
 // Run cleanup before starting cron jobs
 cleanupStuckJobs();
 
+// ==================== CRON STATUS REGISTRATION ====================
+
+registerCronJob('flash_sale_scheduler');
+registerCronJob('flash_sale_sync');
+registerCronJob('token_refresh');
+
 // ==================== CRON SCHEDULES ====================
 
 // Flash sale scheduler — every 2 minutes (URGENT: was timing out on Edge Functions)
 cron.schedule('*/2 * * * *', async () => {
+  const start = markCronStart('flash_sale_scheduler');
   console.log(`[CRON] Flash sale scheduler triggered at ${new Date().toISOString()}`);
   try {
     await runFlashSaleScheduler();
+    markCronSuccess('flash_sale_scheduler', start);
   } catch (err) {
-    console.error('[CRON] Flash sale scheduler error:', (err as Error).message);
+    const msg = (err as Error).message;
+    console.error('[CRON] Flash sale scheduler error:', msg);
+    markCronFailed('flash_sale_scheduler', start, msg);
   }
 });
 
 // Flash sale sync — every 30 minutes (at :10 and :40 to avoid overlap with scheduler)
 cron.schedule('10,40 * * * *', async () => {
+  const start = markCronStart('flash_sale_sync');
   console.log(`[CRON] Flash sale sync triggered at ${new Date().toISOString()}`);
   try {
     await runFlashSaleSync();
+    markCronSuccess('flash_sale_sync', start);
   } catch (err) {
-    console.error('[CRON] Flash sale sync error:', (err as Error).message);
+    const msg = (err as Error).message;
+    console.error('[CRON] Flash sale sync error:', msg);
+    markCronFailed('flash_sale_sync', start, msg);
   }
 });
 
 // Token refresh — every 30 minutes (runs before sync jobs to ensure valid tokens)
 cron.schedule('0,30 * * * *', async () => {
+  const start = markCronStart('token_refresh');
   console.log(`[CRON] Token refresh triggered at ${new Date().toISOString()}`);
   try {
     await runTokenRefresh();
+    markCronSuccess('token_refresh', start);
   } catch (err) {
-    console.error('[CRON] Token refresh error:', (err as Error).message);
+    const msg = (err as Error).message;
+    console.error('[CRON] Token refresh error:', msg);
+    markCronFailed('token_refresh', start, msg);
   }
 });
 
@@ -100,12 +120,17 @@ cron.schedule('0,30 * * * *', async () => {
 
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
+    const mem = process.memoryUsage();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
       uptime: Math.floor(process.uptime()),
-      memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+      memory: {
+        heap_mb: Math.round(mem.heapUsed / 1024 / 1024),
+        rss_mb: Math.round(mem.rss / 1024 / 1024),
+      },
       env: config.nodeEnv,
+      crons: getAllCronStatuses(),
       timestamp: new Date().toISOString(),
     }));
     return;
@@ -162,6 +187,12 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ==================== STARTUP ====================
 
+// ==================== HEARTBEAT ====================
+
+startHeartbeat(supabase);
+
+// ==================== STARTUP ====================
+
 console.log('='.repeat(60));
 console.log('[WORKER] Shopee Worker started');
 console.log(`[WORKER] Environment: ${config.nodeEnv}`);
@@ -171,4 +202,5 @@ console.log('[WORKER] Registered cron jobs:');
 console.log('  - Flash Sale Scheduler: */2 * * * *');
 console.log('  - Flash Sale Sync:      10,40 * * * *');
 console.log('  - Token Refresh:        0,30 * * * *');
+console.log('  - Heartbeat:            */5 * * * *');
 console.log('='.repeat(60));

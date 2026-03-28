@@ -18,7 +18,7 @@ import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
 };
 
 // Shopee API config
@@ -170,7 +170,8 @@ async function callShopeeAPI(
   extraParams?: Record<string, string | number | boolean | number[]>,
   callerUserId?: string,
   callerUserEmail?: string,
-  triggeredBy?: string
+  triggeredBy?: string,
+  requestId?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
@@ -197,6 +198,7 @@ async function callShopeeAPI(
       userId: callerUserId,
       userEmail: callerUserEmail,
       triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+      requestId,
     });
   };
 
@@ -470,7 +472,8 @@ async function syncAllProducts(
   token: { access_token: string; refresh_token: string },
   callerUserId?: string,
   callerUserEmail?: string,
-  triggeredBy?: string
+  triggeredBy?: string,
+  requestId?: string
 ): Promise<SyncResult> {
   // Lưu trữ tất cả API responses
   const apiResponses = {
@@ -495,7 +498,7 @@ async function syncAllProducts(
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
           shopId, token, undefined,
           { offset, page_size: 100, item_status: status },
-          callerUserId, callerUserEmail, triggeredBy
+          callerUserId, callerUserEmail, triggeredBy, requestId
         ) as {
           error?: string;
           response?: {
@@ -550,7 +553,7 @@ async function syncAllProducts(
         supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
         shopId, token, undefined,
         { item_id_list: batchIds },
-        callerUserId, callerUserEmail, triggeredBy
+        callerUserId, callerUserEmail, triggeredBy, requestId
       ) as {
         error?: string;
         warning?: string;
@@ -619,7 +622,7 @@ async function syncAllProducts(
               supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
               shopId, token, undefined,
               { item_id: product.item_id },
-              callerUserId, callerUserEmail, triggeredBy
+              callerUserId, callerUserEmail, triggeredBy, requestId
             ) as {
               error?: string;
               message?: string;
@@ -965,7 +968,8 @@ async function incrementalSyncProducts(
   changedItemIds: number[],
   callerUserId?: string,
   callerUserEmail?: string,
-  triggeredBy?: string
+  triggeredBy?: string,
+  requestId?: string
 ): Promise<{ success: boolean; updated_count: number; inserted_count: number; deleted_count: number; history_logs_created?: number; error?: string }> {
   try {
     console.log(`[INCREMENTAL] Starting incremental sync for ${changedItemIds.length} changed items`);
@@ -986,7 +990,7 @@ async function incrementalSyncProducts(
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
           shopId, token, undefined,
           { offset, page_size: 100, item_status: status },
-          callerUserId, callerUserEmail, triggeredBy
+          callerUserId, callerUserEmail, triggeredBy, requestId
         ) as {
           error?: string;
           response?: {
@@ -1080,7 +1084,7 @@ async function incrementalSyncProducts(
         supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
         shopId, token, undefined,
         { item_id_list: batchIds },
-        callerUserId, callerUserEmail, triggeredBy
+        callerUserId, callerUserEmail, triggeredBy, requestId
       ) as { error?: string; response?: { item_list?: ShopeeProduct[] } };
 
       if (!result.error) {
@@ -1115,7 +1119,7 @@ async function incrementalSyncProducts(
               supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
               shopId, token, undefined,
               { item_id: product.item_id },
-              callerUserId, callerUserEmail, triggeredBy
+              callerUserId, callerUserEmail, triggeredBy, requestId
             ) as { error?: string; response?: ModelResponse };
             return { product, modelResult };
           } catch (err) {
@@ -1377,6 +1381,9 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Extract request ID for tracing (available in catch block)
+  const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
   try {
     const body = await req.json();
     const { action, shop_id, user_id } = body;
@@ -1384,7 +1391,7 @@ serve(async (req) => {
     if (!shop_id) {
       return new Response(JSON.stringify({ error: 'shop_id is required' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId },
       });
     }
 
@@ -1413,7 +1420,7 @@ serve(async (req) => {
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
           shop_id, token, undefined,
           { offset, page_size, item_status: Array.isArray(item_status) ? item_status.join(',') : item_status },
-          callerUserId, effectiveEmail, triggeredBy
+          callerUserId, effectiveEmail, triggeredBy, requestId
         );
         break;
       }
@@ -1431,7 +1438,7 @@ serve(async (req) => {
           supabase, credentials, PRODUCT_PATHS.GET_ITEM_BASE_INFO, 'GET',
           shop_id, token, undefined,
           { item_id_list },
-          callerUserId, effectiveEmail, triggeredBy
+          callerUserId, effectiveEmail, triggeredBy, requestId
         );
         break;
       }
@@ -1449,7 +1456,7 @@ serve(async (req) => {
           supabase, credentials, PRODUCT_PATHS.GET_MODEL_LIST, 'GET',
           shop_id, token, undefined,
           { item_id },
-          callerUserId, effectiveEmail, triggeredBy
+          callerUserId, effectiveEmail, triggeredBy, requestId
         );
         break;
       }
@@ -1462,7 +1469,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        result = await syncAllProducts(supabase, credentials, shop_id, user_id, token, callerUserId, effectiveEmail, triggeredBy);
+        result = await syncAllProducts(supabase, credentials, shop_id, user_id, token, callerUserId, effectiveEmail, triggeredBy, requestId);
         break;
       }
 
@@ -1487,7 +1494,7 @@ serve(async (req) => {
         // Nếu chưa có data hoặc count error -> full sync lần đầu
         if (countError || existingCount === null || existingCount === undefined || existingCount === 0) {
           console.log('[CHECK] No existing data (count:', existingCount, '), running full sync...');
-          result = await syncAllProducts(supabase, credentials, shop_id, user_id, token, callerUserId, effectiveEmail, triggeredBy);
+          result = await syncAllProducts(supabase, credentials, shop_id, user_id, token, callerUserId, effectiveEmail, triggeredBy, requestId);
           break;
         }
 
@@ -1516,7 +1523,7 @@ serve(async (req) => {
               supabase, credentials, PRODUCT_PATHS.GET_ITEM_LIST, 'GET',
               shop_id, token, undefined,
               { offset, page_size: 100, item_status: status, update_time_from: lastUpdateTime + 1 },
-              callerUserId, effectiveEmail, triggeredBy
+              callerUserId, effectiveEmail, triggeredBy, requestId
             ) as { response?: { item?: Array<{ item_id: number; update_time: number }>; has_next_page?: boolean; next_offset?: number } };
 
             const items = apiResult?.response?.item || [];
@@ -1532,7 +1539,7 @@ serve(async (req) => {
         if (changedItemIds.length > 0) {
           // Có thay đổi -> incremental sync
           console.log(`[CHECK] Found ${changedItemIds.length} changed items, running incremental sync...`);
-          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, changedItemIds, callerUserId, effectiveEmail, triggeredBy);
+          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, changedItemIds, callerUserId, effectiveEmail, triggeredBy, requestId);
           result = {
             success: incrementalResult.success,
             has_changes: true,
@@ -1544,7 +1551,7 @@ serve(async (req) => {
           };
         } else {
           // Không có thay đổi từ update_time, nhưng vẫn check xem có products bị xóa không
-          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, [], callerUserId, effectiveEmail, triggeredBy);
+          const incrementalResult = await incrementalSyncProducts(supabase, credentials, shop_id, user_id, token, [], callerUserId, effectiveEmail, triggeredBy, requestId);
           if (incrementalResult.deleted_count > 0) {
             result = {
               success: true,

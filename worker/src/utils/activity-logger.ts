@@ -23,6 +23,7 @@ export interface LogActivityParams {
   errorMessage?: string;
   durationMs?: number;
   ipAddress?: string;
+  requestId?: string;
 }
 
 // ==================== EXPORTS ====================
@@ -50,6 +51,7 @@ export async function logActivity(
         error_message: params.errorMessage,
         duration_ms: params.durationMs,
         ip_address: params.ipAddress,
+        request_id: params.requestId || null,
         created_at: new Date().toISOString(),
       })
       .select('id')

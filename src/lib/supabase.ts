@@ -18,6 +18,24 @@ if (!isConfigured && typeof window !== 'undefined') {
 const PLACEHOLDER_URL = 'https://placeholder.supabase.co';
 const PLACEHOLDER_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MTY0MjA4MDUsImV4cCI6MTkzMTk5NjgwNX0.placeholder';
 
+/**
+ * Custom fetch that injects x-request-id header on Edge Function calls.
+ * Enables request tracing: frontend → Edge Function → Shopee API.
+ */
+const tracingFetch: typeof fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+
+  // Only inject x-request-id for Edge Function calls (functions/v1/)
+  if (url.includes('/functions/v1/')) {
+    const requestId = crypto.randomUUID();
+    const headers = new Headers(init?.headers);
+    headers.set('x-request-id', requestId);
+    return fetch(input, { ...init, headers });
+  }
+
+  return fetch(input, init);
+};
+
 export const supabase: SupabaseClient = createClient(
   supabaseUrl || PLACEHOLDER_URL,
   supabaseAnonKey || PLACEHOLDER_KEY,
@@ -28,6 +46,9 @@ export const supabase: SupabaseClient = createClient(
       detectSessionInUrl: true,
       storageKey: 'betacom-auth-token',
       storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    },
+    global: {
+      fetch: tracingFetch,
     },
   }
 );

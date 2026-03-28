@@ -112,11 +112,107 @@ BetacomShopeeAPI manages 294+ Shopee shops with automated flash sale creation, t
 | Vercel | Free | Frontend hosting |
 | **Total** | **~$29/mo** | |
 
+## Monitoring & Observability
+
+### Architecture
+
+Monitoring app deployed separately to Vercel (`/monitoring` folder) provides system health visibility, API analytics, business metrics, user activity tracking, and request tracing.
+
+```
+┌─────────────────────┐     ┌──────────────────────┐
+│ Monitoring App      │────►│ Supabase RPC         │
+│ (Vercel)            │     │ 5 Functions:         │
+│ /health             │     │ - get_system_health  │
+│ /api                │     │ - get_api_analytics  │
+│ /business           │     │ - get_business_...   │
+│ /activity           │     │ - get_user_activity  │
+│ /trace              │     │ - trace_request      │
+└─────────────────────┘     └──────────────────────┘
+         │
+         └─────────────────────────────────────────┐
+                                                  │
+                          ┌───────────────────────▼───────────┐
+                          │ Supabase Postgres Tables          │
+                          │ health_check_logs (30d retention)│
+                          │ api_call_logs (90d retention)    │
+                          │ system_activity_logs (180d)      │
+                          └──────────────┬────────────────────┘
+                                         │
+                          ┌──────────────▼────────────┐
+                          │ EC2 Worker Cron Jobs      │
+                          │ → Health heartbeat (5min) │
+                          └───────────────────────────┘
+```
+
+### RPC Functions (Dashboard Metrics)
+
+| RPC | Purpose |
+|-----|---------|
+| `get_system_health()` | Worker status, edge function uptime, token health |
+| `get_api_analytics(hours, function, shop_id)` | Call volumes, error rates, latency p95, top errors |
+| `get_business_metrics()` | Shop counts, flash sale success rate, job queue status |
+| `get_user_activity(hours, user_id)` | Activity timeline, users summary, actions by category |
+| `trace_request(request_id)` | Full request chain: frontend → edge functions → API logs |
+
+### Request ID Tracing
+
+Every API request flows with `x-request-id` header:
+
+```
+Frontend (supabase-client.ts)
+  │ x-request-id: UUID
+  ▼
+Edge Function (apishopee-proxy, flash-sale, etc.)
+  │ reads x-request-id
+  │ inserts into api_call_logs.request_id
+  ▼
+api_call_logs table
+  │ allows searching full request chain
+  ▼
+Monitoring /trace page: search by UUID → see all logs
+```
+
+### Health Checks
+
+Worker writes heartbeat to `health_check_logs` every 5 minutes:
+
+```json
+{
+  "component": "worker",
+  "status": "healthy",
+  "metadata": {
+    "uptime": 123456,
+    "memory_mb": 45,
+    "crons": {
+      "flash_sale_scheduler": {"last_run": "2026-03-28T14:30:00Z", "status": "success"},
+      "flash_sale_sync": {"last_run": "2026-03-28T14:35:00Z", "status": "success"},
+      "token_refresh": {"last_run": "2026-03-28T14:34:00Z", "status": "success"}
+    }
+  }
+}
+```
+
+### Log Retention
+
+- `health_check_logs`: 30 days (cron: weekly cleanup)
+- `api_call_logs`: 90 days (cron: weekly cleanup)
+- `system_activity_logs`: 180 days (existing)
+
+### Real-time Updates
+
+Monitoring app uses Supabase Realtime on `health_check_logs` for live health dashboard updates. Critical events (Worker down, error rate > 5%) trigger toast notifications.
+
 ## Deployment
 
 ### Frontend
 ```bash
 git push  # Vercel auto-deploys from main branch
+```
+
+### Monitoring App
+```bash
+# Separate Vercel project linked to /monitoring folder
+git push  # Auto-deploys to monitoring.betacomshopee.com
 ```
 
 ### Worker (EC2)

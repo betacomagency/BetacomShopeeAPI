@@ -11,7 +11,7 @@ import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
 };
 
 // Shopee API config - HARDCODE URL to avoid env var issues
@@ -188,7 +188,8 @@ async function callShopeeAPIWithRetry(
   extraParams?: Record<string, string | number | boolean>,
   callerUserId?: string,
   callerUserEmail?: string,
-  triggeredBy?: string
+  triggeredBy?: string,
+  requestId?: string
 ): Promise<unknown> {
   const startTime = Date.now();
   let wasTokenRefreshed = false;
@@ -215,6 +216,7 @@ async function callShopeeAPIWithRetry(
       userId: callerUserId,
       userEmail: callerUserEmail,
       triggeredBy: triggeredBy as 'user' | 'cron' | 'scheduler' | 'webhook' | 'system' | undefined,
+      requestId,
     });
   };
 
@@ -336,6 +338,9 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Extract request ID for tracing (available in catch block)
+  const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
   try {
     const body = await req.json();
     const { action, shop_id } = body;
@@ -343,7 +348,7 @@ serve(async (req) => {
     if (!shop_id) {
       return new Response(JSON.stringify({ error: 'shop_id is required' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId },
       });
     }
 
@@ -386,7 +391,8 @@ serve(async (req) => {
           extraParams,
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -412,7 +418,8 @@ serve(async (req) => {
           undefined,
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -441,7 +448,8 @@ serve(async (req) => {
           { flash_sale_id: flashSaleIdNum },
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -461,7 +469,8 @@ serve(async (req) => {
           { type, offset, limit },
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -492,7 +501,8 @@ serve(async (req) => {
           undefined,
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -576,7 +586,8 @@ serve(async (req) => {
           undefined,
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -611,7 +622,8 @@ serve(async (req) => {
           { flash_sale_id: flashSaleIdNum, offset, limit },
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -640,7 +652,8 @@ serve(async (req) => {
           undefined,
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -672,7 +685,8 @@ serve(async (req) => {
           undefined,
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -698,7 +712,8 @@ serve(async (req) => {
           { item_id },
           callerUserId,
           callerUserEmail,
-          triggeredBy
+          triggeredBy,
+          requestId
         );
         break;
       }
@@ -711,7 +726,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId },
     });
   } catch (error) {
     console.error('[FLASH-SALE] Error:', error);
@@ -720,7 +735,7 @@ serve(async (req) => {
       success: false,
     }), {
       status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId },
     });
   }
 });

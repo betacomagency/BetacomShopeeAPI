@@ -47,6 +47,9 @@ export interface LogActivityParams {
   source?: ActionSource;
   ipAddress?: string;
   userAgent?: string;
+
+  // Tracing
+  requestId?: string;
 }
 
 /**
@@ -91,6 +94,7 @@ export async function logActivity(
         source: params.source || 'auto',
         ip_address: params.ipAddress || null,
         user_agent: params.userAgent || null,
+        request_id: params.requestId || null,
       })
       .select('id')
       .single();

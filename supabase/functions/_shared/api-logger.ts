@@ -29,6 +29,7 @@ export interface LogApiCallParams {
   userId?: string;
   userEmail?: string;
   triggeredBy?: TriggeredBy;
+  requestId?: string;
 }
 
 /**
@@ -77,6 +78,7 @@ export function logApiCall(
     user_id: params.userId || null,
     user_email: params.userEmail || null,
     triggered_by: params.triggeredBy || 'system',
+    request_id: params.requestId || null,
   };
 
   // Non-blocking insert - fire and forget
