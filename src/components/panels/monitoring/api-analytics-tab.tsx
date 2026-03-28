@@ -4,12 +4,13 @@
 import { useState } from 'react';
 import { useApiAnalytics } from '@/hooks/monitoring/use-api-analytics';
 import { useErrorLogs, type ErrorLogItem } from '@/hooks/monitoring/use-error-logs';
+import { useRateLimitAnalysis } from '@/hooks/monitoring/use-rate-limit-analysis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { format } from 'date-fns';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, ComposedChart, Area } from 'recharts';
 
 const TIME_RANGES = [
   { label: '1h', value: 1 },
@@ -101,6 +102,8 @@ function ErrorDetail({ item, onClose }: { item: ErrorLogItem; onClose: () => voi
 export function ApiAnalyticsTab() {
   const [hours, setHours] = useState(24);
   const { data, isLoading, error } = useApiAnalytics(hours);
+  const [rateLimitHours, setRateLimitHours] = useState(6);
+  const { data: rateData } = useRateLimitAnalysis(rateLimitHours);
 
   // Error logs with filters
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -194,6 +197,61 @@ export function ApiAnalyticsTab() {
           <div className="text-xs text-muted-foreground">p95: {data.summary.p95_duration_ms ?? 0}ms</div>
         </CardContent></Card>
       </div>
+
+      {/* Rate Limit Analysis — calls/min with rate limit error overlay */}
+      {rateData && rateData.timeline.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Rate Limit Analysis</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  API calls/phút vs rate limit errors — ngưỡng an toàn ước tính:
+                  <span className="font-semibold text-amber-500 ml-1">{rateData.summary.safe_threshold_per_min || '?'} calls/min</span>
+                  {' '}| Peak: <span className="font-semibold">{rateData.summary.peak_calls_per_min}</span>
+                  {' '}| Avg: <span className="font-semibold">{rateData.summary.avg_calls_per_min}</span>
+                  {' '}| Rate limit errors: <span className={rateData.summary.rate_limit_errors > 0 ? 'font-semibold text-destructive' : ''}>{rateData.summary.rate_limit_errors}</span>
+                </p>
+              </div>
+              <div className="flex gap-1">
+                {[{ l: '1h', v: 1 }, { l: '3h', v: 3 }, { l: '6h', v: 6 }, { l: '12h', v: 12 }, { l: '24h', v: 24 }].map((r) => (
+                  <button
+                    key={r.v}
+                    onClick={() => setRateLimitHours(r.v)}
+                    className={`cursor-pointer rounded px-2 py-0.5 text-xs transition-colors ${
+                      rateLimitHours === r.v ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
+                    }`}
+                  >
+                    {r.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={rateData.timeline.map(t => ({
+                ...t,
+                minute: new Date(t.minute).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="minute" className="text-xs" interval="preserveStartEnd" />
+                <YAxis yAxisId="calls" className="text-xs" />
+                <YAxis yAxisId="errors" orientation="right" className="text-xs" />
+                <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                {/* Calls area (left axis) */}
+                <Area yAxisId="calls" type="monotone" dataKey="total_calls" fill="hsl(var(--chart-1))" fillOpacity={0.15} stroke="hsl(var(--chart-1))" strokeWidth={1.5} name="Calls/min" />
+                {/* Rate limit errors as bars (right axis) */}
+                <Bar yAxisId="errors" dataKey="rate_limit_errors" fill="hsl(var(--chart-5))" opacity={0.8} name="Rate Limit Errors" />
+                {/* Threshold reference line */}
+                {rateData.summary.safe_threshold_per_min > 0 && (
+                  <ReferenceLine yAxisId="calls" y={rateData.summary.safe_threshold_per_min} stroke="#f59e0b" strokeDasharray="5 5" label={{ value: `Threshold ~${rateData.summary.safe_threshold_per_min}/min`, position: 'insideTopRight', fontSize: 10, fill: '#f59e0b' }} />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Calls per hour chart */}
       {chartData.length > 0 && (
