@@ -1,11 +1,14 @@
 /**
- * API Analytics Tab — Calls/hour chart, error rate, top errors, by function
+ * API Analytics Tab — Overview charts + detailed error log with date picker
  */
 import { useState } from 'react';
 import { useApiAnalytics } from '@/hooks/monitoring/use-api-analytics';
+import { useErrorLogs, type ErrorLogItem } from '@/hooks/monitoring/use-error-logs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
+import { format } from 'date-fns';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const TIME_RANGES = [
@@ -15,9 +18,115 @@ const TIME_RANGES = [
   { label: '7d', value: 168 },
 ];
 
+/** Format timestamp to readable local time */
+function formatTime(dateStr: string) {
+  return format(new Date(dateStr), 'HH:mm:ss');
+}
+function formatDateTime(dateStr: string) {
+  return format(new Date(dateStr), 'yyyy-MM-dd HH:mm:ss');
+}
+
+/** Error detail modal/panel */
+function ErrorDetail({ item, onClose }: { item: ErrorLogItem; onClose: () => void }) {
+  return (
+    <Card className="border-destructive/30">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Error Detail</CardTitle>
+          <button onClick={onClose} className="cursor-pointer rounded p-1 hover:bg-accent"><X className="h-4 w-4" /></button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          <div>
+            <span className="text-muted-foreground">Time: </span>
+            <span className="font-mono">{formatDateTime(item.created_at)}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Duration: </span>
+            <span>{item.duration_ms ?? '-'}ms</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Function: </span>
+            <span className="font-mono text-xs">{item.edge_function}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Endpoint: </span>
+            <span className="font-mono text-xs">{item.http_method} {item.api_endpoint}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Shop ID: </span>
+            <span>{item.shop_id ?? '-'}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Triggered by: </span>
+            <span>{item.triggered_by} {item.user_email ? `(${item.user_email})` : ''}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Error: </span>
+            <Badge variant="destructive">{item.shopee_error}</Badge>
+          </div>
+          <div>
+            <span className="text-muted-foreground">HTTP Status: </span>
+            <span>{item.http_status_code ?? '-'}</span>
+          </div>
+          {item.request_id && (
+            <div className="col-span-2">
+              <span className="text-muted-foreground">Request ID: </span>
+              <span className="font-mono text-xs">{item.request_id}</span>
+            </div>
+          )}
+        </div>
+        <div>
+          <span className="text-sm text-muted-foreground">Message: </span>
+          <p className="mt-1 text-sm">{item.shopee_message ?? '-'}</p>
+        </div>
+        {item.request_params && (
+          <details>
+            <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Request Params</summary>
+            <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(item.request_params, null, 2)}</pre>
+          </details>
+        )}
+        {item.response_summary && (
+          <details>
+            <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Response Summary</summary>
+            <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(item.response_summary, null, 2)}</pre>
+          </details>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ApiAnalyticsTab() {
   const [hours, setHours] = useState(24);
   const { data, isLoading, error } = useApiAnalytics(hours);
+
+  // Error logs with date filter
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const [errorDate, setErrorDate] = useState(today);
+  const [errorFnFilter, setErrorFnFilter] = useState<string | undefined>();
+  const [errorPage, setErrorPage] = useState(1);
+  const [selectedError, setSelectedError] = useState<ErrorLogItem | null>(null);
+  const { data: errorLogs, isLoading: errLoading } = useErrorLogs(errorDate, errorFnFilter, errorPage);
+
+  // Navigate dates
+  const prevDay = () => {
+    const d = new Date(errorDate);
+    d.setDate(d.getDate() - 1);
+    setErrorDate(format(d, 'yyyy-MM-dd'));
+    setErrorPage(1);
+    setSelectedError(null);
+  };
+  const nextDay = () => {
+    const d = new Date(errorDate);
+    d.setDate(d.getDate() + 1);
+    if (d <= new Date()) {
+      setErrorDate(format(d, 'yyyy-MM-dd'));
+      setErrorPage(1);
+      setSelectedError(null);
+    }
+  };
 
   if (isLoading) return <Spinner className="mt-8" />;
   if (error) return <p className="text-destructive">Error: {(error as Error).message}</p>;
@@ -27,6 +136,11 @@ export function ApiAnalyticsTab() {
     ...h,
     hour: new Date(h.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   }));
+
+  const totalErrorPages = errorLogs ? Math.ceil(errorLogs.total / errorLogs.page_size) : 0;
+
+  // Unique functions for filter
+  const functions = data.by_function.map((f) => f.edge_function);
 
   return (
     <div className="space-y-4">
@@ -105,34 +219,111 @@ export function ApiAnalyticsTab() {
         </Card>
       )}
 
-      {/* Top errors */}
-      {data.top_errors.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Top Errors</CardTitle></CardHeader>
-          <CardContent>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 pr-4">Error</th>
-                  <th className="pb-2 pr-4">Message</th>
-                  <th className="pb-2 pr-4">Count</th>
-                  <th className="pb-2">Function</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.top_errors.map((err, i) => (
-                  <tr key={i} className="border-b border-border/50">
-                    <td className="py-2 pr-4 font-mono text-xs"><Badge variant="destructive">{err.error}</Badge></td>
-                    <td className="py-2 pr-4 text-muted-foreground max-w-xs truncate">{err.message}</td>
-                    <td className="py-2 pr-4 font-semibold">{err.count}</td>
-                    <td className="py-2 text-xs text-muted-foreground">{err.edge_function}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
+      {/* ==================== ERROR LOGS DETAIL ==================== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-base">Error Logs</CardTitle>
+            <div className="flex items-center gap-2">
+              {/* Function filter */}
+              <select
+                value={errorFnFilter ?? ''}
+                onChange={(e) => { setErrorFnFilter(e.target.value || undefined); setErrorPage(1); setSelectedError(null); }}
+                className="cursor-pointer rounded border border-input bg-background px-2 py-1 text-xs outline-none"
+              >
+                <option value="">All Functions</option>
+                {functions.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
+              </select>
+              {/* Date navigator */}
+              <div className="flex items-center gap-1">
+                <button onClick={prevDay} className="cursor-pointer rounded p-1 hover:bg-accent"><ChevronLeft className="h-4 w-4" /></button>
+                <input
+                  type="date"
+                  value={errorDate}
+                  max={today}
+                  onChange={(e) => { setErrorDate(e.target.value); setErrorPage(1); setSelectedError(null); }}
+                  className="cursor-pointer rounded border border-input bg-background px-2 py-1 text-xs outline-none"
+                />
+                <button onClick={nextDay} className="cursor-pointer rounded p-1 hover:bg-accent" disabled={errorDate === today}><ChevronRight className="h-4 w-4" /></button>
+              </div>
+            </div>
+          </div>
+          {errorLogs && <p className="mt-1 text-xs text-muted-foreground">{errorLogs.total} error(s) on {errorDate}</p>}
+        </CardHeader>
+        <CardContent>
+          {errLoading && <Spinner className="mt-4" />}
+
+          {/* Selected error detail */}
+          {selectedError && <ErrorDetail item={selectedError} onClose={() => setSelectedError(null)} />}
+
+          {/* Error list table */}
+          {errorLogs && errorLogs.items.length > 0 && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-3">Time</th>
+                      <th className="pb-2 pr-3">Function</th>
+                      <th className="pb-2 pr-3">Endpoint</th>
+                      <th className="pb-2 pr-3">Error</th>
+                      <th className="pb-2 pr-3">Shop</th>
+                      <th className="pb-2 pr-3">Duration</th>
+                      <th className="pb-2">By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {errorLogs.items.map((item) => (
+                      <tr
+                        key={item.id}
+                        onClick={() => setSelectedError(item)}
+                        className={`cursor-pointer border-b border-border/50 transition-colors hover:bg-accent/50 ${
+                          selectedError?.id === item.id ? 'bg-accent/30' : ''
+                        }`}
+                      >
+                        <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{formatTime(item.created_at)}</td>
+                        <td className="py-2 pr-3 font-mono text-xs max-w-[120px] truncate">{item.edge_function}</td>
+                        <td className="py-2 pr-3 text-xs max-w-[180px] truncate text-muted-foreground">{item.api_endpoint}</td>
+                        <td className="py-2 pr-3"><Badge variant="destructive" className="text-xs">{item.shopee_error}</Badge></td>
+                        <td className="py-2 pr-3 text-xs text-muted-foreground">{item.shop_id ?? '-'}</td>
+                        <td className="py-2 pr-3 text-xs text-muted-foreground">{item.duration_ms ?? '-'}ms</td>
+                        <td className="py-2 text-xs text-muted-foreground">{item.triggered_by}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalErrorPages > 1 && (
+                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Page {errorPage} / {totalErrorPages} ({errorLogs.total} total)</span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => { setErrorPage((p) => Math.max(1, p - 1)); setSelectedError(null); }}
+                      disabled={errorPage <= 1}
+                      className="cursor-pointer rounded border px-2 py-1 hover:bg-accent disabled:opacity-50"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      onClick={() => { setErrorPage((p) => Math.min(totalErrorPages, p + 1)); setSelectedError(null); }}
+                      disabled={errorPage >= totalErrorPages}
+                      className="cursor-pointer rounded border px-2 py-1 hover:bg-accent disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {errorLogs && errorLogs.items.length === 0 && !errLoading && (
+            <p className="py-6 text-center text-muted-foreground">No errors on {errorDate}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
