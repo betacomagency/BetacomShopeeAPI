@@ -86,37 +86,65 @@ export default function AdminSidebar({ collapsed, onToggle: _onToggle, mobileOpe
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto scrollbar-hide">
           {adminMenuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path ||
-              (item.path !== '/admin' && location.pathname.startsWith(item.path));
+            const isParentActive = item.children
+              ? location.pathname.startsWith(item.path)
+              : (location.pathname === item.path || (item.path !== '/admin' && location.pathname.startsWith(item.path)));
 
             return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={cn(
-                  'flex items-center rounded-xl transition-all duration-200 group',
-                  isActive
-                    ? 'bg-info/10 text-info'
-                    : 'text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground',
-                  collapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5'
+              <div key={item.path}>
+                <NavLink
+                  to={item.children ? item.children[0].path : item.path}
+                  className={cn(
+                    'flex items-center rounded-xl transition-all duration-200 group',
+                    isParentActive
+                      ? 'bg-info/10 text-info'
+                      : 'text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground',
+                    collapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5'
+                  )}
+                  onClick={handleLeafClick}
+                >
+                  <div className={cn(
+                    'flex items-center justify-center rounded-lg transition-colors',
+                    isParentActive ? 'text-info' : 'text-sidebar-muted group-hover:text-foreground',
+                    collapsed ? '' : 'w-8 h-8'
+                  )}>
+                    <Icon className="w-[18px] h-[18px]" />
+                  </div>
+                  <span className={cn(
+                    'font-medium text-sm whitespace-nowrap transition-all duration-300',
+                    isParentActive ? 'text-info' : '',
+                    collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'
+                  )}>
+                    {item.title}
+                  </span>
+                </NavLink>
+
+                {/* Sub-items */}
+                {item.children && isParentActive && !collapsed && (
+                  <div className="ml-5 mt-1 space-y-0.5 border-l border-sidebar-border/50 pl-3">
+                    {item.children.map((child) => {
+                      const ChildIcon = child.icon;
+                      const isChildActive = location.pathname === child.path;
+                      return (
+                        <NavLink
+                          key={child.path}
+                          to={child.path}
+                          className={cn(
+                            'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-all duration-200',
+                            isChildActive
+                              ? 'bg-info/10 text-info font-medium'
+                              : 'text-sidebar-muted hover:bg-sidebar-hover hover:text-foreground'
+                          )}
+                          onClick={handleLeafClick}
+                        >
+                          <ChildIcon className="w-3.5 h-3.5" />
+                          <span>{child.title}</span>
+                        </NavLink>
+                      );
+                    })}
+                  </div>
                 )}
-                onClick={handleLeafClick}
-              >
-                <div className={cn(
-                  'flex items-center justify-center rounded-lg transition-colors',
-                  isActive ? 'text-info' : 'text-sidebar-muted group-hover:text-foreground',
-                  collapsed ? '' : 'w-8 h-8'
-                )}>
-                  <Icon className="w-[18px] h-[18px]" />
-                </div>
-                <span className={cn(
-                  'font-medium text-sm whitespace-nowrap transition-all duration-300',
-                  isActive ? 'text-info' : '',
-                  collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'
-                )}>
-                  {item.title}
-                </span>
-              </NavLink>
+              </div>
             );
           })}
         </nav>

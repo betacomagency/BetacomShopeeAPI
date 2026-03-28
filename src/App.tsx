@@ -110,6 +110,7 @@ function App() {
                   <Route path="/admin/shops/:shopId" element={<ShopInfoPage />} />
                   <Route path="/admin/users" element={<UsersSettingsPage />} />
                   <Route path="/admin/monitoring" element={<MonitoringPage />} />
+                  <Route path="/admin/monitoring/:tab" element={<MonitoringPage />} />
                 </Route>
 
                 {/* Backwards compat redirects */}
