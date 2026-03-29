@@ -299,7 +299,6 @@ export default function UsersSettingsPage() {
           fullName: formData.fullName,
           phone: formData.phone,
           systemRole: formData.systemRole,
-          adminEmail: session?.user?.email,
         },
       });
 

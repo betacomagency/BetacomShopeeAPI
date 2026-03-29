@@ -53,10 +53,10 @@ async function main() {
 
   try {
     const credentials = await getPartnerCredentials(supabase, testShop.shop_id);
-    console.log(`   Partner ID: ${credentials.partnerId}`);
+    console.log(`   Partner ID: ***`);
 
     const token = await getShopToken(supabase, testShop.shop_id);
-    console.log(`   Token: ${token.access_token.substring(0, 10)}...`);
+    console.log(`   Token: [redacted]`);
 
     const result = await callShopeeApi({
       supabase,

@@ -10,11 +10,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 import { logActivity, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
 import { logApiCall, createResponseSummary, extractUserFromJwt, determineTriggeredBy } from '../_shared/api-logger.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 // Config
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';

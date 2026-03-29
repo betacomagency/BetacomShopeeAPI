@@ -7,16 +7,11 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt, determineTriggeredBy, type ApiCategory } from '../_shared/api-logger.ts';
 import { resolveAppCategory } from '../_shared/api-route-map.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 const SHOPEE_HOST = 'https://partner.shopeemobile.com';
 const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || '';
-const ADMIN_EMAIL = 'betacom.work@gmail.com';
+const ADMIN_ROLES = (Deno.env.get('ADMIN_ROLES') || 'super_admin,admin').split(',');
 
 // Partner-level API chỉ cho phép các endpoint này
 const PARTNER_LEVEL_ALLOWED_PATHS = [
@@ -118,16 +113,33 @@ serve(async (req) => {
     let partner_key: string;
 
     if (isPartnerLevel) {
-      // Partner-level API: chỉ admin mới được gọi
-      if (!callerUserId) {
+      // Partner-level API: server-side JWT verification + admin role check
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
         return new Response(
           JSON.stringify({ error: 'Authorization header is required for partner-level API' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      if (callerUserEmail?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-        console.warn(`[API Proxy] Partner-level access denied for: ${callerUserEmail}`);
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user: verifiedUser }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !verifiedUser) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid or expired token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Verify admin role from database
+      const { data: callerProfile } = await supabase
+        .from('sys_profiles')
+        .select('system_role')
+        .eq('id', verifiedUser.id)
+        .single();
+
+      if (!callerProfile || !ADMIN_ROLES.includes(callerProfile.system_role)) {
+        console.warn(`[API Proxy] Partner-level access denied for user: ${callerUserId}`);
         return new Response(
           JSON.stringify({ error: 'Forbidden: admin access required for partner-level API calls' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -150,8 +162,9 @@ serve(async (req) => {
         .single();
 
       if (partnerError || !partnerApp) {
+        if (partnerError) console.error('[API Proxy] Partner app lookup error:', partnerError.message);
         return new Response(
-          JSON.stringify({ error: 'Partner app not found', details: partnerError?.message }),
+          JSON.stringify({ error: 'Partner app not found' }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -209,8 +222,9 @@ serve(async (req) => {
           .single();
 
         if (shopError || !shop) {
+          if (shopError) console.error('[API Proxy] Shop lookup error:', shopError.message);
           return new Response(
-            JSON.stringify({ error: 'Shop not found', details: shopError?.message }),
+            JSON.stringify({ error: 'Shop not found' }),
             { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -314,8 +328,9 @@ serve(async (req) => {
         triggeredBy,
         requestId,
       });
+      console.error('[API Proxy] Fetch error:', (fetchErr as Error).message);
       return new Response(
-        JSON.stringify({ error: (fetchErr as Error).message }),
+        JSON.stringify({ error: 'Failed to reach Shopee API' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId } }
       );
     }
@@ -366,9 +381,9 @@ serve(async (req) => {
     );
 
   } catch (err) {
-    console.error('[API Proxy] Error:', err);
+    console.error('[API Proxy] Error:', (err as Error).message);
     return new Response(
-      JSON.stringify({ error: (err as Error).message }),
+      JSON.stringify({ error: 'Internal proxy error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'x-request-id': requestId } }
     );
   }

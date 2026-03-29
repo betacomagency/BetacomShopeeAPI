@@ -9,11 +9,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
 import { logApiCall, getApiCallStatus, createResponseSummary, extractUserFromJwt } from '../_shared/api-logger.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 // Shopee API config (fallback nếu không có partner_info)
 const DEFAULT_PARTNER_ID = Number(Deno.env.get('SHOPEE_PARTNER_ID'));
@@ -547,11 +543,11 @@ serve(async (req) => {
         const mainAccountId = body.main_account_id ? Number(body.main_account_id) : undefined;
         const partnerInfo = body.partner_info as PartnerInfo | undefined;
 
-        console.log('[AUTH] get-token request:', { code: code.substring(0, 10) + '...', shopId, hasPartnerInfo: !!partnerInfo });
+        console.log('[AUTH] get-token request:', { shopId, hasPartnerInfo: !!partnerInfo });
 
         // Allow request credentials for get-token (must match get-auth-url credentials for valid signature)
         const credentials = await getPartnerCredentials(supabase, partnerInfo, shopId, true);
-        console.log('[AUTH] Using partner credentials:', { partnerId: credentials.partnerId });
+        console.log('[AUTH] Using partner credentials for request');
 
         const getTokenStart = Date.now();
         const token = await getAccessToken(credentials, code, shopId, mainAccountId);
@@ -580,7 +576,7 @@ serve(async (req) => {
           message: token.message,
           hasAccessToken: !!token.access_token,
           accessTokenLength: token.access_token?.length,
-          accessTokenPrefix: token.access_token?.substring(0, 30),
+          hasAccessTokenValue: !!token.access_token?.length,
           shopId: token.shop_id,
           expireIn: token.expire_in,
           expireTime: token.expire_time,
@@ -754,7 +750,7 @@ serve(async (req) => {
           });
         }
 
-        console.log('[APP-AUTH] get-app-token:', { partnerId: appResult.credentials.partnerId, category: appResult.appCategory, shopId });
+        console.log('[APP-AUTH] get-app-token:', { category: appResult.appCategory, shopId });
 
         const getTokenStart = Date.now();
         const token = await getAccessToken(appResult.credentials, code, shopId, mainAccountId);
@@ -867,7 +863,7 @@ serve(async (req) => {
 
         // Lấy partner credentials
         const credentials = await getPartnerCredentials(supabase, partnerInfo);
-        console.log('[AUTH] Using partner credentials:', { partnerId: credentials.partnerId });
+        console.log('[AUTH] Using partner credentials for request');
 
         const resendStart = Date.now();
         const token = await getTokenByResendCode(credentials, resendCode);
